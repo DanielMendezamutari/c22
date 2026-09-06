@@ -1,0 +1,36 @@
+# Universal
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# PHP / Laravel
+backend/vendor/
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/storage/*.key
+backend/storage/logs/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/
+backend/public/storage
+backend/public/hot
+
+# Flutter / Dart
+frontend/puntofrio_app/.dart_tool/
+frontend/puntofrio_app/.flutter-plugins
+frontend/puntofrio_app/.flutter-plugins-dependencies
+frontend/puntofrio_app/.packages
+frontend/puntofrio_app/build/
+frontend/puntofrio_app/.pub-cache/
+# Artifacts & Binaries
+*.apk
+*.aab
+
+# Local uploads
+backend/public/storage/comprobantes/*
+backend/public/storage/firmas/*
