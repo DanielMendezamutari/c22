@@ -171,8 +171,10 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
         'proveedor': _proveedorController.text.trim().isNotEmpty
             ? _proveedorController.text.trim()
             : 'Licorería Punto Frío (Central)',
-        'numero_factura_nota': _notaGuiaController.text.trim(),
+        'numero_nota_factura': _notaGuiaController.text.trim().isNotEmpty ? _notaGuiaController.text.trim() : 'S/N',
+        'numero_factura_nota': _notaGuiaController.text.trim().isNotEmpty ? _notaGuiaController.text.trim() : 'S/N',
         'observaciones': _obsController.text.trim(),
+        'foto_comprobante': base64Image,
         'foto_factura': base64Image,
         'items': itemsPayload,
       };

@@ -66,6 +66,19 @@ class RegistrarTransformacionUseCase
                 throw new DomainException("No se pueden registrar transformaciones en un turno con estado '{$turno->estado}'.");
             }
 
+            // Soporte de Rellenos en Cero (0 unidades producidas): jornada sin transformaciones
+            if ($cantidadProducida === 0) {
+                return [
+                    'idempotente' => false,
+                    'unidades_netas' => 0,
+                    'comision_ganada_bs' => 0.00,
+                    'total_turno_netas' => (int) $turno->total_transformaciones_netas,
+                    'total_turno_comision_bruta' => (float) $turno->total_comision_bruta,
+                    'alerta_ratio' => false,
+                    'mensaje' => 'Registro de 0 transformaciones completado sin comisiones.',
+                ];
+            }
+
             // 3. Obtener receta de transformación
             $recetas = $this->recetaRepo->listarRecetasTransformacion();
             $receta = collect($recetas)->firstWhere('id', $recetaId);

@@ -87,7 +87,8 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
 
       if (!esCompuesta) {
         _insumoFisicoSimpleId = receta['insumo_origen_id'];
-        final tarifa = (receta['tarifa_comision_unidad'] ?? receta['tarifa_comision'] ?? 1.0).toDouble();
+        final rawTarifa = receta['tarifa_comision_unidad'] ?? receta['tarifa_comision'] ?? 1.0;
+        final tarifa = double.tryParse(rawTarifa.toString()) ?? 1.0;
         ref.read(transformacionProvider.notifier).setTarifa(tarifa);
         ref.read(transformacionProvider.notifier).setCantidadInsumo(double.tryParse(_insumoSimpleCtrl.text) ?? 24.0);
         ref.read(transformacionProvider.notifier).setCantidadProducida(int.tryParse(_producidasSimpleCtrl.text) ?? 20);
@@ -136,11 +137,11 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
       final cantProducida = int.tryParse(_producidasSimpleCtrl.text) ?? 0;
       final cantRoturas = int.tryParse(_roturasSimpleCtrl.text) ?? 0;
 
-      if (cantInsumo <= 0 || cantProducida <= 0) {
+      if (cantInsumo < 0 || cantProducida < 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text('Debe ingresar cantidad de insumos y unidades producidas mayores a 0.'),
+            content: Text('Las cantidades no pueden ser negativas.'),
           ),
         );
         return;
@@ -177,21 +178,11 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
       final cantProducida = int.tryParse(_producidasCompuestaCtrl.text) ?? 0;
       final cantRoturas = int.tryParse(_roturasCompuestaCtrl.text) ?? 0;
 
-      if (cant1 <= 0 && cant2 <= 0) {
+      if (cant1 < 0 || cant2 < 0 || cantProducida < 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text('Debe ingresar al menos una fracción de alguno de los insumos.'),
-          ),
-        );
-        return;
-      }
-
-      if (cantProducida <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.redAccent,
-            content: Text('Debe producir al menos 1 unidad de producto terminado.'),
+            content: Text('Las cantidades no pueden ser negativas.'),
           ),
         );
         return;
@@ -418,7 +409,8 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
 
   Widget _buildBannerMetricas() {
     final esCompuesta = _recetaSeleccionada!['insumo_secundario_id'] != null;
-    final tarifa = (_recetaSeleccionada!['tarifa_comision_unidad'] ?? _recetaSeleccionada!['tarifa_comision'] ?? 1.0).toDouble();
+    final rawTarifa = _recetaSeleccionada!['tarifa_comision_unidad'] ?? _recetaSeleccionada!['tarifa_comision'] ?? 1.0;
+    final tarifa = double.tryParse(rawTarifa.toString()) ?? 1.0;
     final nombreDestino = _recetaSeleccionada!['producto_destino']?['nombre'] ??
         _obtenerNombreProducto(_recetaSeleccionada!['producto_destino_id']);
 
@@ -586,6 +578,12 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
+            _buildBotonAtajo('0', () {
+              _insumoSimpleCtrl.text = '0';
+              ref.read(transformacionProvider.notifier).setCantidadInsumo(0);
+              setState(() {});
+            }),
+            const SizedBox(width: 8),
             _buildBotonAtajo('+6', () => _incrementarInsumoSimple(6)),
             const SizedBox(width: 8),
             _buildBotonAtajo('+12', () => _incrementarInsumoSimple(12)),
@@ -610,7 +608,7 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
           decoration: InputDecoration(
             filled: true,
             fillColor: const Color(0xFF1B2332),
-            hintText: 'Ej. 20',
+            hintText: 'Ej. 20 (o 0)',
             hintStyle: const TextStyle(color: Colors.white38),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             suffixText: 'unidades',
@@ -625,6 +623,12 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
+            _buildBotonAtajo('0', () {
+              _producidasSimpleCtrl.text = '0';
+              ref.read(transformacionProvider.notifier).setCantidadProducida(0);
+              setState(() {});
+            }),
+            const SizedBox(width: 8),
             _buildBotonAtajo('+6', () => _incrementarProducidasSimple(6)),
             const SizedBox(width: 8),
             _buildBotonAtajo('+12', () => _incrementarProducidasSimple(12)),

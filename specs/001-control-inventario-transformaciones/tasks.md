@@ -317,6 +317,31 @@
 
 ---
 
+## Phase 20: User Story 16 - Estabilización Operativa, Rellenos Cero (0) y Conteo Activo Re-imprimible hasta Cierre (Priority: P1)
+
+**Goal**: Corregir de raíz los 3 fallos operativos detectados (pantalla gris en Rellenos, error 422 en Recepción y error 422 en Bajas), soportar formalmente turnos y jornadas con cero (0) unidades de relleno sin bloqueos ni excepciones, y habilitar un botón dinámico para que el barman visualice y re-imprima su conteo físico de apertura en PDF tantas veces como requiera durante el turno activo, el cual desaparece al efectuar el corte de cierre para pasar a modo historial.
+
+**Independent Test**:
+1. Abrir la pantalla de Rellenos/Transformaciones: no debe mostrar pantalla gris, debe cargar las recetas y permitir registrar con 0 unidades producidas o insumos sin arrojar excepción.
+2. Ingresar a Recepción de Mercadería, agregar productos y confirmar: debe guardar exitosamente sin error 422.
+3. Declarar una baja/rotura en barra: debe asentarse correctamente vinculada al turno activo de la sucursal sin error 422.
+4. Con un turno abierto, ingresar al Dashboard: debe verse el botón "📄 VER / RE-IMPRIMIR CONTEO DE APERTURA", que permite ver y compartir el PDF en WhatsApp las veces que se desee.
+5. Al ejecutar el Corte de Cierre de turno, el botón del conteo activo desaparece y queda disponible el "📜 HISTORIAL DE CORTES".
+
+- [X] T118 [US1] Corregir tipado en `transformacion_screen.dart` (líneas 90 y 421) usando `double.tryParse(val.toString()) ?? 1.0` en lugar de `.toDouble()` directo para evitar la pantalla gris de excepción en frontend/puntofrio_app/lib/presentation/screens/transformacion/transformacion_screen.dart
+- [X] T119 [US1] Permitir explícitamente 0 unidades producidas / insumos en `transformacion_screen.dart`, flexibilizando las validaciones locales para jornadas sin transformaciones con 0 Bs de comisión en frontend/puntofrio_app/lib/presentation/screens/transformacion/transformacion_screen.dart
+- [X] T120 [US1] En backend `RegistrarTransformacionUseCase.php` y `TransformacionController.php`, admitir cantidad 0 en transformaciones (`min:0`), permitiendo liquidar turnos con 0 rellenos en backend/app/Application/UseCases/Transformacion/RegistrarTransformacionUseCase.php y backend/app/Infrastructure/Http/Controllers/Api/TransformacionController.php
+- [X] T121 [US2] Sincronizar contrato de recepción en `ingreso_mercaderia_screen.dart`, enviando las claves `foto_comprobante` y `numero_nota_factura` para eliminar el error 422 en frontend/puntofrio_app/lib/presentation/screens/ingreso/ingreso_mercaderia_screen.dart
+- [X] T122 [P] [US2] En backend `CompraController.php` (`store`), aceptar indistintamente `foto_comprobante` o `foto_factura`, y `numero_nota_factura` o `numero_factura_nota` en backend/app/Infrastructure/Http/Controllers/Api/CompraController.php
+- [X] T123 [US10] Auto-resolver el turno activo abierto en `TransformacionController::registrarBaja` si `turno_id` llega nulo, evitando rechazo con error 422 en backend/app/Infrastructure/Http/Controllers/Api/TransformacionController.php
+- [X] T124 [US10] En `bajas_roturas_screen.dart`, asegurar envío seguro de `sucursal_id` y `turno_id`, pre-validando existencia de turno o informando amigablemente en frontend/puntofrio_app/lib/presentation/screens/turnos/bajas_roturas_screen.dart
+- [X] T125 [US3] Crear endpoint backend `GET /turnos/{id}/corte-inicial` en `TurnoController.php` y registrar ruta en `backend/routes/api.php` para consultar los ítems y cantidades físicas del corte de apertura en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T126 [US3] En `dashboard_barman_screen.dart`, incorporar el botón condicional **"📄 VER / RE-IMPRIMIR CONTEO DE APERTURA"** mientras `auth.turnoActivoId != null`, que invoque `GET /turnos/{id}/corte-inicial` y abra el diálogo de `ConteoPdfService` para imprimir y compartir en WhatsApp en frontend/puntofrio_app/lib/presentation/screens/dashboard/dashboard_barman_screen.dart
+- [X] T127 [US3] En `dashboard_barman_screen.dart` y en el modal de corte, ocultar el botón de conteo activo cuando el turno se cierre (`turnoActivoId == null`), desplegando en su lugar la opción **"📜 HISTORIAL DE CORTES"** en frontend/puntofrio_app/lib/presentation/screens/dashboard/dashboard_barman_screen.dart
+- [X] T128 Compilar nueva versión Release de la APK Android con las correcciones operativas y colocarla en el Escritorio del usuario
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -336,29 +361,26 @@
 - **Phase 17 (US13 - Entrada Numérica Rápida y Atajos por Caja)**: Entrada directa por teclado táctil y botones rápidos `+12`, `+24` en conteos y recepciones.
 - **Phase 18 (US14 - Motivos de Baja Dinámicos & PDF Cierre)**: CRUD de motivos y acta oficial de cierre con envío a WhatsApp.
 - **Phase 19 (US15 - Alerta Inteligente de Fuga entre Turnos)**: Comparador automático cierre vs apertura y alerta roja con WhatsApp en móvil de Admin.
+- **Phase 20 (US16 - Estabilización Operativa, Rellenos 0 y Conteo Activo Re-imprimible)**: Corrige los 3 fallos críticos, habilita conteo activo en PDF hasta el cierre y soporte de rellenos cero.
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Backend Endpoints y Modelos Independientes (Phase 16, 17, 18, 19):
-Task T097: "Migración insumo_secundario_id y relaciones en RecetaTransformacion.php"
-Task T098: "Actualización de GestionarRecetasUseCase y RecetaController"
-Task T107: "Migración y modelo MotivoBaja.php"
-Task T108: "Controlador MotivoBajaController.php"
-Task T112: "Migración y modelo AlertaDiscrepancia.php"
-Task T114: "Controlador AlertaController.php"
+# Backend Endpoints Independientes (Phase 20):
+Task T120: "Soporte de transformaciones cero en RegistrarTransformacionUseCase.php y TransformacionController.php"
+Task T122: "Tolerancia de claves foto y factura en CompraController.php"
+Task T123: "Auto-resolución de turno activo en TransformacionController.php"
+Task T125: "Endpoint GET /turnos/{id}/corte-inicial en TurnoController.php"
 
-# Frontend Pantallas Independientes:
-Task T099: "Diálogo de nueva transformación (+ FAB) en recetas_screen.dart"
-Task T100: "Carga dinámica de recetas e insumos en transformacion_screen.dart"
-Task T103: "Entrada numérica y atajos +12/+24 en bottle_fraction_selector.dart"
-Task T104: "Campo numérico directo y atajos +12/+24 en ingreso_mercaderia_screen.dart"
-Task T109: "Pantalla MotivosBajaAdminScreen.dart"
-Task T110: "Carga dinámica de motivos en bajas_roturas_screen.dart"
-Task T111: "Acta de cierre en PDF y botón WhatsApp en corte_inventario_screen.dart"
-Task T116: "Banner flotante de alertas de fuga en dashboard_admin_screen.dart"
+# Frontend Pantallas Independientes (Phase 20):
+Task T118: "Corrección de tipado toDouble() en transformacion_screen.dart"
+Task T119: "Soporte de 0 unidades producidas en transformacion_screen.dart"
+Task T121: "Claves contractuales en ingreso_mercaderia_screen.dart"
+Task T124: "Validación segura de turno en bajas_roturas_screen.dart"
+Task T126: "Botón dinámico de ver/re-imprimir conteo de apertura en dashboard_barman_screen.dart"
+Task T127: "Ocultamiento post-cierre y switch a historial en dashboard_barman_screen.dart"
 ```
 
 ---

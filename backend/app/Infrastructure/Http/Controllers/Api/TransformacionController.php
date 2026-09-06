@@ -31,9 +31,9 @@ class TransformacionController extends Controller
             'insumo_origen_id' => 'nullable|integer|exists:productos,id',
             'insumos_origen' => 'nullable|array',
             'insumos_origen.*.insumo_id' => 'required_with:insumos_origen|integer|exists:productos,id',
-            'insumos_origen.*.cantidad' => 'required_with:insumos_origen|numeric|min:0.01',
-            'cantidad_insumo' => 'nullable|numeric|min:0.01',
-            'cantidad_producida' => 'required|integer|min:1',
+            'insumos_origen.*.cantidad' => 'required_with:insumos_origen|numeric|min:0',
+            'cantidad_insumo' => 'nullable|numeric|min:0',
+            'cantidad_producida' => 'required|integer|min:0',
             'cantidad_roturas' => 'nullable|integer|min:0',
             'observaciones' => 'nullable|string|max:500',
         ]);
@@ -63,10 +63,28 @@ class TransformacionController extends Controller
             $data['observaciones'] = $data['motivo'];
         }
 
+        // Auto-resolver turno_id si llega nulo o vacío
+        if (empty($data['turno_id']) || (int) $data['turno_id'] <= 0) {
+            $sucursalId = (int) ($data['sucursal_id'] ?? 1);
+            $turnoActivo = \App\Infrastructure\Persistence\Eloquent\Models\Turno::where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierto')
+                ->latest('id')
+                ->first();
+
+            if ($turnoActivo) {
+                $data['turno_id'] = $turnoActivo->id;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No existe un turno activo abierto en esta sucursal. Por favor realice el Corte de Apertura antes de asentar bajas.',
+                ], 422);
+            }
+        }
+
         $validated = validator($data, [
             'uuid_local' => 'required|string',
-            'turno_id' => 'required|integer',
-            'producto_id' => 'required|integer',
+            'turno_id' => 'required|integer|exists:turnos,id',
+            'producto_id' => 'required|integer|exists:productos,id',
             'cantidad' => 'required|numeric|min:0.01',
             'foto_path' => 'nullable|string',
             'observaciones' => 'nullable|string|max:500',

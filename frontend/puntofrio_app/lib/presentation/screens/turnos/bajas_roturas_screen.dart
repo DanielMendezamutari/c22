@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
@@ -147,15 +148,19 @@ class _BajasRoturasScreenState extends ConsumerState<BajasRoturasScreen> {
     setState(() => _isSubmitting = true);
 
     try {
+      final sucursalId = (auth.sucursalId != null && auth.sucursalId! > 0) ? auth.sucursalId! : 1;
+      final turnoId = auth.turnoActivoId;
+
       final client = ref.read(apiClientProvider);
       final resp = await client.post('/inventario/bajas', data: {
+        'uuid_local': 'baja-${DateTime.now().millisecondsSinceEpoch}-${auth.usuarioId ?? 1}',
         'producto_id': _productoSeleccionadoId,
         'cantidad': cantidad,
         'motivo': _motivoSeleccionado,
         'observaciones': _obsCtrl.text.trim().isEmpty ? _motivoSeleccionado : '$_motivoSeleccionado - ${_obsCtrl.text.trim()}',
         'tipo_baja': 'rotura',
-        'sucursal_id': auth.sucursalId ?? 1,
-        'turno_id': auth.turnoActivoId,
+        'sucursal_id': sucursalId,
+        if (turnoId != null) 'turno_id': turnoId,
         'usuario_id': auth.usuarioId,
       });
 
@@ -181,8 +186,12 @@ class _BajasRoturasScreenState extends ConsumerState<BajasRoturasScreen> {
         throw Exception(resp.data['error'] ?? 'Error desconocido');
       }
     } catch (e) {
+      String msg = e.toString();
+      if (e is DioException) {
+        msg = e.response?.data?['error'] ?? e.response?.data?['message'] ?? e.message ?? 'Error de conexión';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al registrar baja: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error al registrar baja: $msg'), backgroundColor: Colors.redAccent),
       );
     } finally {
       setState(() => _isSubmitting = false);

@@ -171,4 +171,86 @@ class TurnoController extends Controller
             'data' => $productos,
         ]);
     }
+
+    public function corteInicial(int $id): JsonResponse
+    {
+        try {
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario'])->find($id);
+            if (!$turno) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "El turno #{$id} no existe.",
+                ], 404);
+            }
+
+            $cortes = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::with('producto')
+                ->where('turno_id', $id)
+                ->whereIn('tipo_corte', ['inicial', 'apertura'])
+                ->get()
+                ->map(function ($c) {
+                    return [
+                        'producto_id' => $c->producto_id,
+                        'producto_nombre' => $c->producto->nombre ?? 'Producto #' . $c->producto_id,
+                        'codigo' => $c->producto->codigo_barra ?? 'S/C',
+                        'tipo_producto' => $c->producto->tipo ?? 'terminado',
+                        'cantidad' => (float) $c->cantidad,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'turno_id' => $turno->id,
+                    'sucursal' => $turno->sucursal->nombre ?? 'Sucursal Punto Frío',
+                    'barman' => ($turno->usuario->nombre ?? 'Barman') . ' ' . ($turno->usuario->apellido ?? ''),
+                    'tipo_turno' => $turno->tipo_turno ?? 'noche',
+                    'estado' => $turno->estado,
+                    'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : now()->toIso8601String(),
+                    'items' => $cortes,
+                ],
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function historialCortes(Request $request): JsonResponse
+    {
+        try {
+            $query = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario'])
+                ->whereIn('estado', ['cerrado', 'cobrado', 'auditado'])
+                ->orderBy('id', 'desc');
+
+            if ($request->filled('sucursal_id') && (int) $request->sucursal_id > 0) {
+                $query->where('sucursal_id', (int) $request->sucursal_id);
+            }
+
+            $turnos = $query->limit(30)->get()->map(function ($t) {
+                return [
+                    'id' => $t->id,
+                    'sucursal_id' => $t->sucursal_id,
+                    'sucursal_nombre' => $t->sucursal->nombre ?? 'N/A',
+                    'barman_nombre' => ($t->usuario->nombre ?? 'Barman') . ' ' . ($t->usuario->apellido ?? ''),
+                    'tipo_turno' => $t->tipo_turno,
+                    'estado' => $t->estado,
+                    'fecha_apertura' => $t->fecha_apertura ? $t->fecha_apertura->toDateTimeString() : null,
+                    'fecha_cierre' => $t->fecha_cierre ? $t->fecha_cierre->toDateTimeString() : null,
+                    'total_comision_bruta' => (float) $t->total_comision_bruta,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $turnos,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

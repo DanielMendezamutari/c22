@@ -4,6 +4,7 @@ import '../auth/login_screen.dart';
 import '../cobro/resumen_cajera_screen.dart';
 import '../ingreso/ingreso_mercaderia_screen.dart';
 import '../transformacion/transformacion_screen.dart';
+import '../turnos/conteo_pdf_service.dart';
 import '../turnos/corte_inventario_screen.dart';
 import '../turnos/bajas_roturas_screen.dart';
 import '../traspasos/enviar_traspaso_screen.dart';
@@ -105,34 +106,58 @@ class DashboardBarmanScreen extends ConsumerWidget {
                           style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 16),
-                        ListTile(
-                          leading: const Icon(Icons.login, color: Color(0xFF5DADE2)),
-                          title: const Text('Corte de Apertura (Inicio de Turno)', style: TextStyle(color: Colors.white)),
-                          subtitle: const Text('Asentar stock físico recibido', style: TextStyle(color: Colors.white60)),
-                          onTap: () {
-                            Navigator.of(ctx).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const CorteInventarioScreen(tipoOperacion: TipoOperacionCorte.apertura),
-                              ),
-                            );
-                          },
-                        ),
+
+                        // Si hay turno activo: Botón para Ver/Re-imprimir Conteo Inicial las veces que quiera
+                        if (auth.turnoActivoId != null) ...[
+                          ListTile(
+                            leading: const Icon(Icons.picture_as_pdf, color: Colors.amberAccent),
+                            title: const Text('📄 Ver / Re-imprimir Conteo Inicial', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            subtitle: Text('Turno #${auth.turnoActivoId} activo - Generar PDF e imprimir o WhatsApp', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              _verConteoApertura(context, ref, auth.turnoActivoId!);
+                            },
+                          ),
+                          const Divider(color: Colors.white12),
+                          ListTile(
+                            leading: const Icon(Icons.lock_clock, color: Color(0xFFE74C3C)),
+                            title: const Text('Corte de Cierre (Final de Turno)', style: TextStyle(color: Colors.white)),
+                            subtitle: const Text('Inmutable - Cierra turno y congela corte', style: TextStyle(color: Colors.white60)),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => CorteInventarioScreen(
+                                    tipoOperacion: TipoOperacionCorte.cierre,
+                                    turnoId: auth.turnoActivoId,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ] else ...[
+                          ListTile(
+                            leading: const Icon(Icons.login, color: Color(0xFF5DADE2)),
+                            title: const Text('Corte de Apertura (Inicio de Turno)', style: TextStyle(color: Colors.white)),
+                            subtitle: const Text('Asentar stock físico recibido para iniciar turno', style: TextStyle(color: Colors.white60)),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const CorteInventarioScreen(tipoOperacion: TipoOperacionCorte.apertura),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                         const Divider(color: Colors.white12),
                         ListTile(
-                          leading: const Icon(Icons.lock_clock, color: Color(0xFFE74C3C)),
-                          title: const Text('Corte de Cierre (Final de Jornada)', style: TextStyle(color: Colors.white)),
-                          subtitle: const Text('Inmutable - Cierra turno y congela corte', style: TextStyle(color: Colors.white60)),
+                          leading: const Icon(Icons.history, color: Color(0xFF3498DB)),
+                          title: const Text('📜 Historial de Cortes Anteriores', style: TextStyle(color: Colors.white)),
+                          subtitle: const Text('Consultar e imprimir conteos de turnos cerrados', style: TextStyle(color: Colors.white60)),
                           onTap: () {
                             Navigator.of(ctx).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => CorteInventarioScreen(
-                                  tipoOperacion: TipoOperacionCorte.cierre,
-                                  turnoId: auth.turnoActivoId,
-                                ),
-                              ),
-                            );
+                            _mostrarHistorialCortes(context, ref, auth.sucursalId ?? 1);
                           },
                         ),
                       ],
@@ -271,5 +296,192 @@ class DashboardBarmanScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _verConteoApertura(BuildContext context, WidgetRef ref, int turnoId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.amberAccent)),
+    );
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final res = await client.get('/turnos/$turnoId/corte-inicial');
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+      if (res.data['success'] == true && res.data['data'] != null) {
+        final data = res.data['data'];
+        final List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+
+        if (!context.mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1B2332),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: const [
+                Icon(Icons.description, color: Color(0xFF3498DB), size: 26),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Conteo Físico de Apertura',
+                    style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Turno #${data['turno_id']} - ${data['sucursal']}',
+                    style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text('Barman: ${data['barman']}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 12),
+                Text('Total Artículos Contados: ${items.length}',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.share, size: 20),
+                    label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      await ConteoPdfService.compartirEnWhatsApp(
+                        context: ctx,
+                        turnoId: data['turno_id'] as int,
+                        sucursal: data['sucursal'] as String,
+                        barman: data['barman'] as String,
+                        tipoTurno: data['tipo_turno'] as String,
+                        items: items,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF3498DB),
+                      side: const BorderSide(color: Color(0xFF3498DB)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.picture_as_pdf, size: 20),
+                    label: const Text('VER / IMPRIMIR PDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      await ConteoPdfService.previsualizarOImprimir(
+                        context: ctx,
+                        turnoId: data['turno_id'] as int,
+                        sucursal: data['sucursal'] as String,
+                        barman: data['barman'] as String,
+                        tipoTurno: data['tipo_turno'] as String,
+                        items: items,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('CERRAR', style: TextStyle(color: Colors.white60)),
+              ),
+            ],
+          ),
+        );
+      } else {
+        throw Exception(res.data['error'] ?? 'No se encontró conteo');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar conteo: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _mostrarHistorialCortes(BuildContext context, WidgetRef ref, int sucursalId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.amberAccent)),
+    );
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final res = await client.get('/turnos/historial-cortes?sucursal_id=$sucursalId');
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+      final List turnos = res.data['success'] == true ? (res.data['data'] as List? ?? []) : [];
+
+      if (!context.mounted) return;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: const Color(0xFF1B2332),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('📜 Historial de Cortes Cerrados', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  IconButton(icon: const Icon(Icons.close, color: Colors.white70), onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (turnos.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: Text('No hay turnos cerrados registrados todavía.', style: TextStyle(color: Colors.white54))),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: turnos.length,
+                    separatorBuilder: (_, __) => const Divider(color: Colors.white12),
+                    itemBuilder: (_, i) {
+                      final t = turnos[i];
+                      return ListTile(
+                        leading: const CircleAvatar(backgroundColor: Color(0xFF2980B9), child: Icon(Icons.receipt_long, color: Colors.white, size: 20)),
+                        title: Text('Turno #${t['id']} (${t['tipo_turno']?.toString().toUpperCase()})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text('Barman: ${t['barman_nombre']}\nCierre: ${t['fecha_cierre'] ?? 'N/A'}', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                        trailing: const Icon(Icons.picture_as_pdf, color: Colors.amberAccent),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _verConteoApertura(context, ref, t['id'] as int);
+                        },
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar historial: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 }

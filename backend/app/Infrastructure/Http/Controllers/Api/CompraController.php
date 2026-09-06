@@ -70,6 +70,7 @@ class CompraController extends Controller
             'sucursal_id' => 'required|integer|exists:sucursales,id',
             'proveedor' => 'required|string|max:150',
             'numero_nota_factura' => 'nullable|string|max:50',
+            'numero_factura_nota' => 'nullable|string|max:50',
             'items' => 'required|array|min:1',
             'items.*.producto_id' => 'required|integer|exists:productos,id',
             'items.*.cantidad' => 'required|numeric|min:0.01',
@@ -78,12 +79,25 @@ class CompraController extends Controller
             'observaciones' => 'nullable|string',
         ]);
 
-        // Procesar imagen obligatoria (file o base64)
+        $numeroNota = $request->input('numero_nota_factura') 
+            ?? $request->input('numero_factura_nota') 
+            ?? $request->input('numero_factura') 
+            ?? 'S/N';
+
+        // Procesar imagen obligatoria (file o base64, tolerante a varias claves)
         $fotoPath = null;
-        if ($request->hasFile('foto_comprobante')) {
-            $fotoPath = $request->file('foto_comprobante')->store('compras', 'public');
-        } elseif ($request->filled('foto_comprobante')) {
-            $base64 = $request->input('foto_comprobante');
+        $fotoField = null;
+        foreach (['foto_comprobante', 'foto_factura', 'foto', 'comprobante'] as $f) {
+            if ($request->hasFile($f) || $request->filled($f)) {
+                $fotoField = $f;
+                break;
+            }
+        }
+
+        if ($fotoField && $request->hasFile($fotoField)) {
+            $fotoPath = $request->file($fotoField)->store('compras', 'public');
+        } elseif ($fotoField && $request->filled($fotoField)) {
+            $base64 = $request->input($fotoField);
             if (str_starts_with($base64, 'data:image')) {
                 $base64 = explode(',', $base64)[1] ?? $base64;
             }
@@ -101,7 +115,7 @@ class CompraController extends Controller
         }
 
         try {
-            $resultado = DB::transaction(function () use ($request, $fotoPath) {
+            $resultado = DB::transaction(function () use ($request, $fotoPath, $numeroNota) {
                 $sucursalId = (int) $request->sucursal_id;
                 $usuarioId = auth()->id() ?? $request->input('usuario_id', 1);
 
@@ -123,7 +137,7 @@ class CompraController extends Controller
                     'sucursal_id' => $sucursalId,
                     'usuario_id' => $usuarioId,
                     'proveedor' => $request->proveedor,
-                    'numero_nota_factura' => $request->numero_nota_factura,
+                    'numero_nota_factura' => $numeroNota,
                     'foto_comprobante' => $fotoPath,
                     'total_costo_estimado' => $totalCosto,
                     'observaciones' => $request->observaciones,
