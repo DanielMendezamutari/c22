@@ -240,6 +240,12 @@ Como Barman en turno activo, quiero pulsar el botón "BAJAS / ROTURAS" de mi pan
 - **FR-028**: El módulo de recepción de compras y abastecimiento DEBE admitir el registro de múltiples productos y cantidades en una sola orden (`compras_detalles`), exigiendo de manera obligatoria la captura fotográfica del comprobante o remisión para incrementar el stock físico de todos los artículos involucrados.
 - **FR-029**: El sistema DEBE permitir al Administrador gestionar integralmente las sucursales de la red comercial (creación de nuevas sucursales, edición de nombre, código y dirección, y suspensión/reactivación con toggle `activo`), asegurando que las sucursales inactivas queden excluidas de inmediato de los selectores operativos de apertura de turno, compras y traspasos.
 
+- **FR-030**: El sistema DEBE permitir al Administrador configurar recetas de transformación dinámicas tanto simples (1 insumo origen → 1 terminado) como compuestas (2 insumos origen → 1 terminado) enlazadas exclusivamente a productos reales de la base de datos, asignando tarifa de comisión (Bs) y ratio, y el Barman DEBE registrar rellenos seleccionando materias primas existentes en su inventario físico sin datos quemados o estáticos.
+- **FR-031**: El sistema DEBE proveer en los selectores de conteo de inventario (corte de apertura/cierre) y formularios de ingreso/compra de mercadería la capacidad de ingresar cantidades numéricas enteras directamente por teclado táctil (al pulsar el número o campo numérico) junto con atajos rápidos de incremento por cajas (`+12`, `+24`, `-12`), garantizando que la recepción o conteo de decenas de cajas (ej. 30 cajas = 360 botellas) se realice en menos de 5 segundos sin forzar cientos de pulsaciones individuales.
+- **FR-032**: El sistema DEBE proveer en la app Flutter (módulo de administración) y en la API RESTful de Laravel la funcionalidad para la gestión integral de Motivos de Bajas y Roturas (alta de nuevos motivos indicando descripción, edición y eliminación/desactivación), y la pantalla operativa de bajas del barman (`BajasRoturasScreen`) DEBE cargar dinámicamente dichos motivos desde la base de datos sin opciones estáticas ni fijas en el código.
+- **FR-033**: Al completar el Corte de Cierre de Turno (`CorteInventarioScreen`), la aplicación DEBE generar de manera obligatoria el "Acta Oficial de Cierre de Turno y Balance de Inventario" en PDF vectorial (detallando stock inicial, ingresos recibidos, transformaciones efectuadas, bajas/roturas descontadas y stock final físico) y desplegar el diálogo con el botón destacado "COMPARTIR EN WHATSAPP", garantizando que el reporte oficial sea transmitido de inmediato al grupo de administración.
+- **FR-034**: El sistema DEBE comparar automáticamente en el backend, al momento de abrir un turno (`POST /turnos/abrir`), el conteo físico inicial declarado contra el corte de cierre del último turno cerrado en esa misma sucursal; si se detecta cualquier discrepancia ($Cierre_{anterior} \neq Apertura_{entrante}$), el sistema DEBE registrar una alerta de fuga inter-turnos en `alertas_discrepancias`, advertir al barman entrante en pantalla y desplegar una alerta prioritaria en el teléfono móvil del Administrador (banner flotante rojo en `DashboardAdminScreen` y notificación en el dispositivo con detalle de sucursal, producto, cantidades y botón de llamada/WhatsApp a los responsables).
+
 ### User Story 11 - Gestión Integral de Sucursales por el Administrador (Altas, Bajas/Suspensión y Edición) (Priority: P2)
 
 Como Administrador global del sistema Punto Frío, quiero crear nuevas sucursales, suspender temporalmente o reactivar sucursales existentes y editar sus datos principales (nombre, código único y dirección), para reflejar la apertura, cierre temporal o mantenimiento de locales comerciales directamente desde la aplicación móvil sin necesidad de intervenir manualmente la base de datos.
@@ -252,6 +258,74 @@ Como Administrador global del sistema Punto Frío, quiero crear nuevas sucursale
 1. **Given** el administrador en el módulo "Gestión de Sucursales", **When** ingresa nombre, código único y dirección y confirma, **Then** el sistema crea la sucursal y la despliega en la lista activa.
 2. **Given** una sucursal existente, **When** el administrador modifica su nombre o dirección, **Then** los cambios se persisten inmediatamente y se reflejan en todos los reportes y comprobantes.
 3. **Given** una sucursal activa, **When** el administrador activa la opción de suspender/desactivar, **Then** el sistema cambia su estado a inactiva y la excluye de inmediato del selector de sucursales en el login de turnos y en el destino de traspasos.
+
+---
+
+### User Story 12 - Gestión y Registro Dinámico de Recetas de Transformación (Simples y Compuestas sin Datos Quemados) (Priority: P1)
+
+Como Administrador y Barman del sistema Punto Frío, quiero gestionar recetas de transformación simples (1 insumo origen) o compuestas (2 insumos origen como Chancellor + Blackstone) con tarifa de comisión configurable, y como Barman quiero registrar rellenos eligiendo insumos reales existentes en la base de datos, para que no existan datos estáticos ni discrepancias de stock al cerrar el turno.
+
+**Why this priority**: Es el núcleo operativo de barra para cervezas y destilados. Elimina cualquier dato quemado en el código y asegura la consistencia contable del inventario.
+
+**Independent Test**: En Admin, crear una receta de 2 insumos con comisión; ingresar como Barman, verificar que aparezca con los insumos reales de la base de datos, registrar la transformación y comprobar que el stock de los insumos seleccionados disminuya con exactitud y cuadre el cierre.
+
+**Acceptance Scenarios**:
+1. **Given** el Administrador en la pestaña "Transformaciones", **When** presiona el botón `+`, **Then** puede seleccionar si la receta es Simple (1 insumo) o Compuesta (2 insumos), asignar productos destino de la BD, tarifa de comisión y ratio.
+2. **Given** el Barman en "Registrar Transformación", **When** selecciona una receta, **Then** solo se listan productos reales dados de alta en el inventario, calculando la comisión en tiempo real según la tarifa configurada.
+3. **Given** una transformación registrada con insumos físicos reales, **When** el barman realiza el conteo final de cierre, **Then** el balance descuenta exactamente las unidades transformadas reflejando un cuadre matemático perfecto.
+
+---
+
+### User Story 13 - Entrada Numérica Directa y Atajos por Caja en Conteo y Recepción (Priority: P1)
+
+Como Barman o Garzón responsable de la barra, quiero poder escribir directamente la cantidad de productos por teclado y contar con botones de incremento rápido por caja (`+12`, `+24`, etc.) tanto en los cortes de inventario como en la recepción de mercadería, para no perder tiempo pulsando cientos de veces el botón `+` cuando recibo 10, 20 o 30 cajas de mercadería.
+
+**Why this priority**: Esencial para la experiencia del usuario y rapidez operativa nocturna. Si llegan 30 cajas de Huari (360 botellas), forzar 360 toques en la pantalla retrasa el inicio del turno y genera frustración al personal.
+
+**Independent Test**:
+1. En Corte de Inventario (`corte_inventario_screen.dart`), tocar el número entero del selector de botellas, escribir `360` en el teclado y verificar que el contador se actualice a 360 inmediatamente.
+2. Usar los botones rápidos `+12` o `+24` y verificar que sumen exactamente una o dos cajas con un solo toque.
+3. En Recepción de Mercadería (`ingreso_mercaderia_screen.dart`), escribir directamente `120` botellas para 10 cajas de cerveza y guardar la recepción sin demoras.
+
+**Acceptance Scenarios**:
+1. **Given** el selector de botellas en el corte de inventario con valor 0, **When** el usuario pulsa sobre el número de unidades enteras, **Then** se abre un diálogo o teclado numérico directo donde puede digitar cualquier cantidad (ej. 360) o presionar `+12` / `+24`.
+2. **Given** el formulario de recepción de mercadería en barra, **When** el barman agrega un ítem, **Then** puede escribir la cantidad exacta en el campo numérico o presionar los atajos por caja sin limitarse a toques unitarios.
+3. **Given** el formulario de compras del administrador, **When** se ingresan lotes masivos de producto, **Then** se puede ingresar la cantidad por teclado con validación inmediata.
+
+---
+
+### User Story 14 - Gestión de Motivos de Baja y PDF de Cierre por WhatsApp (Priority: P1)
+
+Como Administrador, quiero crear, editar y eliminar los motivos de bajas o roturas de inventario (ej. "Corona rellenada con defecto", "Pérdida en transporte"), y como Barman quiero que al finalizar mi turno se genere un PDF oficial con el balance de inventario y un botón directo para compartirlo por WhatsApp a los dueños, para mantener la transparencia total de las mermas y el cierre operativo.
+
+**Why this priority**: Evita motivos rígidos o incompletos y garantiza que cada cierre de turno deje constancia documental en el grupo de WhatsApp de la empresa tal como ya ocurre con la apertura.
+
+**Independent Test**:
+1. En Admin, crear un nuevo motivo "Botella Picada en Heladera", ingresar como Barman en "Bajas / Roturas" y verificar que el motivo figure en la lista desplegable dinámica.
+2. Realizar el Corte de Cierre de Turno, verificar que se genere el PDF del Acta de Cierre con el botón "COMPARTIR EN WHATSAPP" y que se abra la ventana de compartir.
+
+**Acceptance Scenarios**:
+1. **Given** el Administrador en la gestión de motivos de baja, **When** registra un nuevo motivo, **Then** se persiste en la BD y queda disponible inmediatamente para todos los locales.
+2. **Given** el Barman en `BajasRoturasScreen`, **When** abre el selector de motivos, **Then** se cargan los motivos activos desde la API sin datos quemados.
+3. **Given** el Barman al cerrar su turno, **When** confirma el corte final, **Then** el sistema despliega el diálogo de éxito con el PDF vectorial generado y el botón verde para compartir en WhatsApp.
+
+---
+
+### User Story 15 - Detección Inteligente de Discrepancias entre Turnos y Alerta al Celular del Administrador (Priority: P1)
+
+Como Administrador general de Punto Frío, quiero que el sistema detecte automáticamente si entre el cierre de un turno (ej. 20 Coronas al salir el turno Día) y la apertura del siguiente (ej. 19 Coronas al ingresar el turno Noche) existe un faltante o sobrante, y me alerte de inmediato en mi celular con una notificación y un banner rojo en mi pantalla principal, para frenar fugas de mercadería entre cambios de guardia sin esperar a la auditoría del Ticket Z.
+
+**Why this priority**: Resuelve uno de los puntos ciegos más críticos de los bares nocturnos: la pérdida o consumo no autorizado de botellas entre el cambio de turno cuando la barra queda desatendida.
+
+**Independent Test**:
+1. Cerrar el turno de la tarde con 20 Coronas en Casa22.
+2. Abrir el turno de la noche ingresando 19 Coronas en el conteo inicial.
+3. El barman entrante recibe una advertencia visual sobre la diferencia detectada (-1 u.).
+4. El Administrador al abrir su app en su celular ve inmediatamente un banner rojo flotante con la alerta: "Discrepancia en Casa22: 1 Corona faltante entre turno saliente y turno entrante", con botón directo para contactar a los barmen por WhatsApp.
+
+**Acceptance Scenarios**:
+1. **Given** la apertura de un turno nuevo en una sucursal con turnos previos cerrados, **When** el conteo físico difiere del stock final del turno anterior, **Then** el backend crea un registro en `alertas_discrepancias` marcando el producto, cantidades y responsables de ambos turnos.
+2. **Given** el Administrador con la app móvil instalada en su celular, **When** existe una alerta de discrepancia pendiente, **Then** se despliega una tarjeta de alerta roja destacada en `DashboardAdminScreen` con sonido/notificación y acción directa para enviar mensaje de WhatsApp a los involucrados.
 
 ---
 

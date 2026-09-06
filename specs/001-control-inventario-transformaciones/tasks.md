@@ -254,6 +254,69 @@
 
 ---
 
+## Phase 16: User Story 12 - Gestión y Registro Dinámico de Transformaciones (Priority: P1)
+
+**Goal**: Eliminar cualquier dato estático ("quemado") en la app, permitiendo al Administrador configurar recetas de transformación arbitrarias (simples de 1 insumo como Cervezas o compuestas de 2 insumos como Tequila/Whisky con sus respectivas tarifas de comisión por unidad), y habilitar al Barman para registrar cualquier transformación seleccionando exclusivamente productos reales de su base de datos, asegurando el cuadre matemático exacto entre conteo inicial, consumo de relleno y conteo final.  
+**Independent Test**: Configurar en Admin una receta de Tequila (Jarana + Chancellor ➔ Tequila Botella con 2 Bs de comisión); abrir como Barman y validar que figure en el selector dinámico con insumos reales de la BD; registrar la producción y confirmar que se descuente el inventario real y cuadre el corte a 0.
+
+- [ ] T097 [P] [US12] Crear migración para agregar `insumo_secundario_id` nullable a `recetas_transformacion` y actualizar modelo `RecetaTransformacion.php` con relaciones `insumoOrigen`, `insumoSecundario` y `productoDestino` en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/RecetaTransformacion.php
+- [ ] T098 [US12] Actualizar `GestionarRecetasUseCase.php` y `RecetaController.php` para validar, guardar y retornar `insumo_secundario_id` y listar productos reales vinculados en backend/app/Application/UseCases/Recetas/GestionarRecetasUseCase.php y backend/app/Infrastructure/Http/Controllers/Api/RecetaController.php
+- [ ] T099 [P] [US12] En `recetas_screen.dart` (Admin), agregar `floatingActionButton (+)` e implementar diálogo `_mostrarDialogoNuevaTransformacion()` para crear cualquier receta (Simple o Compuesta de 2 insumos) cargando productos reales desde `GET /productos` y asignando tarifa de comisión y ratio en frontend/puntofrio_app/lib/presentation/screens/admin/recetas_screen.dart
+- [ ] T100 [P] [US12] Reingeniería integral de `transformacion_screen.dart` (Barman): eliminar listas estáticas/hardcoded (`_cervezasDisponibles`, Blackstone, Chancellor, etc.), cargar dinámicamente las recetas activas desde `GET /recetas/transformacion` y los insumos reales desde `GET /productos?tipo=insumo`, permitiendo elegir la receta y la materia prima física real con cálculo dinámico de comisión en frontend/puntofrio_app/lib/presentation/screens/transformacion/transformacion_screen.dart
+- [ ] T101 [US12] Verificar y asegurar en `RegistrarTransformacionUseCase.php` y `corte_inventario_screen.dart` que los movimientos de consumo descuenten con precisión los insumos físicos elegidos para garantizar la fórmula de cuadre perfecto en el cierre de turno en backend/app/Application/UseCases/Transformacion/RegistrarTransformacionUseCase.php y frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [ ] T102 [US12] Validar end-to-end la creación de recetas y registro de transformación con productos reales de la base de datos sin datos quemados
+
+---
+
+## Phase 17: User Story 13 - Entrada Numérica Directa y Atajos por Caja en Conteo y Recepción (Priority: P1)
+
+**Goal**: Dotar al personal de barra (barmen y garzones) y a la administración de un método de entrada ultrarrápido y amigable para el conteo de botellas y la recepción de pedidos masivos: permitir escribir directamente el número mediante teclado táctil en vez de forzar cientos de pulsaciones en el botón `+`, e incorporar botones de incremento rápido por cajas (`+12`, `+24`, `-12`) para que ingresar 10 o 30 cajas (120 o 360 botellas) tome 2 segundos.  
+**Independent Test**:
+1. En Corte de Inventario (`corte_inventario_screen.dart`), pulsar sobre el número entero en `BottleFractionSelector`, digitar `360` y verificar que el contador suba directamente a 360 sin tener que tocar el `+` 360 veces.
+2. Presionar los chips de atajo rápido `+12` y `+24` en `BottleFractionSelector` y verificar el incremento instantáneo.
+3. En Recepción de Mercadería (`ingreso_mercaderia_screen.dart`), editar el campo de cantidad con teclado numérico para poner `120` botellas con atajos por caja.
+4. En Registrar Compra Admin (`registrar_compra_screen.dart`), confirmar entrada directa por teclado numérico.
+
+- [ ] T103 [P] [US13] En `bottle_fraction_selector.dart`, habilitar toque sobre el número de unidades enteras para editarlo directamente mediante diálogo o entrada numérica táctil y agregar chips de atajo por caja (`+12`, `+24`, `+6`) para agilizar conteos de cientos de botellas en frontend/puntofrio_app/lib/presentation/widgets/bottle_fraction_selector.dart
+- [ ] T104 [P] [US13] En `ingreso_mercaderia_screen.dart`, reemplazar el texto estático de cantidad por un campo editable directamente con teclado numérico (`TextFormField` con `TextInputType.number`) y chips de atajo rápido por caja (`+12`, `+24`, `+6`) en cada fila de producto en frontend/puntofrio_app/lib/presentation/screens/ingreso/ingreso_mercaderia_screen.dart
+- [ ] T105 [P] [US13] En `registrar_compra_screen.dart`, asegurar que el campo de cantidad permita escritura directa numérica y botones de multiplicación/cajas (`+12`, `+24`) en frontend/puntofrio_app/lib/presentation/screens/inventario/registrar_compra_screen.dart
+- [ ] T106 [US13] Validar en emulador Android la agilidad y fluidez de conteo y recepción masiva de mercadería (ej. 30 cajas = 360 botellas) sin retrasos para los garzones
+
+---
+
+## Phase 18: User Story 14 - Gestión Dinámica de Motivos de Baja y PDF de Cierre por WhatsApp (Priority: P1)
+
+**Goal**: Permitir al Administrador gestionar dinámicamente los motivos de mermas y roturas (crear, editar, eliminar) eliminando cualquier opción quemada en el código, y dotar al barman de la generación automática del "Acta Oficial de Cierre de Turno y Balance" en PDF vectorial con botón directo para compartirlo en el grupo de WhatsApp de la empresa.  
+**Independent Test**:
+1. Crear en el panel de Administrador el motivo "Botella Defectuosa en Fábrica"; abrir la pantalla de Bajas del Barman y verificar que aparezca en el menú desplegable dinámico.
+2. Realizar un Corte de Cierre de Turno, verificar que se genere el PDF del Acta de Cierre con el resumen de inventario y que el botón verde "COMPARTIR EN WHATSAPP" despache el documento.
+
+- [ ] T107 [P] [US14] Crear migración `create_motivos_bajas_table` con campos (`id`, `descripcion`, `activo`) y modelo `MotivoBaja.php` en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/MotivoBaja.php
+- [ ] T108 [P] [US14] Crear `MotivoBajaController.php` con endpoints RESTful (GET /motivos-baja, POST /motivos-baja, PUT /motivos-baja/{id}, DELETE /motivos-baja/{id}) y registrar rutas en backend/routes/api.php
+- [ ] T109 [US14] Crear pantalla `MotivosBajaAdminScreen.dart` para administración de motivos por el Admin y enlazarla a `DashboardAdminScreen` en frontend/puntofrio_app/lib/presentation/screens/admin/motivos_baja_admin_screen.dart
+- [ ] T110 [P] [US14] En `bajas_roturas_screen.dart`, eliminar el array estático de motivos y cargar dinámicamente los motivos activos desde `GET /motivos-baja` en frontend/puntofrio_app/lib/presentation/screens/turnos/bajas_roturas_screen.dart
+- [ ] T111 [US14] En `corte_inventario_screen.dart`, al finalizar el Corte de Cierre, generar el "Acta Oficial de Cierre de Turno y Balance de Inventario" en PDF vectorial (`CierreTurnoPdfService.dart`) y desplegar diálogo con botón "COMPARTIR EN WHATSAPP" vía `Printing.sharePdf` en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+
+---
+
+## Phase 19: User Story 15 - Detección Inteligente de Discrepancias entre Turnos y Alerta al Celular del Administrador (Priority: P1)
+
+**Goal**: Detectar fugas o pérdidas silenciosas de mercadería en el cambio de turno: comparar automáticamente en el servidor el conteo de apertura del turno entrante contra el corte final del turno saliente previo en la misma sucursal, advertir al barman en pantalla y notificar al Administrador en su teléfono celular mediante un banner rojo flotante con sonido, detalle de diferencias y botón para contactar a los responsables por WhatsApp.  
+**Independent Test**:
+1. Cerrar un turno en Casa22 con 20 Coronas.
+2. Abrir el siguiente turno declarando 19 Coronas en el conteo de apertura.
+3. El barman entrante visualiza la advertencia de discrepancia (-1 botella).
+4. El Administrador al abrir la aplicación en su teléfono móvil recibe la alerta destacada en rojo con el detalle del producto, cantidades declaradas y botón directo de WhatsApp para pedir explicaciones.
+
+- [ ] T112 [P] [US15] Crear migración `create_alertas_discrepancias_table` (`sucursal_id`, `turno_saliente_id`, `turno_entrante_id`, `producto_id`, `stock_esperado`, `stock_declarado`, `diferencia`, `resuelto`) y agregar columnas `fcm_token` y `device_id` a la tabla `usuarios` para el control de dispositivo maestro del Administrador en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/AlertaDiscrepancia.php
+- [ ] T113 [US15] En `TurnoController.php` (`abrirTurno`), comparar el `corte_inicial` entrante contra el último `corte_final` cerrado en la misma sucursal; si existe discrepancia, persistir la alerta en `alertas_discrepancias` y retornar los datos del faltante para aviso inmediato en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [ ] T114 [P] [US15] Crear `AlertaController.php` con endpoints (`GET /alertas/discrepancias`, `POST /alertas/{id}/resolver`, `POST /dispositivos/registrar-maestro`, `POST /dispositivos/desvincular`) asegurando revocación automática de token al cerrar sesión en celulares ajenos de barmen en backend/routes/api.php y backend/app/Infrastructure/Http/Controllers/Api/AlertaController.php
+- [ ] T115 [US15] En `corte_inventario_screen.dart`, al detectar discrepancia en la apertura, desplegar advertencia modal obligatoria al barman con botón verde destacado **`"📱 NOTIFICAR A DANIEL POR WHATSAPP"`** que abra `https://wa.me/59167369293` con el mensaje pre-llenado (sucursal, turno saliente, turno entrante y botellas faltantes) en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [ ] T116 [US15] En `dashboard_admin_screen.dart`, agregar switch **"📱 Este es mi celular personal (Recibir Alertas)"** para enlazar únicamente el teléfono de Daniel, y desplegar el banner flotante rojo neón 🚨 con sonido, contador de alertas y botón de WhatsApp directo en frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
+- [ ] T117 [US15] Validar end-to-end la detección de fuga inter-turnos, la desvinculación al salir de teléfonos de barmen, el despacho directo a WhatsApp `67369293` y la alerta en el teléfono del Administrador
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -268,21 +331,34 @@
 - **Phase 12 (Refinamiento)**: Refactorizaciones operativas previas (US4, US5, US7, US9, US10).
 - **Phase 13 (Módulos Avanzados)**: Compras multi-producto, auditoría 3 pasos con PDF y foto en cobro.
 - **Phase 14 (Operatividad Barra & Fórmulas)**: Corrección de error 400 en corte, PDF de conteo para WhatsApp, recepción multi-producto en barra y recetas dinámicas/compuestas.
+- **Phase 15 (US11 - Sucursales)**: Gestión integral de sucursales por el Administrador.
+- **Phase 16 (US12 - Recetas Dinámicas)**: Creación de transformaciones simples y compuestas desde la app móvil.
+- **Phase 17 (US13 - Entrada Numérica Rápida y Atajos por Caja)**: Entrada directa por teclado táctil y botones rápidos `+12`, `+24` en conteos y recepciones.
+- **Phase 18 (US14 - Motivos de Baja Dinámicos & PDF Cierre)**: CRUD de motivos y acta oficial de cierre con envío a WhatsApp.
+- **Phase 19 (US15 - Alerta Inteligente de Fuga entre Turnos)**: Comparador automático cierre vs apertura y alerta roja con WhatsApp en móvil de Admin.
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Backend Endpoints y Modelos Independientes (Phase 14):
-Task T084: "Normalizar tipo_corte en EloquentTurnoRepository y migración expand_tipo_corte_enum"
-Task T085: "Actualizar productosParaCorte con tipo_producto en TurnoController"
-Task T088: "Soporte multi-ingrediente en RegistrarRellenoUseCase"
+# Backend Endpoints y Modelos Independientes (Phase 16, 17, 18, 19):
+Task T097: "Migración insumo_secundario_id y relaciones en RecetaTransformacion.php"
+Task T098: "Actualización de GestionarRecetasUseCase y RecetaController"
+Task T107: "Migración y modelo MotivoBaja.php"
+Task T108: "Controlador MotivoBajaController.php"
+Task T112: "Migración y modelo AlertaDiscrepancia.php"
+Task T114: "Controlador AlertaController.php"
 
-# Frontend Pantallas Independientes (Phase 14):
-Task T086: "Generación de PDF inicial y botón WhatsApp en corte_inventario_screen.dart"
-Task T087: "Rediseño multi-producto de ingreso_mercaderia_screen.dart"
-Task T089: "Insumo intercambiable en recetas_screen.dart y transformacion_screen.dart"
+# Frontend Pantallas Independientes:
+Task T099: "Diálogo de nueva transformación (+ FAB) en recetas_screen.dart"
+Task T100: "Carga dinámica de recetas e insumos en transformacion_screen.dart"
+Task T103: "Entrada numérica y atajos +12/+24 en bottle_fraction_selector.dart"
+Task T104: "Campo numérico directo y atajos +12/+24 en ingreso_mercaderia_screen.dart"
+Task T109: "Pantalla MotivosBajaAdminScreen.dart"
+Task T110: "Carga dinámica de motivos en bajas_roturas_screen.dart"
+Task T111: "Acta de cierre en PDF y botón WhatsApp en corte_inventario_screen.dart"
+Task T116: "Banner flotante de alertas de fuga en dashboard_admin_screen.dart"
 ```
 
 ---
@@ -291,4 +367,5 @@ Task T089: "Insumo intercambiable en recetas_screen.dart y transformacion_screen
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
 - El núcleo MVP queda delimitado en las Fases 1, 2 y 3 (User Story 1).
+
 
