@@ -18,7 +18,8 @@ class EloquentRecetaRepository implements RecetaRepositoryPort
 
     public function listarRecetasTransformacion(): array
     {
-        return RecetaTransformacion::with(['insumoOrigen', 'productoDestino'])
+        return RecetaTransformacion::with(['insumoOrigen', 'insumoSecundario', 'productoDestino'])
+            ->orderBy('id', 'desc')
             ->get()
             ->toArray();
     }
@@ -37,6 +38,7 @@ class EloquentRecetaRepository implements RecetaRepositoryPort
     public function listarRecetasCombos(): array
     {
         return RecetaCombo::with('productoTerminado')
+            ->orderBy('id', 'desc')
             ->get()
             ->toArray();
     }

@@ -24,9 +24,11 @@ class GestionarRecetasUseCase
     public function guardarTransformacion(array $datos, ?int $id = null): RecetaTransformacion
     {
         $insumoId = (int) $datos['insumo_origen_id'];
+        $secundarioId = !empty($datos['insumo_secundario_id']) ? (int) $datos['insumo_secundario_id'] : null;
         $destinoId = (int) $datos['producto_destino_id'];
+        $nombre = !empty($datos['nombre']) ? trim($datos['nombre']) : null;
         $tarifa = (float) ($datos['tarifa_comision_unidad'] ?? $datos['tarifa_comision'] ?? 1.00);
-        $ratio = (float) ($datos['ratio_referencia_esperado'] ?? $datos['ratio_teorico'] ?? 1.167);
+        $ratio = (float) ($datos['ratio_referencia_esperado'] ?? $datos['ratio_teorico'] ?? 1.00);
         $activo = (bool) ($datos['activo'] ?? true);
 
         if ($tarifa < 0) {
@@ -37,24 +39,29 @@ class GestionarRecetasUseCase
             throw new DomainException("El ratio teórico debe ser mayor a 0.");
         }
 
-        if ($id) {
-            $this->recetaRepo->actualizarRecetaTransformacion($id, [
-                'insumo_origen_id' => $insumoId,
-                'producto_destino_id' => $destinoId,
-                'tarifa_comision_unidad' => $tarifa,
-                'ratio_referencia_esperado' => $ratio,
-                'activo' => $activo,
-            ]);
-            return RecetaTransformacion::findOrFail($id);
-        }
-
-        return $this->recetaRepo->crearRecetaTransformacion([
+        $payload = [
+            'nombre' => $nombre,
             'insumo_origen_id' => $insumoId,
+            'insumo_secundario_id' => $secundarioId,
             'producto_destino_id' => $destinoId,
             'tarifa_comision_unidad' => $tarifa,
             'ratio_referencia_esperado' => $ratio,
             'activo' => $activo,
-        ]);
+        ];
+
+        if ($id) {
+            $this->recetaRepo->actualizarRecetaTransformacion($id, $payload);
+            return RecetaTransformacion::with(['insumoOrigen', 'insumoSecundario', 'productoDestino'])->findOrFail($id);
+        }
+
+        $receta = $this->recetaRepo->crearRecetaTransformacion($payload);
+        return RecetaTransformacion::with(['insumoOrigen', 'insumoSecundario', 'productoDestino'])->findOrFail($receta->id);
+    }
+
+    public function eliminarTransformacion(int $id): bool
+    {
+        $receta = RecetaTransformacion::findOrFail($id);
+        return $receta->delete();
     }
 
     public function listarCombos(): array
@@ -90,5 +97,11 @@ class GestionarRecetasUseCase
             'unidades_equivalentes' => $unidades,
             'activo' => $activo,
         ]);
+    }
+
+    public function eliminarCombo(int $id): bool
+    {
+        $combo = RecetaCombo::findOrFail($id);
+        return $combo->delete();
     }
 }

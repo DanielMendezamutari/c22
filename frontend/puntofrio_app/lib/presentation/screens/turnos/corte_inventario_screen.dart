@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/bottle_fraction_selector.dart';
+import 'cierre_turno_pdf_service.dart';
 import 'conteo_pdf_service.dart';
 
 enum TipoOperacionCorte { apertura, cierre }
@@ -157,10 +159,25 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
 
         final res = await apiClient.post('/turnos/abrir', data: payload);
         if (res.statusCode == 201) {
-          final nuevoTurnoId = res.data['data']['turno_id'] as int;
+          final data = res.data['data'] as Map<String, dynamic>;
+          final nuevoTurnoId = (data['turno_id'] ?? data['id']) as int;
+          final tieneDiscrepancias = data['tiene_discrepancias'] == true;
+          final discrepancias = (data['discrepancias'] as List?) ?? [];
+
           ref.read(authProvider.notifier).actualizarTurnoActivo(nuevoTurnoId);
 
           if (mounted) {
+            // Si hay discrepancias con el turno saliente, mostrar alerta con WhatsApp
+            if (tieneDiscrepancias && discrepancias.isNotEmpty) {
+              await _mostrarAlertaDiscrepanciaApertura(
+                context: context,
+                turnoId: nuevoTurnoId,
+                sucursal: sucursalNombre,
+                barman: barmanNombre,
+                discrepancias: discrepancias,
+              );
+            }
+
             // Mostrar Diálogo con Acciones de PDF para WhatsApp
             await showDialog(
               context: context,
@@ -260,6 +277,7 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
           }
         }
       } else {
+        // Cierre de Turno
         final turnoId = widget.turnoId ?? auth.turnoActivoId ?? 1;
         final payload = {
           'corte_final': cortesArray,
@@ -268,13 +286,102 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
         await apiClient.post('/turnos/$turnoId/cerrar', data: payload);
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Turno cerrado y corte final inmutabilizado.'),
-              backgroundColor: Color(0xFF27AE60),
+          // Mostrar Acta Oficial de Cierre en PDF y botón de WhatsApp
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1B2332),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: const [
+                  Icon(Icons.lock_clock, color: Color(0xFFE74C3C), size: 28),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '¡Turno Cerrado con Éxito!',
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Turno #$turnoId cerrado y balance asentado.',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Se ha generado el Acta Oficial de Cierre y Balance. Compártala por WhatsApp para respaldar la entrega de barra.',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  const SizedBox(height: 18),
+                  // Botón Compartir WhatsApp
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.share, size: 20),
+                      label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        await CierreTurnoPdfService.compartirEnWhatsApp(
+                          context: ctx,
+                          turnoId: turnoId,
+                          sucursal: sucursalNombre,
+                          barman: barmanNombre,
+                          tipoTurno: _tipoTurnoSeleccionado,
+                          items: _items,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Botón Ver / Imprimir PDF
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF3498DB),
+                        side: const BorderSide(color: Color(0xFF3498DB)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf, size: 20),
+                      label: const Text('VER / IMPRIMIR PDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        await CierreTurnoPdfService.previsualizarOImprimir(
+                          context: ctx,
+                          turnoId: turnoId,
+                          sucursal: sucursalNombre,
+                          barman: barmanNombre,
+                          tipoTurno: _tipoTurnoSeleccionado,
+                          items: _items,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Finalizar', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                ),
+              ],
             ),
           );
-          Navigator.of(context).pop();
+          return;
         }
       }
     } catch (e) {
@@ -300,6 +407,137 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _mostrarAlertaDiscrepanciaApertura({
+    required BuildContext context,
+    required int turnoId,
+    required String sucursal,
+    required String barman,
+    required List discrepancias,
+  }) async {
+    // Redactar mensaje pre-llenado de WhatsApp para Daniel (67369293)
+    final buffer = StringBuffer();
+    buffer.writeln('🚨 *ALERTA PUNTO FRÍO - DISCREPANCIA EN APERTURA*');
+    buffer.writeln('📍 *Sucursal:* $sucursal');
+    buffer.writeln('👤 *Barman Entrante:* $barman');
+    buffer.writeln('🕒 *Turno Entrante:* #$turnoId');
+    buffer.writeln('⚠️ *Detalle de Faltantes respecto al Cierre Anterior:*');
+    for (final d in discrepancias) {
+      final prod = d['producto_nombre'] ?? 'Producto #${d['producto_id']}';
+      final esp = d['stock_esperado'];
+      final dec = d['stock_declarado'];
+      final dif = d['diferencia'];
+      buffer.writeln('• $prod: Esperado $esp | Declarado $dec (Diferencia: $dif)');
+    }
+    buffer.writeln('');
+    buffer.writeln('Favor verificar de inmediato con el turno saliente.');
+
+    final encodedText = Uri.encodeComponent(buffer.toString());
+    final urlWhatsApp = Uri.parse('https://wa.me/59167369293?text=$encodedText');
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B28),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFE74C3C), width: 2),
+        ),
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFE74C3C), size: 30),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '¡DISCREPANCIA EN APERTURA!',
+                style: TextStyle(color: Color(0xFFE74C3C), fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'El conteo físico de apertura no coincide con el corte final registrado por el turno anterior en esta sucursal:',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ...discrepancias.map((d) {
+                final prod = d['producto_nombre'] ?? 'Producto #${d['producto_id']}';
+                final esp = d['stock_esperado'];
+                final dec = d['stock_declarado'];
+                final dif = d['diferencia'];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2C1E2B),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          prod.toString(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('Esperado: $esp | Entrante: $dec',
+                              style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                          Text(
+                            'Dif: $dif botellas',
+                            style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 16),
+              // Botón Verde Directo a WhatsApp de Daniel (67369293)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.chat, size: 20),
+                  label: const Text(
+                    '📱 NOTIFICAR A DANIEL POR WHATSAPP',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  onPressed: () async {
+                    if (await canLaunchUrl(urlWhatsApp)) {
+                      await launchUrl(urlWhatsApp, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido / Continuar', style: TextStyle(color: Colors.white60)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

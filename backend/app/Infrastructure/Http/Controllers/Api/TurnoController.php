@@ -38,11 +38,65 @@ class TurnoController extends Controller
             $datos['barman_id'] = $barmanId;
 
             $resultado = $this->abrirUseCase->ejecutar($datos);
+            $nuevoTurnoId = is_array($resultado) ? ($resultado['id'] ?? null) : $resultado->id;
+
+            // Detección automática de discrepancias entre turnos consecutivos (Fuga inter-turnos)
+            $sucursalId = (int) ($datos['sucursal_id'] ?? 1);
+            $discrepancias = [];
+
+            $turnoSaliente = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with('usuario')
+                ->where('sucursal_id', $sucursalId)
+                ->where('id', '!=', $nuevoTurnoId)
+                ->whereIn('estado', ['cerrado', 'cobrado', 'auditado'])
+                ->latest('id')
+                ->first();
+
+            if ($turnoSaliente) {
+                $cortesCierreAnterior = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $turnoSaliente->id)
+                    ->whereIn('tipo_corte', ['final', 'cierre'])
+                    ->pluck('cantidad', 'producto_id')
+                    ->toArray();
+
+                $corteInicial = $datos['corte_inicial'] ?? [];
+                foreach ($corteInicial as $item) {
+                    $productoId = (int) $item['producto_id'];
+                    $cantidadDeclarada = (float) $item['cantidad'];
+                    $stockEsperado = (float) ($cortesCierreAnterior[$productoId] ?? 0.0);
+                    $diferencia = round($cantidadDeclarada - $stockEsperado, 2);
+
+                    if (abs($diferencia) >= 0.01) {
+                        \App\Infrastructure\Persistence\Eloquent\Models\AlertaDiscrepancia::create([
+                            'sucursal_id' => $sucursalId,
+                            'turno_saliente_id' => $turnoSaliente->id,
+                            'turno_entrante_id' => $nuevoTurnoId,
+                            'producto_id' => $productoId,
+                            'stock_esperado' => $stockEsperado,
+                            'stock_declarado' => $cantidadDeclarada,
+                            'diferencia' => $diferencia,
+                            'resuelto' => false,
+                            'observaciones' => "Discrepancia en apertura: Cierre previo {$stockEsperado}, Apertura entrante {$cantidadDeclarada}",
+                            'fecha_alerta' => now(),
+                        ]);
+
+                        $prod = \App\Infrastructure\Persistence\Eloquent\Models\Producto::find($productoId);
+                        $discrepancias[] = [
+                            'producto_id' => $productoId,
+                            'producto_nombre' => $prod ? $prod->nombre : "Producto #$productoId",
+                            'stock_esperado' => $stockEsperado,
+                            'stock_declarado' => $cantidadDeclarada,
+                            'diferencia' => $diferencia,
+                            'turno_saliente_barman' => $turnoSaliente->usuario ? ($turnoSaliente->usuario->nombre . ' ' . $turnoSaliente->usuario->apellido) : 'Turno Anterior',
+                        ];
+                    }
+                }
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Turno abierto exitosamente',
                 'data' => $resultado,
+                'tiene_discrepancias' => count($discrepancias) > 0,
+                'discrepancias' => $discrepancias,
             ], 201);
         } catch (Throwable $e) {
             return response()->json([

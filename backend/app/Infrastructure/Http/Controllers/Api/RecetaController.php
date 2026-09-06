@@ -36,10 +36,14 @@ class RecetaController extends Controller
     public function guardarTransformacion(Request $request, ?int $id = null): JsonResponse
     {
         $request->validate([
+            'nombre' => 'nullable|string|max:150',
             'insumo_origen_id' => 'required|integer|exists:productos,id',
+            'insumo_secundario_id' => 'nullable|integer|exists:productos,id',
             'producto_destino_id' => 'required|integer|exists:productos,id',
-            'tarifa_comision' => 'required|numeric|min:0',
-            'ratio_teorico' => 'required|numeric|min:0.01',
+            'tarifa_comision' => 'nullable|numeric|min:0',
+            'tarifa_comision_unidad' => 'nullable|numeric|min:0',
+            'ratio_teorico' => 'nullable|numeric|min:0.01',
+            'ratio_referencia_esperado' => 'nullable|numeric|min:0.01',
             'activo' => 'nullable|boolean',
         ]);
 
@@ -50,6 +54,22 @@ class RecetaController extends Controller
                 'message' => $id ? 'Receta actualizada exitosamente' : 'Receta creada exitosamente',
                 'data' => $receta,
             ], $id ? 200 : 201);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function eliminarTransformacion(int $id): JsonResponse
+    {
+        try {
+            $this->useCase->eliminarTransformacion($id);
+            return response()->json([
+                'success' => true,
+                'message' => 'Receta eliminada exitosamente',
+            ]);
         } catch (Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -79,7 +99,8 @@ class RecetaController extends Controller
         $request->validate([
             'nombre_combo' => 'required|string|max:100',
             'producto_terminado_id' => 'required|integer|exists:productos,id',
-            'unidades_producto' => 'required|integer|min:1',
+            'unidades_producto' => 'nullable|integer|min:1',
+            'unidades_equivalentes' => 'nullable|integer|min:1',
             'precio_combo' => 'nullable|numeric|min:0',
             'activo' => 'nullable|boolean',
         ]);
@@ -91,6 +112,22 @@ class RecetaController extends Controller
                 'message' => $id ? 'Combo actualizado exitosamente' : 'Combo creado exitosamente',
                 'data' => $combo,
             ], $id ? 200 : 201);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function eliminarCombo(int $id): JsonResponse
+    {
+        try {
+            $this->useCase->eliminarCombo($id);
+            return response()->json([
+                'success' => true,
+                'message' => 'Combo eliminado exitosamente',
+            ]);
         } catch (Throwable $e) {
             return response()->json([
                 'success' => false,

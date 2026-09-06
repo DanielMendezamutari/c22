@@ -33,13 +33,15 @@ Route::prefix('v1')->group(function () {
     Route::get('/liquidaciones/semanal', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'liquidacionSemanal']);
     Route::get('/auditoria/ratios', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'reporteRatios']);
 
-    // Gestión Dinámica de Recetas y Combos - User Story 6 & F1
+    // Gestión Dinámica de Recetas y Combos - User Story 6 & 12
     Route::get('/recetas/transformacion', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'listarTransformaciones']);
     Route::post('/recetas/transformacion', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'guardarTransformacion']);
     Route::put('/recetas/transformacion/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'guardarTransformacion']);
+    Route::delete('/recetas/transformacion/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'eliminarTransformacion']);
     Route::get('/recetas/combos', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'listarCombos']);
     Route::post('/recetas/combos', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'guardarCombo']);
     Route::put('/recetas/combos/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'guardarCombo']);
+    Route::delete('/recetas/combos/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'eliminarCombo']);
 
     // Traspasos Inter-Sucursales - User Story 4
     Route::post('/traspasos/enviar', [\App\Infrastructure\Http\Controllers\Api\TraspasoController::class, 'enviar']);
@@ -58,8 +60,13 @@ Route::prefix('v1')->group(function () {
     Route::put('/usuarios/{id}', [\App\Infrastructure\Http\Controllers\Api\UserController::class, 'update']);
     Route::put('/usuarios/{id}/pin', [\App\Infrastructure\Http\Controllers\Api\UserController::class, 'cambiarPin']);
 
-    // Declaración Directa de Bajas y Roturas en Barra - User Story 10
+    // Declaración Directa de Bajas y Roturas en Barra - User Story 10 & 14
     Route::post('/inventario/bajas', [\App\Infrastructure\Http\Controllers\Api\TransformacionController::class, 'registrarBaja']);
+    Route::get('/motivos-baja', [\App\Infrastructure\Http\Controllers\Api\MotivoBajaController::class, 'index']);
+    Route::get('/motivos-baja/admin', [\App\Infrastructure\Http\Controllers\Api\MotivoBajaController::class, 'indexAdmin']);
+    Route::post('/motivos-baja', [\App\Infrastructure\Http\Controllers\Api\MotivoBajaController::class, 'store']);
+    Route::put('/motivos-baja/{id}', [\App\Infrastructure\Http\Controllers\Api\MotivoBajaController::class, 'update']);
+    Route::delete('/motivos-baja/{id}', [\App\Infrastructure\Http\Controllers\Api\MotivoBajaController::class, 'destroy']);
 
     // Liquidación Semanal: Registro de Pago
     Route::post('/liquidaciones/pagar', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'registrarPagoLiquidacion']);
@@ -76,5 +83,13 @@ Route::prefix('v1')->group(function () {
     Route::post('/sucursales', [\App\Infrastructure\Http\Controllers\Api\SucursalController::class, 'store']);
     Route::put('/sucursales/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalController::class, 'update']);
     Route::patch('/sucursales/{id}/toggle-activo', [\App\Infrastructure\Http\Controllers\Api\SucursalController::class, 'toggleActivo']);
+
+    // Alertas de Fuga / Discrepancias entre Turnos y Dispositivos Maestros - User Story 15
+    Route::get('/alertas/discrepancias', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'listarDiscrepancias']);
+    Route::post('/alertas/{id}/resolver', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'resolverDiscrepancia']);
+    Route::post('/dispositivos/registrar-maestro', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'registrarDispositivoMaestro']);
+    Route::post('/dispositivos/desvincular', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'desvincularDispositivo']);
+    Route::get('/dispositivos/maestros', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'listarDispositivosMaestros']);
 });
+
 

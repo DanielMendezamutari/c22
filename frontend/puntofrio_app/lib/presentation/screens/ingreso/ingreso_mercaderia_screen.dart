@@ -481,7 +481,7 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
           const SizedBox(height: 8),
           Row(
             children: [
-              const Text('Cantidad: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const Text('Cantidad: ', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.remove_circle_outline, color: Colors.white70),
@@ -491,12 +491,29 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
                   }
                 },
               ),
-              Container(
-                constraints: const BoxConstraints(minWidth: 44),
-                alignment: Alignment.center,
-                child: Text(
-                  item.cantidad.toStringAsFixed(0),
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              InkWell(
+                onTap: () => _editarCantidadItem(item),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 64),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B2332),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF3498DB), width: 1.2),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item.cantidad.toStringAsFixed(0),
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit, size: 12, color: Color(0xFF5DADE2)),
+                    ],
+                  ),
                 ),
               ),
               IconButton(
@@ -507,7 +524,90 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              _buildShortcutButton('+6', () => setState(() => item.cantidad += 6)),
+              const SizedBox(width: 6),
+              _buildShortcutButton('+12 (Caja)', () => setState(() => item.cantidad += 12)),
+              const SizedBox(width: 6),
+              _buildShortcutButton('+24 (2 Cajas)', () => setState(() => item.cantidad += 24)),
+              const SizedBox(width: 6),
+              _buildShortcutButton('+60', () => setState(() => item.cantidad += 60)),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  void _editarCantidadItem(RecepcionItemDraft item) {
+    final ctrl = TextEditingController(text: item.cantidad.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2332),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: const [
+            Icon(Icons.edit, color: Color(0xFF3498DB), size: 20),
+            SizedBox(width: 8),
+            Text('Digitar Cantidad', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFF141923),
+            labelText: 'Cantidad recibida (unidades)',
+            labelStyle: const TextStyle(color: Colors.white60),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF27AE60)),
+            onPressed: () {
+              final v = double.tryParse(ctrl.text.trim());
+              if (v != null && v > 0) {
+                setState(() => item.cantidad = v);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('ACEPTAR', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShortcutButton(String label, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1B2332),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFF3498DB).withOpacity(0.5)),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF5DADE2), fontSize: 10, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
       ),
     );
   }

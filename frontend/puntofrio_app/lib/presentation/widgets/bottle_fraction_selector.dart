@@ -16,8 +16,111 @@ class BottleFractionSelector extends StatelessWidget {
   double get fraccion => double.parse((value - enteros).toStringAsFixed(2));
 
   void _updateValue(int newEnteros, double newFraccion) {
-    final total = double.parse((newEnteros + newFraccion).toStringAsFixed(2));
+    final clampEnteros = newEnteros < 0 ? 0 : newEnteros;
+    final total = double.parse((clampEnteros + newFraccion).toStringAsFixed(2));
     onChanged(total);
+  }
+
+  void _incrementarEnteros(int delta) {
+    final nuevo = (enteros + delta).clamp(0, 99999);
+    _updateValue(nuevo, fraccion);
+  }
+
+  void _mostrarDialogoEdicionDirecta(BuildContext context) {
+    final controller = TextEditingController(text: enteros.toString());
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2332),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.edit_note, color: Color(0xFF3498DB)),
+            SizedBox(width: 8),
+            Text(
+              'Cantidad de Enteras',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              productName,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFF121620),
+                labelText: 'Unidades enteras (cajas/botellas)',
+                labelStyle: const TextStyle(color: Colors.white60, fontSize: 13),
+                hintText: 'Ej. 120, 360...',
+                hintStyle: const TextStyle(color: Colors.white24),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white38),
+                  onPressed: () => controller.clear(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _buildChipAtajoDialogo('+12', 12, controller),
+                _buildChipAtajoDialogo('+24', 24, controller),
+                _buildChipAtajoDialogo('+60', 60, controller),
+                _buildChipAtajoDialogo('+120', 120, controller),
+                _buildChipAtajoDialogo('+360', 360, controller),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF27AE60),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              final val = int.tryParse(controller.text.trim());
+              if (val != null) {
+                _updateValue(val, fraccion);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('ACEPTAR', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChipAtajoDialogo(String label, int addVal, TextEditingController ctrl) {
+    return ActionChip(
+      backgroundColor: const Color(0xFF242E42),
+      side: const BorderSide(color: Color(0xFF3498DB), width: 0.8),
+      label: Text(label, style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+      onPressed: () {
+        final current = int.tryParse(ctrl.text.trim()) ?? 0;
+        ctrl.text = (current + addVal).toString();
+      },
+    );
   }
 
   @override
@@ -70,7 +173,7 @@ class BottleFractionSelector extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Botón restar entero
+              // Botón restar 1 entero
               IconButton(
                 style: IconButton.styleFrom(
                   backgroundColor: const Color(0xFF242E42),
@@ -81,26 +184,45 @@ class BottleFractionSelector extends StatelessWidget {
               ),
               const SizedBox(width: 8),
 
-              // Unidades Enteras
-              Column(
-                children: [
-                  Text(
-                    '$enteros',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                    ),
+              // Unidades Enteras (Toque para editar directamente con teclado numérico)
+              InkWell(
+                onTap: () => _mostrarDialogoEdicionDirecta(context),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141923),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF3498DB).withOpacity(0.4), width: 1.5),
                   ),
-                  const Text(
-                    'Enteras',
-                    style: TextStyle(color: Colors.white60, fontSize: 11),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$enteros',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.edit, size: 14, color: Color(0xFF3498DB)),
+                        ],
+                      ),
+                      const Text(
+                        'Tocar para escribir',
+                        style: TextStyle(color: Color(0xFF5DADE2), fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
               const SizedBox(width: 8),
 
-              // Botón sumar entero
+              // Botón sumar 1 entero
               IconButton(
                 style: IconButton.styleFrom(
                   backgroundColor: const Color(0xFF242E42),
@@ -113,6 +235,20 @@ class BottleFractionSelector extends StatelessWidget {
 
               // Gráfico de botella estilizada con nivel de líquido
               _buildBottleGraphic(fraccion),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Chips de Atajo Rápido por Caja (+6, +12, +24, -12)
+          Row(
+            children: [
+              _buildShortcutChip('+6', () => _incrementarEnteros(6)),
+              const SizedBox(width: 6),
+              _buildShortcutChip('+12 (Caja)', () => _incrementarEnteros(12)),
+              const SizedBox(width: 6),
+              _buildShortcutChip('+24 (2 Cajas)', () => _incrementarEnteros(24)),
+              const SizedBox(width: 6),
+              _buildShortcutChip('-12', enteros >= 12 ? () => _incrementarEnteros(-12) : null, isNegative: true),
             ],
           ),
           const SizedBox(height: 14),
@@ -135,6 +271,48 @@ class BottleFractionSelector extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildShortcutChip(String label, VoidCallback? onTap, {bool isNegative = false}) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: onTap == null
+                ? Colors.white10
+                : isNegative
+                    ? const Color(0xFFC0392B).withOpacity(0.2)
+                    : const Color(0xFF27AE60).withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: onTap == null
+                  ? Colors.white12
+                  : isNegative
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFF2ECC71),
+              width: 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: onTap == null
+                    ? Colors.white30
+                    : isNegative
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFF2ECC71),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -171,7 +349,6 @@ class BottleFractionSelector extends StatelessWidget {
   }
 
   Widget _buildBottleGraphic(double frac) {
-    // Altura del líquido según la fracción (0.0, 0.25, 0.5, 0.75)
     final double fillPercent = frac == 0.0 ? 0.05 : frac;
 
     return Container(

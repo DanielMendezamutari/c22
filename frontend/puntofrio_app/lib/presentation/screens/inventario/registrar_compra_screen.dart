@@ -461,16 +461,46 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
                                                 }
                                               }),
                                               Expanded(
-                                                child: Center(
-                                                  child: Text(
-                                                    item.cantidad.toStringAsFixed(0),
-                                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                                child: InkWell(
+                                                  onTap: () => _editarCantidadCompra(item),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: Container(
+                                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF0F172A),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.5)),
+                                                    ),
+                                                    child: Center(
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            item.cantidad.toStringAsFixed(0),
+                                                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                                          ),
+                                                          const SizedBox(width: 4),
+                                                          const Icon(Icons.edit, size: 12, color: Color(0xFF38BDF8)),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                               _btnMini('+', () {
                                                 setState(() => item.cantidad += 1);
                                               }),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              _buildAtajoCaja('+12', () => setState(() => item.cantidad += 12)),
+                                              const SizedBox(width: 4),
+                                              _buildAtajoCaja('+24', () => setState(() => item.cantidad += 24)),
+                                              const SizedBox(width: 4),
+                                              _buildAtajoCaja('+60', () => setState(() => item.cantidad += 60)),
                                             ],
                                           ),
                                         ],
@@ -608,6 +638,73 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
         ),
         alignment: Alignment.center,
         child: Text(txt, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildAtajoCaja(String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  void _editarCantidadCompra(CompraItemDraft item) {
+    final ctrl = TextEditingController(text: item.cantidad.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit, color: Color(0xFF38BDF8), size: 20),
+            SizedBox(width: 8),
+            Text('Digitar Cantidad', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFF0F172A),
+            labelText: 'Unidades de compra (botellas/cajas)',
+            labelStyle: const TextStyle(color: Colors.white60),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+            onPressed: () {
+              final v = double.tryParse(ctrl.text.trim());
+              if (v != null && v > 0) {
+                setState(() => item.cantidad = v);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('ACEPTAR', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

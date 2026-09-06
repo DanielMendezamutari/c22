@@ -18,13 +18,12 @@ class _BajasRoturasScreenState extends ConsumerState<BajasRoturasScreen> {
   final TextEditingController _obsCtrl = TextEditingController();
   String _motivoSeleccionado = 'Rotura Accidental en Barra';
 
-  final List<String> _motivos = [
+  List<String> _motivos = [
     'Rotura Accidental en Barra',
     'Botella Quebrada en Descorche',
     'Defecto de Fábrica / Sin Gas',
     'Vencimiento de Producto',
     'Derrame Accidental',
-    'Otro',
   ];
 
   final List<Map<String, dynamic>> _bajasRecientes = [];
@@ -32,7 +31,7 @@ class _BajasRoturasScreenState extends ConsumerState<BajasRoturasScreen> {
   @override
   void initState() {
     super.initState();
-    _cargarProductos();
+    _cargarDatos();
   }
 
   @override
@@ -42,9 +41,26 @@ class _BajasRoturasScreenState extends ConsumerState<BajasRoturasScreen> {
     super.dispose();
   }
 
-  Future<void> _cargarProductos() async {
+  Future<void> _cargarDatos() async {
+    final client = ref.read(apiClientProvider);
+
+    // 1. Cargar motivos dinámicos desde API
     try {
-      final client = ref.read(apiClientProvider);
+      final resMotivos = await client.get('/motivos-baja');
+      if (resMotivos.data['success'] == true && resMotivos.data['data'] != null) {
+        final List<dynamic> lista = resMotivos.data['data'];
+        final descs = lista.map((m) => m['descripcion'].toString()).toList();
+        if (descs.isNotEmpty) {
+          setState(() {
+            _motivos = descs;
+            _motivoSeleccionado = _motivos.first;
+          });
+        }
+      }
+    } catch (_) {}
+
+    // 2. Cargar catálogo de productos
+    try {
       final resp = await client.get('/productos');
       final List<dynamic> items = resp.data['data'] ?? [];
 

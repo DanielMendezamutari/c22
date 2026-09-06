@@ -11,7 +11,9 @@ class RecetaTransformacion extends Model
     protected $table = 'recetas_transformacion';
 
     protected $fillable = [
+        'nombre',
         'insumo_origen_id',
+        'insumo_secundario_id',
         'producto_destino_id',
         'tarifa_comision_unidad',
         'ratio_referencia_esperado',
@@ -29,6 +31,11 @@ class RecetaTransformacion extends Model
     public function insumoOrigen(): BelongsTo
     {
         return $this->belongsTo(Producto::class, 'insumo_origen_id');
+    }
+
+    public function insumoSecundario(): BelongsTo
+    {
+        return $this->belongsTo(Producto::class, 'insumo_secundario_id');
     }
 
     public function productoDestino(): BelongsTo
