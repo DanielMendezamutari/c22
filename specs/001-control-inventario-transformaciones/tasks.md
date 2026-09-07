@@ -382,47 +382,85 @@
 
 ---
 
+## Phase 23: User Story 19 - Gestión Centralizada de Proveedores y Selección Rápida en Recepción (Priority: P1)
+
+**Goal**: Proveer un catálogo comercial normalizado de proveedores gestionado por el Administrador y permitir al barman seleccionar al proveedor de un desplegable con búsqueda rápida en la recepción de mercadería, eliminando textos libres y errores de tipeo.
+
+**Independent Test**:
+1. En el Dashboard Admin, ingresar a "GESTIÓN DE PROVEEDORES" y registrar "Distribuidora San Juan".
+2. Como Barman, entrar a "RECEPCIÓN DE MERCADERÍA", abrir el selector de proveedores: debe figurar "Distribuidora San Juan".
+3. Guardar la recepción de mercadería: la compra y el kardex quedan formalmente asignados al proveedor seleccionado.
+
+- [ ] T143 [P] [US19] Crear migración `create_proveedores_table` (`id`, `nombre`, `contacto_nombre`, `telefono`, `nit_o_ci`, `direccion`, `activo`, `timestamps`) con seed de proveedores iniciales y modelo Eloquent `Proveedor.php` en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/Proveedor.php
+- [ ] T144 [US19] Crear `ProveedorController.php` con endpoints REST (`GET /proveedores`, `POST /proveedores`, `PUT /proveedores/{id}`, `DELETE /proveedores/{id}`) y registrar rutas en backend/routes/api.php y backend/app/Infrastructure/Http/Controllers/Api/ProveedorController.php
+- [ ] T145 [P] [US19] Crear pantalla `proveedores_admin_screen.dart` para altas, edición y suspensión de proveedores, e integrarla en `dashboard_admin_screen.dart` con la tarjeta 'GESTIÓN DE PROVEEDORES' en frontend/puntofrio_app/lib/presentation/screens/admin/proveedores_admin_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
+- [ ] T146 [US19] En `ingreso_mercaderia_screen.dart`, sustituir el campo de texto libre por un selector desplegable con búsqueda dinámica de proveedores activos consumiendo `/proveedores?activo=1` en frontend/puntofrio_app/lib/presentation/screens/ingreso/ingreso_mercaderia_screen.dart
+
+---
+
+## Phase 24: User Story 20 - Monitoreo Operativo de Sucursal e Informe PDF en Vivo/Histórico para Administrador (Priority: P1)
+
+**Goal**: Habilitar en la app móvil del Administrador la supervisión y auditoría en tiempo real de cualquier sucursal (Casa22, Corona, Madan), permitiendo consultar el turno activo en vivo o turnos cerrados pasados y exportar un Informe Operativo Integral en PDF con balance de masa y liquidación.
+
+**Independent Test**:
+1. En Dashboard Admin, pulsar "MONITOREO Y REPORTES DE SUCURSAL" y seleccionar "Casa22".
+2. Visualizar la tarjeta del turno en curso (barman, hora de apertura, estado abierto).
+3. Presionar "GENERAR INFORME OFICIAL PDF": debe renderizarse el PDF consolidado (conteo inicial, compras/proveedores, traspasos, bajas, transformaciones, balances y liquidación) con botón para compartir en WhatsApp.
+
+- [ ] T147 [US20] Crear endpoint `GET /auditoria/sucursal/{sucursal_id}/informe-turno` en `AuditoriaController.php` que compile metadatos del turno, corte inicial, compras de proveedores con notas, traspasos netos, bajas justificadas, transformaciones/comisiones y liquidación económica en backend/app/Infrastructure/Http/Controllers/Api/AuditoriaController.php
+- [ ] T148 [P] [US20] Crear servicio `informe_operativo_turno_pdf_service.dart` para renderizar el documento PDF oficial corporativo de auditoría con tablas de balance, firmas de custodios y función de compartir por WhatsApp en frontend/puntofrio_app/lib/presentation/screens/admin/informe_operativo_turno_pdf_service.dart
+- [ ] T149 [US20] Crear pantalla `informe_sucursales_screen.dart` para supervisar cualquier sucursal (turno en vivo o historial cerrado) y descargar el informe PDF, enlazándola en `dashboard_admin_screen.dart` con la tarjeta 'MONITOREO Y REPORTES DE SUCURSAL' en frontend/puntofrio_app/lib/presentation/screens/admin/informe_sucursales_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
+
+---
+
+## Phase 25: User Story 21 - Traspasos Inter-Sucursales Reales con Validación y Bloqueo de Stock en Origen (Priority: P1)
+
+**Goal**: Reemplazar listas estáticas de traspasos por sucursales y productos reales de la base de datos, validar existencias en la sucursal emisora bloqueando el despacho si no hay stock suficiente, y asentar movimientos `traspaso_salida` y `traspaso_entrada`.
+
+**Independent Test**:
+1. En "Despachar Traspaso", verificar que se listen las sucursales reales de la base de datos (excluyendo la propia) y productos del catálogo real con su saldo disponible.
+2. Ingresar una cantidad superior al stock en barra: la app resalta en rojo y bloquea el botón "DESPACHAR TRASPASO".
+3. Despachar una cantidad válida: se aprueba la orden, descuenta el stock en origen (`traspaso_salida`) y al confirmar recepción en destino se acredita (`traspaso_entrada`).
+
+- [ ] T150 [US21] En `EnviarTraspasoUseCase.php`, validar stock físico disponible en el turno/sucursal de origen antes de despachar (lanzando `DomainException` HTTP 400 si la cantidad supera el saldo) y registrar movimiento `traspaso_salida` en `movimientos_inventario` en backend/app/Application/UseCases/Inventario/EnviarTraspasoUseCase.php
+- [ ] T151 [US21] En `RecibirTraspasoUseCase.php`, al confirmar recepción conforme o con merma, registrar movimiento `traspaso_entrada` acreditando formalmente el stock recibido en la sucursal y turno de destino en backend/app/Application/UseCases/Inventario/RecibirTraspasoUseCase.php
+- [ ] T152 [US21] En `enviar_traspaso_screen.dart`, eliminar sucursales y productos estáticos, cargar dinámicamente `/sucursales` y `/productos`, consultar saldo disponible en barra y bloquear el botón con alerta roja en caso de stock insuficiente en frontend/puntofrio_app/lib/presentation/screens/traspasos/enviar_traspaso_screen.dart
+
+---
+
+## Phase 26: Verificación, Build y Despliegue Oficial (US19, US20, US21)
+
+**Goal**: Validar integralmente los cambios mediante pruebas automatizadas, compilar la APK Release oficial v1.5 y desplegar las migraciones y código en cPanel.
+
+- [ ] T153 [US19] [US20] [US21] Ejecutar suite de pruebas unitarias de backend (`php artisan test`) y análisis estático de frontend (`flutter analyze`)
+- [ ] T154 Compilar APK Release oficial v1.5, copiar a Desktop del usuario (`PuntoFrio_OFICIAL_v1.5.apk`) y desplegar backend en cPanel
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
-- **Phase 1 (Setup)**: Sin dependencias, inicio inmediato.
-- **Phase 2 (Foundational)**: Depende de Phase 1. Bloquea todas las historias de usuario.
-- **Phase 3 (US1 - MVP)**: Depende de Phase 2. Puede entregarse de forma autónoma.
-- **Phase 4 (US7 - Auth/PIN)**: Depende de Phase 2. Se integra con US1.
-- **Phase 5 (US5 - Auditoría)**: Depende de Phase 2 y los modelos de turnos de US1.
-- **Phases 6 a 9 (US2, US3, US6, US4)**: Dependen de Phase 2 y pueden desarrollarse en paralelo.
-- **Phase 10 (Polish)**: Depende de la finalización de las historias implementadas.
-- **Phase 11 (US8 - Catálogo)**: Depende de Phase 2.
-- **Phase 12 (Refinamiento)**: Refactorizaciones operativas previas (US4, US5, US7, US9, US10).
-- **Phase 13 (Módulos Avanzados)**: Compras multi-producto, auditoría 3 pasos con PDF y foto en cobro.
-- **Phase 14 (Operatividad Barra & Fórmulas)**: Corrección de error 400 en corte, PDF de conteo para WhatsApp, recepción multi-producto en barra y recetas dinámicas/compuestas.
-- **Phase 15 (US11 - Sucursales)**: Gestión integral de sucursales por el Administrador.
-- **Phase 16 (US12 - Recetas Dinámicas)**: Creación de transformaciones simples y compuestas desde la app móvil.
-- **Phase 17 (US13 - Entrada Numérica Rápida y Atajos por Caja)**: Entrada directa por teclado táctil y botones rápidos `+12`, `+24` en conteos y recepciones.
-- **Phase 18 (US14 - Motivos de Baja Dinámicos & PDF Cierre)**: CRUD de motivos y acta oficial de cierre con envío a WhatsApp.
-- **Phase 19 (US15 - Alerta Inteligente de Fuga entre Turnos)**: Comparador automático cierre vs apertura y alerta roja con WhatsApp en móvil de Admin.
-- **Phase 20 (US16 - Estabilización Operativa, Rellenos 0 y Conteo Activo Re-imprimible)**: Corrige los 3 fallos críticos, habilita conteo activo en PDF hasta el cierre y soporte de rellenos cero.
-- **Phase 21 (US17 - Persistencia de Turno por Barman, Auto-adopción y Cierre)**: Corrige persistencia de turno en re-login, vinculación correcta de barman y propiedad de comisión en cierre.
-- **Phase 22 (US18 - Control Estricto de Stock en Rellenos y Columna de Ingresos en Conteo PDF)**: Valida disponibilidad de insumos en turno y refleja ingresos en reporte.
+- **Phases 1 a 22**: Completadas y verificadas [X].
+- **Phase 23 (US19 - Proveedores)**: Puede ejecutarse de forma independiente inmediata.
+- **Phase 24 (US20 - Informe Operativo Admin PDF)**: Depende de los movimientos de inventario y compras consolidadas.
+- **Phase 25 (US21 - Traspasos Reales y Stock)**: Depende de los modelos de sucursales y productos existentes.
+- **Phase 26 (Verificación y Despliegue)**: Depende de Phases 23, 24 y 25.
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Backend Endpoints Independientes (Phase 20):
-Task T120: "Soporte de transformaciones cero en RegistrarTransformacionUseCase.php y TransformacionController.php"
-Task T122: "Tolerancia de claves foto y factura en CompraController.php"
-Task T123: "Auto-resolución de turno activo en TransformacionController.php"
-Task T125: "Endpoint GET /turnos/{id}/corte-inicial en TurnoController.php"
+# Backend Endpoints Independientes:
+Task T144: "Controlador ProveedorController en backend"
+Task T147: "Endpoint de informe operativo en AuditoriaController en backend"
+Task T150: "Validación de stock en EnviarTraspasoUseCase en backend"
 
-# Frontend Pantallas Independientes (Phase 20):
-Task T118: "Corrección de tipado toDouble() en transformacion_screen.dart"
-Task T119: "Soporte de 0 unidades producidas en transformacion_screen.dart"
-Task T121: "Claves contractuales en ingreso_mercaderia_screen.dart"
-Task T124: "Validación segura de turno en bajas_roturas_screen.dart"
-Task T126: "Botón dinámico de ver/re-imprimir conteo de apertura en dashboard_barman_screen.dart"
-Task T127: "Ocultamiento post-cierre y switch a historial en dashboard_barman_screen.dart"
+# Frontend Pantallas Independientes:
+Task T145: "Pantalla ProveedoresAdminScreen en frontend"
+Task T148: "Servicio InformeOperativoTurnoPdfService en frontend"
+Task T149: "Pantalla InformeSucursalesScreen en frontend"
+Task T152: "Conexión dinámica de EnviarTraspasoScreen en frontend"
 ```
 
 ---
@@ -430,6 +468,6 @@ Task T127: "Ocultamiento post-cierre y switch a historial en dashboard_barman_sc
 ## Notes
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
-- El núcleo MVP queda delimitado en las Fases 1, 2 y 3 (User Story 1).
+
 
 
