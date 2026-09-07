@@ -378,7 +378,7 @@
 - [X] T139 [US18] En `transformacion_screen.dart`, mostrar badge con el stock físico disponible en el turno para el insumo seleccionado y notificar visualmente el error en rojo si se excede en frontend/puntofrio_app/lib/presentation/screens/transformacion/transformacion_screen.dart
 - [X] T140 [US18] En `conteo_pdf_service.dart`, actualizar la estructura tabular del acta en PDF agregando las columnas `INICIAL`, `INGRESOS (+)` y `TOTAL DISPONIBLE` en frontend/puntofrio_app/lib/presentation/services/conteo_pdf_service.dart
 - [X] T141 [US18] Ejecutar pruebas unitarias de backend (`php artisan test`) y análisis de frontend (`flutter analyze`)
-- [ ] T142 Compilar APK Release oficial y desplegar backend en cPanel
+- [X] T142 Compilar APK Release oficial y desplegar backend en cPanel
 
 ---
 
