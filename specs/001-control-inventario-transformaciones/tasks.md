@@ -391,10 +391,10 @@
 2. Como Barman, entrar a "RECEPCIÓN DE MERCADERÍA", abrir el selector de proveedores: debe figurar "Distribuidora San Juan".
 3. Guardar la recepción de mercadería: la compra y el kardex quedan formalmente asignados al proveedor seleccionado.
 
-- [ ] T143 [P] [US19] Crear migración `create_proveedores_table` (`id`, `nombre`, `contacto_nombre`, `telefono`, `nit_o_ci`, `direccion`, `activo`, `timestamps`) con seed de proveedores iniciales y modelo Eloquent `Proveedor.php` en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/Proveedor.php
-- [ ] T144 [US19] Crear `ProveedorController.php` con endpoints REST (`GET /proveedores`, `POST /proveedores`, `PUT /proveedores/{id}`, `DELETE /proveedores/{id}`) y registrar rutas en backend/routes/api.php y backend/app/Infrastructure/Http/Controllers/Api/ProveedorController.php
-- [ ] T145 [P] [US19] Crear pantalla `proveedores_admin_screen.dart` para altas, edición y suspensión de proveedores, e integrarla en `dashboard_admin_screen.dart` con la tarjeta 'GESTIÓN DE PROVEEDORES' en frontend/puntofrio_app/lib/presentation/screens/admin/proveedores_admin_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
-- [ ] T146 [US19] En `ingreso_mercaderia_screen.dart`, sustituir el campo de texto libre por un selector desplegable con búsqueda dinámica de proveedores activos consumiendo `/proveedores?activo=1` en frontend/puntofrio_app/lib/presentation/screens/ingreso/ingreso_mercaderia_screen.dart
+- [X] T143 [P] [US19] Crear migración `create_proveedores_table` (`id`, `nombre`, `contacto_nombre`, `telefono`, `nit_o_ci`, `direccion`, `activo`, `timestamps`) con seed de proveedores iniciales y modelo Eloquent `Proveedor.php` en backend/database/migrations/ y backend/app/Infrastructure/Persistence/Eloquent/Models/Proveedor.php
+- [X] T144 [US19] Crear `ProveedorController.php` con endpoints REST (`GET /proveedores`, `POST /proveedores`, `PUT /proveedores/{id}`, `DELETE /proveedores/{id}`) y registrar rutas en backend/routes/api.php y backend/app/Infrastructure/Http/Controllers/Api/ProveedorController.php
+- [X] T145 [P] [US19] Crear pantalla `proveedores_admin_screen.dart` para altas, edición y suspensión de proveedores, e integrarla en `dashboard_admin_screen.dart` con la tarjeta 'GESTIÓN DE PROVEEDORES' en frontend/puntofrio_app/lib/presentation/screens/admin/proveedores_admin_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
+- [X] T146 [US19] En `ingreso_mercaderia_screen.dart`, sustituir el campo de texto libre por un selector desplegable con búsqueda dinámica de proveedores activos consumiendo `/proveedores?activo=1` en frontend/puntofrio_app/lib/presentation/screens/ingreso/ingreso_mercaderia_screen.dart
 
 ---
 
@@ -407,9 +407,9 @@
 2. Visualizar la tarjeta del turno en curso (barman, hora de apertura, estado abierto).
 3. Presionar "GENERAR INFORME OFICIAL PDF": debe renderizarse el PDF consolidado (conteo inicial, compras/proveedores, traspasos, bajas, transformaciones, balances y liquidación) con botón para compartir en WhatsApp.
 
-- [ ] T147 [US20] Crear endpoint `GET /auditoria/sucursal/{sucursal_id}/informe-turno` en `AuditoriaController.php` que compile metadatos del turno, corte inicial, compras de proveedores con notas, traspasos netos, bajas justificadas, transformaciones/comisiones y liquidación económica en backend/app/Infrastructure/Http/Controllers/Api/AuditoriaController.php
-- [ ] T148 [P] [US20] Crear servicio `informe_operativo_turno_pdf_service.dart` para renderizar el documento PDF oficial corporativo de auditoría con tablas de balance, firmas de custodios y función de compartir por WhatsApp en frontend/puntofrio_app/lib/presentation/screens/admin/informe_operativo_turno_pdf_service.dart
-- [ ] T149 [US20] Crear pantalla `informe_sucursales_screen.dart` para supervisar cualquier sucursal (turno en vivo o historial cerrado) y descargar el informe PDF, enlazándola en `dashboard_admin_screen.dart` con la tarjeta 'MONITOREO Y REPORTES DE SUCURSAL' en frontend/puntofrio_app/lib/presentation/screens/admin/informe_sucursales_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
+- [X] T147 [US20] Crear endpoint `GET /auditoria/sucursal/{sucursal_id}/informe-turno` en `AuditoriaController.php` que compile metadatos del turno, corte inicial, compras de proveedores con notas, traspasos netos, bajas justificadas, transformaciones/comisiones y liquidación económica en backend/app/Infrastructure/Http/Controllers/Api/AuditoriaController.php
+- [X] T148 [P] [US20] Crear servicio `informe_operativo_turno_pdf_service.dart` para renderizar el documento PDF oficial corporativo de auditoría con tablas de balance, firmas de custodios y función de compartir por WhatsApp en frontend/puntofrio_app/lib/presentation/screens/admin/informe_operativo_turno_pdf_service.dart
+- [X] T149 [US20] Crear pantalla `informe_sucursales_screen.dart` para supervisar cualquier sucursal (turno en vivo o historial cerrado) y descargar el informe PDF, enlazándola en `dashboard_admin_screen.dart` con la tarjeta 'MONITOREO Y REPORTES DE SUCURSAL' en frontend/puntofrio_app/lib/presentation/screens/admin/informe_sucursales_screen.dart y frontend/puntofrio_app/lib/presentation/screens/admin/dashboard_admin_screen.dart
 
 ---
 
@@ -422,9 +422,9 @@
 2. Ingresar una cantidad superior al stock en barra: la app resalta en rojo y bloquea el botón "DESPACHAR TRASPASO".
 3. Despachar una cantidad válida: se aprueba la orden, descuenta el stock en origen (`traspaso_salida`) y al confirmar recepción en destino se acredita (`traspaso_entrada`).
 
-- [ ] T150 [US21] En `EnviarTraspasoUseCase.php`, validar stock físico disponible en el turno/sucursal de origen antes de despachar (lanzando `DomainException` HTTP 400 si la cantidad supera el saldo) y registrar movimiento `traspaso_salida` en `movimientos_inventario` en backend/app/Application/UseCases/Inventario/EnviarTraspasoUseCase.php
-- [ ] T151 [US21] En `RecibirTraspasoUseCase.php`, al confirmar recepción conforme o con merma, registrar movimiento `traspaso_entrada` acreditando formalmente el stock recibido en la sucursal y turno de destino en backend/app/Application/UseCases/Inventario/RecibirTraspasoUseCase.php
-- [ ] T152 [US21] En `enviar_traspaso_screen.dart`, eliminar sucursales y productos estáticos, cargar dinámicamente `/sucursales` y `/productos`, consultar saldo disponible en barra y bloquear el botón con alerta roja en caso de stock insuficiente en frontend/puntofrio_app/lib/presentation/screens/traspasos/enviar_traspaso_screen.dart
+- [X] T150 [US21] En `EnviarTraspasoUseCase.php`, validar stock físico disponible en el turno/sucursal de origen antes de despachar (lanzando `DomainException` HTTP 400 si la cantidad supera el saldo) y registrar movimiento `traspaso_salida` en `movimientos_inventario` en backend/app/Application/UseCases/Inventario/EnviarTraspasoUseCase.php
+- [X] T151 [US21] En `RecibirTraspasoUseCase.php`, al confirmar recepción conforme o con merma, registrar movimiento `traspaso_entrada` acreditando formalmente el stock recibido en la sucursal y turno de destino en backend/app/Application/UseCases/Inventario/RecibirTraspasoUseCase.php
+- [X] T152 [US21] En `enviar_traspaso_screen.dart`, eliminar sucursales y productos estáticos, cargar dinámicamente `/sucursales` y `/productos`, consultar saldo disponible en barra y bloquear el botón con alerta roja en caso de stock insuficiente en frontend/puntofrio_app/lib/presentation/screens/traspasos/enviar_traspaso_screen.dart
 
 ---
 
@@ -432,8 +432,8 @@
 
 **Goal**: Validar integralmente los cambios mediante pruebas automatizadas, compilar la APK Release oficial v1.5 y desplegar las migraciones y código en cPanel.
 
-- [ ] T153 [US19] [US20] [US21] Ejecutar suite de pruebas unitarias de backend (`php artisan test`) y análisis estático de frontend (`flutter analyze`)
-- [ ] T154 Compilar APK Release oficial v1.5, copiar a Desktop del usuario (`PuntoFrio_OFICIAL_v1.5.apk`) y desplegar backend en cPanel
+- [X] T153 [US19] [US20] [US21] Ejecutar suite de pruebas unitarias de backend (`php artisan test`) y análisis estático de frontend (`flutter analyze`)
+- [X] T154 Compilar APK Release oficial v1.5, copiar a Desktop del usuario (`PuntoFrio_OFICIAL_v1.5.apk`) y desplegar backend en cPanel
 
 ---
 

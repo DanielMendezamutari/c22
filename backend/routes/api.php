@@ -46,10 +46,11 @@ Route::prefix('v1')->group(function () {
     Route::put('/recetas/combos/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'guardarCombo']);
     Route::delete('/recetas/combos/{id}', [\App\Infrastructure\Http\Controllers\Api\RecetaController::class, 'eliminarCombo']);
 
-    // Traspasos Inter-Sucursales - User Story 4
+    // Traspasos Inter-Sucursales - User Story 4 & User Story 21
     Route::post('/traspasos/enviar', [\App\Infrastructure\Http\Controllers\Api\TraspasoController::class, 'enviar']);
     Route::post('/traspasos/{id}/recibir', [\App\Infrastructure\Http\Controllers\Api\TraspasoController::class, 'recibir']);
     Route::get('/traspasos/pendientes', [\App\Infrastructure\Http\Controllers\Api\TraspasoController::class, 'listarPendientes']);
+    Route::get('/traspasos/stock-disponible', [\App\Infrastructure\Http\Controllers\Api\TraspasoController::class, 'stockDisponible']);
 
     // Catálogo Maestro de Productos - User Story 8
     Route::get('/productos', [\App\Infrastructure\Http\Controllers\Api\ProductoController::class, 'index']);
@@ -93,6 +94,17 @@ Route::prefix('v1')->group(function () {
     Route::post('/dispositivos/registrar-maestro', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'registrarDispositivoMaestro']);
     Route::post('/dispositivos/desvincular', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'desvincularDispositivo']);
     Route::get('/dispositivos/maestros', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'listarDispositivosMaestros']);
+
+    // Gestión de Proveedores Comerciales - User Story 19
+    Route::get('/proveedores', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'index']);
+    Route::post('/proveedores', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'store']);
+    Route::get('/proveedores/{id}', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'show']);
+    Route::put('/proveedores/{id}', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'update']);
+    Route::delete('/proveedores/{id}', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'destroy']);
+    Route::patch('/proveedores/{id}/toggle-activo', [\App\Infrastructure\Http\Controllers\Api\ProveedorController::class, 'toggleActivo']);
+
+    // Monitoreo Operativo e Informe de Sucursal en Vivo/Histórico - User Story 20
+    Route::get('/auditoria/sucursal/{sucursal_id}/informe-turno', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'informeTurnoSucursal']);
 });
 
 

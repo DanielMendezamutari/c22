@@ -91,6 +91,44 @@ class RecibirTraspasoUseCase
                 $fotoRecepcion
             );
 
+            // Acreditar formalmente stock en destino y registrar movimientos
+            $turnoDestino = \App\Infrastructure\Persistence\Eloquent\Models\Turno::where('sucursal_id', $traspaso->sucursal_destino_id)
+                ->where('estado', 'abierto')
+                ->latest()
+                ->first();
+
+            $detalles = \App\Infrastructure\Persistence\Eloquent\Models\TraspasoDetalle::where('traspaso_id', $traspasoId)->get();
+            foreach ($detalles as $det) {
+                $recibido = (float) $det->cantidad_recibida_conforme;
+                $mermaProd = (float) $det->cantidad_merma_transito;
+
+                if ($recibido > 0) {
+                    \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::create([
+                        'uuid_local' => (string) \Illuminate\Support\Str::uuid(),
+                        'turno_id' => $turnoDestino ? $turnoDestino->id : 1,
+                        'sucursal_id' => $traspaso->sucursal_destino_id,
+                        'producto_id' => $det->producto_id,
+                        'tipo_movimiento' => 'traspaso_entrada',
+                        'cantidad' => $recibido,
+                        'observaciones' => "Recepción conforme traspaso #{$traspasoId} desde sucursal #{$traspaso->sucursal_origen_id}",
+                        'fecha_movimiento' => now(),
+                    ]);
+                }
+
+                if ($mermaProd > 0) {
+                    \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::create([
+                        'uuid_local' => (string) \Illuminate\Support\Str::uuid(),
+                        'turno_id' => $turnoDestino ? $turnoDestino->id : 1,
+                        'sucursal_id' => $traspaso->sucursal_destino_id,
+                        'producto_id' => $det->producto_id,
+                        'tipo_movimiento' => 'merma_transito',
+                        'cantidad' => $mermaProd,
+                        'observaciones' => "Merma en tránsito traspaso #{$traspasoId}",
+                        'fecha_movimiento' => now(),
+                    ]);
+                }
+            }
+
             $estadoFinal = ($merma > 0 || $totalContado !== $despachado)
                 ? 'recibido_con_discrepancia'
                 : 'recibido_conforme';

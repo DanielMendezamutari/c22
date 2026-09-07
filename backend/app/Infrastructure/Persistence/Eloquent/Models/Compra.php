@@ -13,6 +13,7 @@ class Compra extends Model
     protected $fillable = [
         'sucursal_id',
         'usuario_id',
+        'proveedor_id',
         'proveedor',
         'numero_nota_factura',
         'foto_comprobante',
@@ -34,6 +35,11 @@ class Compra extends Model
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'usuario_id');
+    }
+
+    public function proveedorRel(): BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class, 'proveedor_id');
     }
 
     public function detalles(): HasMany

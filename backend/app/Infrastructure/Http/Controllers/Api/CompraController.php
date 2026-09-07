@@ -133,10 +133,28 @@ class CompraController extends Controller
                     }
                 }
 
+                // Resolver proveedor_id y normalizar nombre
+                $proveedorNombre = trim($request->input('proveedor', 'Proveedor General'));
+                $proveedorId = $request->input('proveedor_id');
+
+                if ($proveedorId) {
+                    $prov = \App\Infrastructure\Persistence\Eloquent\Models\Proveedor::find($proveedorId);
+                    if ($prov) {
+                        $proveedorNombre = $prov->nombre;
+                    }
+                } elseif (!empty($proveedorNombre)) {
+                    $prov = \App\Infrastructure\Persistence\Eloquent\Models\Proveedor::firstOrCreate(
+                        ['nombre' => $proveedorNombre],
+                        ['activo' => true]
+                    );
+                    $proveedorId = $prov->id;
+                }
+
                 $compra = Compra::create([
                     'sucursal_id' => $sucursalId,
                     'usuario_id' => $usuarioId,
-                    'proveedor' => $request->proveedor,
+                    'proveedor_id' => $proveedorId,
+                    'proveedor' => $proveedorNombre,
                     'numero_nota_factura' => $numeroNota,
                     'foto_comprobante' => $fotoPath,
                     'total_costo_estimado' => $totalCosto,

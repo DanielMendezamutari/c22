@@ -28,7 +28,7 @@ class IngresoMercaderiaScreen extends ConsumerStatefulWidget {
 }
 
 class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScreen> {
-  final _proveedorController = TextEditingController(text: 'Licorería Punto Frío (Central)');
+  final _proveedorController = TextEditingController();
   final _notaGuiaController = TextEditingController();
   final _obsController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -38,12 +38,15 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
   bool _isSubmitting = false;
 
   List<Map<String, dynamic>> _catalogoProductos = [];
+  List<Map<String, dynamic>> _proveedores = [];
+  int? _selectedProveedorId;
+  bool _esProveedorNoListado = false;
   final List<RecepcionItemDraft> _items = [];
 
   @override
   void initState() {
     super.initState();
-    _cargarCatalogo();
+    _cargarDatosIniciales();
   }
 
   @override
@@ -54,9 +57,52 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
     super.dispose();
   }
 
-  Future<void> _cargarCatalogo() async {
+  Future<void> _cargarDatosIniciales() async {
     setState(() => _isLoading = true);
-    final client = ApiClient(ref.read(apiConfigProvider));
+    await Future.wait([
+      _cargarCatalogo(),
+      _cargarProveedores(),
+    ]);
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _cargarProveedores() async {
+    try {
+      final client = ref.read(apiClientProvider);
+      final resp = await client.get('/proveedores?activo=1');
+      if (resp.data['success'] == true && resp.data['data'] != null) {
+        final List list = resp.data['data'];
+        setState(() {
+          _proveedores = List<Map<String, dynamic>>.from(list);
+          if (_proveedores.isNotEmpty && _selectedProveedorId == null && !_esProveedorNoListado) {
+            // Pre-seleccionar Licorería Punto Frío si existe, o el primero
+            final puntoFrio = _proveedores.firstWhere(
+              (p) => (p['nombre'] ?? '').toString().toLowerCase().contains('punto frío') ||
+                     (p['nombre'] ?? '').toString().toLowerCase().contains('punto frio'),
+              orElse: () => _proveedores.first,
+            );
+            _selectedProveedorId = puntoFrio['id'];
+            _proveedorController.text = puntoFrio['nombre'];
+          }
+        });
+      }
+    } catch (_) {
+      // Fallback si la red falla
+      if (_proveedores.isEmpty) {
+        _proveedores = [
+          {'id': 1, 'nombre': 'Cervecería Boliviana Nacional (CBN)'},
+          {'id': 2, 'nombre': 'Embol S.A. (Coca-Cola / Bebidas)'},
+          {'id': 3, 'nombre': 'Licorería Punto Frío Central'},
+          {'id': 4, 'nombre': 'Distribuidora San Juan'},
+        ];
+        _selectedProveedorId = 3;
+        _proveedorController.text = 'Licorería Punto Frío Central';
+      }
+    }
+  }
+
+  Future<void> _cargarCatalogo() async {
+    final client = ref.read(apiClientProvider);
 
     try {
       final resp = await client.get('/productos');
@@ -166,11 +212,14 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
         'costo_unitario': i.costoUnitario,
       }).toList();
 
+      final String proveedorFinal = _proveedorController.text.trim().isNotEmpty
+          ? _proveedorController.text.trim()
+          : 'Licorería Punto Frío Central';
+
       final payload = {
         'sucursal_id': sucursalId,
-        'proveedor': _proveedorController.text.trim().isNotEmpty
-            ? _proveedorController.text.trim()
-            : 'Licorería Punto Frío (Central)',
+        'proveedor_id': _esProveedorNoListado ? null : _selectedProveedorId,
+        'proveedor': proveedorFinal,
         'numero_nota_factura': _notaGuiaController.text.trim().isNotEmpty ? _notaGuiaController.text.trim() : 'S/N',
         'numero_factura_nota': _notaGuiaController.text.trim().isNotEmpty ? _notaGuiaController.text.trim() : 'S/N',
         'observaciones': _obsController.text.trim(),
@@ -252,18 +301,97 @@ class _IngresoMercaderiaScreenState extends ConsumerState<IngresoMercaderiaScree
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: _proveedorController,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          labelText: 'Origen / Proveedor (ej. Licorería Punto Frío, CBN)',
-                          labelStyle: const TextStyle(color: Colors.white60),
-                          prefixIcon: const Icon(Icons.business, color: Colors.white60),
-                          filled: true,
-                          fillColor: const Color(0xFF242E42),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      // Selector Dinámico de Proveedores
+                      if (!_esProveedorNoListado) ...[
+                        DropdownButtonFormField<int>(
+                          value: _selectedProveedorId,
+                          dropdownColor: const Color(0xFF1E293B),
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          decoration: InputDecoration(
+                            labelText: 'Proveedor Comercial Autorizado *',
+                            labelStyle: const TextStyle(color: Color(0xFF2DD4BF)),
+                            prefixIcon: const Icon(Icons.business, color: Color(0xFF2DD4BF)),
+                            filled: true,
+                            fillColor: const Color(0xFF242E42),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                          ),
+                          items: [
+                            ..._proveedores.map((p) {
+                              return DropdownMenuItem<int>(
+                                value: p['id'] as int,
+                                child: Text(
+                                  p['nombre'] ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                ),
+                              );
+                            }),
+                            const DropdownMenuItem<int>(
+                              value: -1,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_circle_outline, color: Color(0xFFF59E0B), size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    '+ Proveedor no listado...',
+                                    style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            if (val == -1) {
+                              setState(() {
+                                _esProveedorNoListado = true;
+                                _selectedProveedorId = null;
+                                _proveedorController.clear();
+                              });
+                            } else {
+                              setState(() {
+                                _selectedProveedorId = val;
+                                final prov = _proveedores.firstWhere((p) => p['id'] == val, orElse: () => {});
+                                _proveedorController.text = prov['nombre'] ?? '';
+                              });
+                            }
+                          },
                         ),
-                      ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _proveedorController,
+                                style: const TextStyle(color: Colors.white, fontSize: 14),
+                                decoration: InputDecoration(
+                                  labelText: 'Nombre Comercial del Proveedor *',
+                                  labelStyle: const TextStyle(color: Color(0xFFF59E0B)),
+                                  hintText: 'Ej. Distribuidora Santa Cruz, Don Pepe...',
+                                  hintStyle: const TextStyle(color: Colors.white30),
+                                  prefixIcon: const Icon(Icons.edit_note, color: Color(0xFFF59E0B)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF242E42),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.list_alt, color: Color(0xFF2DD4BF)),
+                              tooltip: 'Volver a lista autorizada',
+                              onPressed: () {
+                                setState(() {
+                                  _esProveedorNoListado = false;
+                                  if (_proveedores.isNotEmpty) {
+                                    _selectedProveedorId = _proveedores.first['id'];
+                                    _proveedorController.text = _proveedores.first['nombre'];
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       TextField(
                         controller: _notaGuiaController,

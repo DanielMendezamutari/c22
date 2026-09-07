@@ -110,4 +110,52 @@ class TraspasoController extends Controller
             ], 400);
         }
     }
+
+    /**
+     * Consulta el saldo físico disponible de productos en barra para validación en traspasos.
+     */
+    public function stockDisponible(Request $request): JsonResponse
+    {
+        $request->validate([
+            'sucursal_id' => 'required|integer|exists:sucursales,id',
+            'producto_id' => 'nullable|integer|exists:productos,id',
+        ]);
+
+        try {
+            $sucursalId = (int) $request->input('sucursal_id');
+            $productoId = $request->input('producto_id') ? (int) $request->input('producto_id') : null;
+
+            if ($productoId) {
+                $stock = EnviarTraspasoUseCase::obtenerStockDisponible($sucursalId, $productoId);
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'producto_id' => $productoId,
+                        'stock_disponible' => $stock,
+                    ],
+                ]);
+            }
+
+            // Listar stock de todos los productos activos
+            $productos = \App\Infrastructure\Persistence\Eloquent\Models\Producto::where('activo', true)->get();
+            $stocks = $productos->map(function ($p) use ($sucursalId) {
+                return [
+                    'producto_id' => $p->id,
+                    'producto_nombre' => $p->nombre,
+                    'tipo_producto' => $p->tipo_producto,
+                    'stock_disponible' => EnviarTraspasoUseCase::obtenerStockDisponible($sucursalId, $p->id),
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $stocks,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

@@ -11,6 +11,8 @@ import 'motivos_baja_admin_screen.dart';
 import 'recetas_screen.dart';
 import 'sucursales_admin_screen.dart';
 import 'usuarios_admin_screen.dart';
+import 'proveedores_admin_screen.dart';
+import 'informe_sucursales_screen.dart';
 import '../inventario/registrar_compra_screen.dart';
 
 class DashboardAdminScreen extends ConsumerStatefulWidget {
@@ -533,6 +535,30 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const MotivosBajaAdminScreen()),
+                    );
+                  },
+                ),
+                _buildAdminCard(
+                  context: context,
+                  title: 'GESTIÓN PROVEEDORES',
+                  subtitle: 'Catálogo comercial y contactos',
+                  icon: Icons.local_shipping_outlined,
+                  gradient: const [Color(0xFF0D9488), Color(0xFF14B8A6)],
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ProveedoresAdminScreen()),
+                    );
+                  },
+                ),
+                _buildAdminCard(
+                  context: context,
+                  title: 'MONITOREO SUCURSAL',
+                  subtitle: 'Turno en vivo e informe PDF',
+                  icon: Icons.query_stats,
+                  gradient: const [Color(0xFF0369A1), Color(0xFF0284C7)],
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const InformeSucursalesScreen()),
                     );
                   },
                 ),
