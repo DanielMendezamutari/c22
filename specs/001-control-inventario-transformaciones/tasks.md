@@ -437,30 +437,41 @@
 
 ---
 
+## Phase 27: User Story 22 - Balance Integral en Conteo de Apertura PDF, Reconciliación Completa en PDF de Cierre y Visualización de Conteo Inicial en Pantalla de Cierre (Priority: P1)
+
+**Goal**: Corregir de raíz la contabilización de ingresos acumulados en `corteInicial` (reemplazando `ingreso_compra` por `ingreso` y `traspaso_entrada`), reestructurar el Acta Oficial de Cierre en PDF eliminando la columna "Tipo" y mostrando la tabla de reconciliación completa (`INICIAL`, `INGRESOS (+)`, `RELLENOS (±)`, `BAJAS (-)`, `TOTAL CIERRE`) con nombres reales de productos, y dotar a la pantalla móvil de Corte de Cierre de indicadores visuales claros sobre la cantidad con la que inició el turno y los ingresos recibidos.
+
+**Independent Test**:
+1. Apertura y Recepción: Registrar recepción de mercadería durante el turno activo; pulsar "VER / RE-IMPRIMIR CONTEO DE APERTURA" y verificar que la columna `INGRESOS (+)` muestre `+X.XX` y sume al disponible en lugar de mostrar guiones (`-`).
+2. Pantalla de Corte de Cierre: Al abrir la pantalla para entregar el turno, verificar que cada producto muestre debajo de su nombre el pill informativo: `Inició: X.XX | Ingresos: +Y.YY | Disp: Z.ZZ`.
+3. Acta de Cierre en PDF: Confirmar el corte final: verificar que el PDF generado muestre los nombres descriptivos de los productos (eliminando `"Producto #1"`), no contenga la columna `"Tipo"` y deslice la conciliación completa requerida por FR-033.
+
+- [X] T155 [US22] En `TurnoController.php`, corregir la consulta de ingresos acumulados en `corteInicial` sustituyendo `'ingreso_compra'` por `['ingreso', 'traspaso_entrada']`, incluir productos recepcionados durante la jornada aunque no estuvieran en la apertura inicial, y calcular balances de transformaciones y bajas en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T156 [P] [US22] En `cierre_turno_pdf_service.dart`, resolver nombres genéricos usando `it['nombre'] ?? it['producto_nombre']`, eliminar la columna "Tipo" y reformar la tabla oficial a `['#', 'PRODUCTO', 'INICIAL', 'INGRESOS (+)', 'RELLENOS (±)', 'BAJAS (-)', 'TOTAL CIERRE']` con resumen de totales al pie en frontend/puntofrio_app/lib/presentation/screens/turnos/cierre_turno_pdf_service.dart
+- [X] T157 [P] [US22] En `bottle_fraction_selector.dart`, incorporar soporte para mostrar cintillo de balance (`cantidadInicial`, `ingresos`, `totalDisponible`) cuando `esCierre == true`, junto al cálculo informativo de salida estimada en frontend/puntofrio_app/lib/presentation/widgets/bottle_fraction_selector.dart
+- [X] T158 [US22] En `corte_inventario_screen.dart`, al operar en modo `cierre`, consultar `GET /turnos/{id}/corte-inicial` para cargar los productos con su stock de apertura y movimientos del turno activo, suministrándolos a `BottleFractionSelector` y al servicio `CierreTurnoPdfService` en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T159 [US22] Ejecutar verificación end-to-end de recepción con reflejo en PDF de apertura, corte de cierre con referencia visual de inicio y PDF de cierre con reconciliación oficial completa en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
-- **Phases 1 a 22**: Completadas y verificadas [X].
-- **Phase 23 (US19 - Proveedores)**: Puede ejecutarse de forma independiente inmediata.
-- **Phase 24 (US20 - Informe Operativo Admin PDF)**: Depende de los movimientos de inventario y compras consolidadas.
-- **Phase 25 (US21 - Traspasos Reales y Stock)**: Depende de los modelos de sucursales y productos existentes.
-- **Phase 26 (Verificación y Despliegue)**: Depende de Phases 23, 24 y 25.
+- **Phases 1 a 26**: Completadas y verificadas [X].
+- **Phase 27 (US22 - Balance Integral y Corrección de PDFs/Cierre)**: Depende de TurnoController y servicios de PDF existentes.
+  - T155 (Backend) habilita el endpoint con balance completo.
+  - T156 (PDF Cierre) y T157 (Selector UI) pueden ejecutarse en paralelo [P].
+  - T158 (Pantalla Cierre) integra backend y selector.
+  - T159 valida el flujo completo.
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Backend Endpoints Independientes:
-Task T144: "Controlador ProveedorController en backend"
-Task T147: "Endpoint de informe operativo en AuditoriaController en backend"
-Task T150: "Validación de stock en EnviarTraspasoUseCase en backend"
-
-# Frontend Pantallas Independientes:
-Task T145: "Pantalla ProveedoresAdminScreen en frontend"
-Task T148: "Servicio InformeOperativoTurnoPdfService en frontend"
-Task T149: "Pantalla InformeSucursalesScreen en frontend"
-Task T152: "Conexión dinámica de EnviarTraspasoScreen en frontend"
+# Frontend Tareas Paralelas:
+Task T156: "Reforma de tabla y nombres en cierre_turno_pdf_service.dart"
+Task T157: "Cintillo de inicio e ingresos en bottle_fraction_selector.dart"
 ```
 
 ---

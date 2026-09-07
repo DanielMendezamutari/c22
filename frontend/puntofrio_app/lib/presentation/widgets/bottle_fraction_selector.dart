@@ -4,12 +4,20 @@ class BottleFractionSelector extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
   final String productName;
+  final double? cantidadInicial;
+  final double? ingresos;
+  final double? totalDisponible;
+  final bool esCierre;
 
   const BottleFractionSelector({
     super.key,
     required this.value,
     required this.onChanged,
     required this.productName,
+    this.cantidadInicial,
+    this.ingresos,
+    this.totalDisponible,
+    this.esCierre = false,
   });
 
   int get enteros => value.floor();
@@ -167,6 +175,71 @@ class BottleFractionSelector extends StatelessWidget {
               ),
             ],
           ),
+          if (esCierre && cantidadInicial != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF141923),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 14, color: Color(0xFF3498DB)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        children: [
+                          const TextSpan(text: 'Inició: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white60)),
+                          TextSpan(text: cantidadInicial!.toStringAsFixed(2), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                          if ((ingresos ?? 0.0) > 0) ...[
+                            const TextSpan(text: '  |  Ingresos: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white60)),
+                            TextSpan(text: '+${(ingresos ?? 0.0).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF27AE60))),
+                          ],
+                          const TextSpan(text: '  |  Disp: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white60)),
+                          TextSpan(
+                            text: (totalDisponible ?? (cantidadInicial! + (ingresos ?? 0.0))).toStringAsFixed(2),
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF5DADE2)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Builder(builder: (ctx) {
+              final disp = totalDisponible ?? (cantidadInicial! + (ingresos ?? 0.0));
+              final salidaEstimada = double.parse((disp - value).toStringAsFixed(2));
+              final esNegativo = salidaEstimada < 0;
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    !esNegativo ? Icons.trending_down : Icons.warning_amber_rounded,
+                    size: 13,
+                    color: !esNegativo ? Colors.amberAccent : const Color(0xFFE74C3C),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    !esNegativo
+                        ? 'Salida / Venta estimada: ${salidaEstimada.toStringAsFixed(2)} botellas'
+                        : '¡Conteo mayor al disponible (+${(-salidaEstimada).toStringAsFixed(2)})!',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: !esNegativo ? Colors.amberAccent : const Color(0xFFE74C3C),
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ],
           const SizedBox(height: 14),
 
           // Selector de Unidades Enteras + Visual de Fracción

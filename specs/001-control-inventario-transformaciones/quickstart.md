@@ -248,3 +248,25 @@ flutter run
    - El backend descuenta 4 botellas de la barra origen (`traspaso_salida`) y deja la orden `en_transito`.
    - En la sucursal receptora, el barman ingresa a "Recepcionar Traspasos" y confirma `4.00` conformes.
    - Se asienta `traspaso_entrada` y el stock se acredita formalmente en destino.
+
+---
+
+### Scenario 19: Ingresos Acumulados en PDF de Apertura y Referencia Visual en Corte de Cierre (US22)
+
+1. **Apertura y Recepción**:
+   - Abrir un turno en sucursal con conteo inicial (ej. Moema lata = 36.00).
+   - Registrar una recepción de mercadería (ej. +12.00 latas de Moema).
+   - En Dashboard Barman, presionar "📄 VER / RE-IMPRIMIR CONTEO DE APERTURA":
+     - La tabla oficial en PDF muestra: `moema lata | 36.00 | +12.00 | 48.00` (eliminando guiones erróneos `-`).
+2. **Referencia Visual en Corte de Cierre**:
+   - Entrar al módulo "Corte de Cierre" (`CorteInventarioScreen`):
+     - Debajo de "moema lata", se visualiza el pill informativo: `🏁 Inició: 36.00 | 📥 Ingresos: +12.00 | 📦 Disp: 48.00`.
+     - Al ingresar un conteo de `10.00`, la app calcula en tiempo real: `📉 Salida / Venta estimada: 38.00 botellas`.
+3. **Acta Oficial de Cierre en PDF**:
+   - Confirmar el cierre de turno e inmutabilizar.
+   - En el diálogo de éxito, presionar "VER / IMPRIMIR PDF":
+     - El documento presenta el nombre real de cada producto (ej. "moema lata", sin nombres genéricos como "Producto #1").
+     - Se eliminó la columna "Tipo".
+     - La tabla despliega las columnas oficiales de reconciliación requeridas por el reglamento:
+       `[#] | [PRODUCTO / INSUMO] | [INICIAL] | [INGRESOS (+)] | [RELLENOS (±)] | [BAJAS (-)] | [TOTAL CIERRE]`.
+     - Al pie de la tabla se refleja el resumen de totales sumando unidades de inicio, entradas y entrega final.

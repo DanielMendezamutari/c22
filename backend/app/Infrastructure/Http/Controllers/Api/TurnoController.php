@@ -183,32 +183,61 @@ class TurnoController extends Controller
                 ], 404);
             }
 
-            // Ingresos acumulados durante el turno por producto (NUEVO INGRESO / Recepción de mercadería)
-            $ingresosPorProd = \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $id)
-                ->where('tipo_movimiento', 'ingreso_compra')
-                ->groupBy('producto_id')
-                ->selectRaw('producto_id, sum(cantidad) as total_ingresos')
-                ->pluck('total_ingresos', 'producto_id')
-                ->toArray();
-
-            $cortes = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::with('producto')
+            // Cortes iniciales
+            $cortesIniciales = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::with('producto')
                 ->where('turno_id', $id)
                 ->whereIn('tipo_corte', ['inicial', 'apertura'])
                 ->get()
-                ->map(function ($c) use ($ingresosPorProd) {
-                    $ingreso = (float) ($ingresosPorProd[$c->producto_id] ?? 0.0);
-                    $inicial = (float) $c->cantidad;
-                    return [
-                        'producto_id' => $c->producto_id,
-                        'producto_nombre' => $c->producto->nombre ?? 'Producto #' . $c->producto_id,
-                        'codigo' => $c->producto->codigo_barra ?? 'S/C',
-                        'tipo_producto' => $c->producto->tipo ?? 'terminado',
-                        'cantidad' => $inicial,
-                        'cantidad_inicial' => $inicial,
-                        'ingresos' => $ingreso,
-                        'total_disponible' => round($inicial + $ingreso, 2),
-                    ];
-                });
+                ->keyBy('producto_id');
+
+            // Movimientos del turno
+            $movs = \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::with('producto')
+                ->where('turno_id', $id)
+                ->get();
+
+            $movsPorProd = $movs->groupBy('producto_id');
+
+            // Todos los IDs involucrados en el turno
+            $todosProductoIds = $cortesIniciales->keys()->merge($movsPorProd->keys())->unique();
+
+            // Cargar productos del catálogo
+            $productos = \App\Infrastructure\Persistence\Eloquent\Models\Producto::whereIn('id', $todosProductoIds)->get()->keyBy('id');
+
+            $items = $todosProductoIds->map(function ($pid) use ($cortesIniciales, $movsPorProd, $productos) {
+                $corte = $cortesIniciales->get($pid);
+                $pMovs = $movsPorProd->get($pid) ?? collect();
+                $prod = $productos->get($pid);
+
+                $inicial = $corte ? (float) $corte->cantidad : 0.0;
+
+                $ingresos = (float) $pMovs->whereIn('tipo_movimiento', ['ingreso', 'traspaso_entrada'])->sum('cantidad');
+                $rellenosProd = (float) $pMovs->whereIn('tipo_movimiento', ['transformacion_produccion', 'transformacion_destino'])->sum('cantidad');
+                $rellenosCons = (float) $pMovs->whereIn('tipo_movimiento', ['transformacion_consumo', 'transformacion_origen'])->sum('cantidad');
+                $rellenosNetos = round($rellenosProd - $rellenosCons, 2);
+                $bajas = (float) $pMovs->whereIn('tipo_movimiento', ['baja_rotura', 'baja'])->sum('cantidad');
+                $traspasosSalida = (float) $pMovs->where('tipo_movimiento', 'traspaso_salida')->sum('cantidad');
+
+                $disp = round($inicial + $ingresos + $rellenosProd - $rellenosCons - $bajas - $traspasosSalida, 2);
+
+                $nombre = $prod->nombre ?? ($corte->producto->nombre ?? 'Producto #' . $pid);
+
+                return [
+                    'producto_id' => (int) $pid,
+                    'nombre' => $nombre,
+                    'producto_nombre' => $nombre,
+                    'codigo' => $prod->codigo_barra ?? 'S/C',
+                    'tipo_producto' => $prod->tipo ?? 'terminado',
+                    'cantidad' => $inicial,
+                    'cantidad_inicial' => $inicial,
+                    'ingresos' => $ingresos,
+                    'rellenos_producidos' => $rellenosProd,
+                    'rellenos_consumidos' => $rellenosCons,
+                    'rellenos' => $rellenosNetos,
+                    'bajas' => $bajas,
+                    'traspasos_salida' => $traspasosSalida,
+                    'total_disponible' => max(0.0, $disp),
+                ];
+            })->values();
 
             return response()->json([
                 'success' => true,
@@ -219,7 +248,7 @@ class TurnoController extends Controller
                     'tipo_turno' => $turno->tipo_turno ?? 'noche',
                     'estado' => $turno->estado,
                     'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : now()->toIso8601String(),
-                    'items' => $cortes,
+                    'items' => $items,
                 ],
             ]);
         } catch (Throwable $e) {

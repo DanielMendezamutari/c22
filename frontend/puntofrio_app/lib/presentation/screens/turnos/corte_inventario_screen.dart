@@ -72,6 +72,48 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     setState(() => _isLoading = true);
     try {
       final apiClient = ref.read(apiClientProvider);
+      final auth = ref.read(authProvider);
+      final turnoId = widget.turnoId ?? auth.turnoActivoId;
+
+      // Si es Cierre de Turno, cargar el corte inicial y movimientos acumulados del turno
+      if (widget.tipoOperacion == TipoOperacionCorte.cierre && turnoId != null) {
+        final resTurno = await apiClient.get('/turnos/$turnoId/corte-inicial');
+        if (resTurno.statusCode == 200 && resTurno.data['data'] != null && resTurno.data['data']['items'] != null) {
+          final List list = resTurno.data['data']['items'];
+          if (list.isNotEmpty) {
+            setState(() {
+              _items.clear();
+              for (var p in list) {
+                final rawTipo = (p['tipo_producto'] ?? p['tipo'] ?? '').toString();
+                final tipoBadge = rawTipo.isNotEmpty && rawTipo != 'null' ? ' (${rawTipo.toUpperCase()})' : '';
+                final nombreBase = (p['nombre'] ?? p['producto_nombre'] ?? 'Producto').toString();
+                final esLicor = rawTipo.toLowerCase().contains('terminado') &&
+                    (nombreBase.toLowerCase().contains('ron') ||
+                        nombreBase.toLowerCase().contains('vodka') ||
+                        nombreBase.toLowerCase().contains('whisky') ||
+                        nombreBase.toLowerCase().contains('tequila') ||
+                        nombreBase.toLowerCase().contains('gin'));
+
+                _items.add({
+                  'producto_id': p['producto_id'] ?? p['id'],
+                  'nombre': '$nombreBase$tipoBadge',
+                  'producto_nombre': nombreBase,
+                  'es_licor': esLicor,
+                  'cantidad': 0.0,
+                  'cantidad_inicial': (p['cantidad_inicial'] as num?)?.toDouble() ?? 0.0,
+                  'ingresos': (p['ingresos'] as num?)?.toDouble() ?? 0.0,
+                  'rellenos': (p['rellenos'] as num?)?.toDouble() ?? 0.0,
+                  'bajas': (p['bajas'] as num?)?.toDouble() ?? 0.0,
+                  'total_disponible': (p['total_disponible'] as num?)?.toDouble() ?? 0.0,
+                });
+              }
+            });
+            return;
+          }
+        }
+      }
+
+      // Si es Apertura o fallback, cargar catálogo general
       final res = await apiClient.get('/productos/corte');
       if (res.statusCode == 200 && res.data['data'] != null) {
         final List list = res.data['data'];
@@ -90,8 +132,14 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
               _items.add({
                 'producto_id': p['id'],
                 'nombre': '${p['nombre']}$tipoBadge',
+                'producto_nombre': p['nombre'],
                 'es_licor': esLicor,
                 'cantidad': 0.0,
+                'cantidad_inicial': 0.0,
+                'ingresos': 0.0,
+                'rellenos': 0.0,
+                'bajas': 0.0,
+                'total_disponible': 0.0,
               });
             }
           });
@@ -622,6 +670,10 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                       return BottleFractionSelector(
                         productName: item['nombre'],
                         value: item['cantidad'] as double,
+                        cantidadInicial: item['cantidad_inicial'] as double?,
+                        ingresos: item['ingresos'] as double?,
+                        totalDisponible: item['total_disponible'] as double?,
+                        esCierre: !esApertura,
                         onChanged: (newVal) {
                           setState(() {
                             item['cantidad'] = newVal;

@@ -18,6 +18,10 @@ class CierreTurnoPdfService {
         '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year} ${ahora.hour.toString().padLeft(2, '0')}:${ahora.minute.toString().padLeft(2, '0')}';
 
     final totalItems = items.length;
+    final totalInicial = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad_inicial'] as num?)?.toDouble() ?? 0.0));
+    final totalIngresos = items.fold<double>(0.0, (acc, item) => acc + ((item['ingresos'] as num?)?.toDouble() ?? 0.0));
+    final totalRellenos = items.fold<double>(0.0, (acc, item) => acc + ((item['rellenos'] as num?)?.toDouble() ?? 0.0));
+    final totalBajas = items.fold<double>(0.0, (acc, item) => acc + ((item['bajas'] as num?)?.toDouble() ?? 0.0));
     final totalUnidades = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad'] as num?)?.toDouble() ?? 0.0));
 
     pdf.addPage(
@@ -142,45 +146,71 @@ class CierreTurnoPdfService {
           pw.SizedBox(height: 8),
 
           pw.TableHelper.fromTextArray(
-            headers: ['#', 'Producto', 'Tipo', 'Enteras', 'Fracción', 'Total Físico'],
+            headers: ['#', 'PRODUCTO / INSUMO', 'INICIAL', 'INGRESOS (+)', 'RELLENOS (±)', 'BAJAS (-)', 'TOTAL CIERRE'],
             data: List<List<String>>.generate(items.length, (idx) {
               final it = items[idx];
+              final String nombre = (it['nombre'] ?? it['producto_nombre'] ?? 'Producto #${it['producto_id']}').toString();
+              final double ini = (it['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+              final double ing = (it['ingresos'] as num?)?.toDouble() ?? 0.0;
+              final double rel = (it['rellenos'] as num?)?.toDouble() ?? 0.0;
+              final double baj = (it['bajas'] as num?)?.toDouble() ?? 0.0;
               final double cant = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
-              final int enteras = cant.floor();
-              final double frac = double.parse((cant - enteras).toStringAsFixed(2));
-              final String fracStr = frac == 0.0
-                  ? '-'
-                  : frac == 0.25
-                      ? '1/4'
-                      : frac == 0.50
-                          ? '1/2'
-                          : frac == 0.75
-                              ? '3/4'
-                              : frac.toStringAsFixed(2);
 
               return [
                 (idx + 1).toString(),
-                it['producto_nombre'] ?? 'Producto #${it['producto_id']}',
-                (it['tipo_producto'] ?? 'terminado').toString().toUpperCase(),
-                enteras.toString(),
-                fracStr,
+                nombre,
+                ini.toStringAsFixed(2),
+                ing > 0 ? '+${ing.toStringAsFixed(2)}' : '-',
+                rel != 0 ? (rel > 0 ? '+${rel.toStringAsFixed(2)}' : rel.toStringAsFixed(2)) : '-',
+                baj > 0 ? '-${baj.toStringAsFixed(2)}' : '-',
                 cant.toStringAsFixed(2),
               ];
             }),
             border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-            headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+            headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 8),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
-            cellStyle: const pw.TextStyle(fontSize: 9),
+            cellStyle: const pw.TextStyle(fontSize: 8),
             cellAlignment: pw.Alignment.centerLeft,
             cellAlignments: {
               0: pw.Alignment.center,
               1: pw.Alignment.centerLeft,
-              2: pw.Alignment.center,
+              2: pw.Alignment.centerRight,
               3: pw.Alignment.centerRight,
-              4: pw.Alignment.center,
+              4: pw.Alignment.centerRight,
               5: pw.Alignment.centerRight,
+              6: pw.Alignment.centerRight,
             },
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(0.8),
+              1: const pw.FlexColumnWidth(3.8),
+              2: const pw.FlexColumnWidth(1.6),
+              3: const pw.FlexColumnWidth(1.6),
+              4: const pw.FlexColumnWidth(1.6),
+              5: const pw.FlexColumnWidth(1.6),
+              6: const pw.FlexColumnWidth(1.8),
+            },
+            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+          ),
+          pw.SizedBox(height: 8),
+
+          // Resumen de Totales
+          pw.Container(
+            padding: const pw.EdgeInsets.all(8),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+              border: pw.Border.all(color: PdfColors.grey300),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Total Artículos: $totalItems', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                pw.Text(
+                  'Inicial: ${totalInicial.toStringAsFixed(2)} | Ingresos: +${totalIngresos.toStringAsFixed(2)} | Rellenos: ${totalRellenos >= 0 ? '+' : ''}${totalRellenos.toStringAsFixed(2)} | Bajas: -${totalBajas.toStringAsFixed(2)} | Total Cierre: ${totalUnidades.toStringAsFixed(2)} u.',
+                  style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900),
+                ),
+              ],
+            ),
           ),
 
           pw.SizedBox(height: 24),
@@ -272,7 +302,7 @@ class CierreTurnoPdfService {
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdfBytes,
-      name: 'Acta_Cierre_Turno_${turnoId}',
+      name: 'Acta_Cierre_Turno_$turnoId',
     );
   }
 }
