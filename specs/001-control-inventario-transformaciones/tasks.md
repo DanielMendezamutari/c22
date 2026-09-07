@@ -362,6 +362,26 @@
 
 ---
 
+## Phase 22: User Story 18 - Control Estricto de Stock en Rellenos y Columna de Ingresos en Conteo Activo PDF (Priority: P1)
+
+**Goal**: Impedir que un barman registre rellenos sin contar con el insumo físico suficiente en su turno (`Stock Disponible = Apertura + Ingresos - Bajas - Consumos Previos`), mostrar en la app el stock disponible en barra y reflejar en el PDF de conteo activo la nueva columna acumulativa `Ingresos (+)` (`[Producto] | [Apertura] | [Ingresos (+)] | [Total Disponible]`).
+
+**Independent Test**:
+1. Con 4 Moemas en el conteo de apertura, intentar registrar un relleno que requiera 24 Moemas: el sistema rechaza la operación con error descriptivo en rojo: *"Stock insuficiente de 'moema lata' (Disponible en turno: 4, Requerido: 24)"*.
+2. Registrar un ingreso de mercadería de 24 Moemas: el stock disponible pasa a 28 Moemas.
+3. Al previsualizar el PDF de conteo, la tabla muestra: `[moema lata] | [4] | [+24] | [28]`.
+4. Registrar el relleno de 24 Moemas: la operación se asienta exitosamente y el stock restante queda en 4 Moemas.
+
+- [X] T136 [US18] En `RegistrarTransformacionUseCase.php`, calcular el stock disponible en turno (`Apertura + Ingresos - Bajas - Consumos Previos`) y lanzar `DomainException` si `cantidad_insumo > stockDisponible` en backend/app/Application/UseCases/Transformacion/RegistrarTransformacionUseCase.php
+- [X] T137 [US18] En `TurnoController.php` (`corteInicial`), agregar el cálculo de ingresos acumulados del turno por producto y retornar `cantidad_inicial`, `ingresos` y `total_disponible` en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T138 [US18] En `transformacion_provider.dart`, capturar correctamente las excepciones HTTP 400/422 y propagar el mensaje de error de validación sin marcar la operación como éxito local en frontend/puntofrio_app/lib/presentation/providers/transformacion_provider.dart
+- [X] T139 [US18] En `transformacion_screen.dart`, mostrar badge con el stock físico disponible en el turno para el insumo seleccionado y notificar visualmente el error en rojo si se excede en frontend/puntofrio_app/lib/presentation/screens/transformacion/transformacion_screen.dart
+- [X] T140 [US18] En `conteo_pdf_service.dart`, actualizar la estructura tabular del acta en PDF agregando las columnas `INICIAL`, `INGRESOS (+)` y `TOTAL DISPONIBLE` en frontend/puntofrio_app/lib/presentation/services/conteo_pdf_service.dart
+- [X] T141 [US18] Ejecutar pruebas unitarias de backend (`php artisan test`) y análisis de frontend (`flutter analyze`)
+- [ ] T142 Compilar APK Release oficial y desplegar backend en cPanel
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -383,6 +403,7 @@
 - **Phase 19 (US15 - Alerta Inteligente de Fuga entre Turnos)**: Comparador automático cierre vs apertura y alerta roja con WhatsApp en móvil de Admin.
 - **Phase 20 (US16 - Estabilización Operativa, Rellenos 0 y Conteo Activo Re-imprimible)**: Corrige los 3 fallos críticos, habilita conteo activo en PDF hasta el cierre y soporte de rellenos cero.
 - **Phase 21 (US17 - Persistencia de Turno por Barman, Auto-adopción y Cierre)**: Corrige persistencia de turno en re-login, vinculación correcta de barman y propiedad de comisión en cierre.
+- **Phase 22 (US18 - Control Estricto de Stock en Rellenos y Columna de Ingresos en Conteo PDF)**: Valida disponibilidad de insumos en turno y refleja ingresos en reporte.
 
 ---
 

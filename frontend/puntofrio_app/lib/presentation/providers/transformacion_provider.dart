@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/database/sqlite_helper.dart';
@@ -133,8 +134,23 @@ class TransformacionNotifier extends StateNotifier<TransformacionState> {
             await SqliteHelper.marcarSincronizado(matching.first['id'] as int);
           }
         }
-      } catch (_) {
-        // En caso de caída de red, queda en cola SQLite para SyncCoordinator
+      } catch (e) {
+        if (e is DioException) {
+          final statusCode = e.response?.statusCode;
+          // Si el servidor respondió con error de validación/dominio (ej. 400 Stock insuficiente, 422), NO es caída de red
+          if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+            String errorMsg = 'Error al registrar transformación.';
+            final data = e.response?.data;
+            if (data is Map && data['error'] != null) {
+              errorMsg = data['error'].toString();
+            } else if (data is Map && data['message'] != null) {
+              errorMsg = data['message'].toString();
+            }
+            state = state.copyWith(isSubmitting: false, errorMessage: errorMsg);
+            return false;
+          }
+        }
+        // En caso de caída de red real (offline / timeout), queda en cola SQLite para SyncCoordinator
       }
 
       state = const TransformacionState(submitSuccess: true);

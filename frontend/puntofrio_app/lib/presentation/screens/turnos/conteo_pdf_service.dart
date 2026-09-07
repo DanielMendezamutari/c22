@@ -18,7 +18,9 @@ class ConteoPdfService {
         '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year} ${ahora.hour.toString().padLeft(2, '0')}:${ahora.minute.toString().padLeft(2, '0')}';
 
     final totalItems = items.length;
-    final totalUnidades = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad'] as num?)?.toDouble() ?? 0.0));
+    final totalInicial = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad_inicial'] ?? item['cantidad'] as num?)?.toDouble() ?? 0.0));
+    final totalIngresos = items.fold<double>(0.0, (acc, item) => acc + ((item['ingresos'] as num?)?.toDouble() ?? 0.0));
+    final totalDisponible = items.fold<double>(0.0, (acc, item) => acc + ((item['total_disponible'] as num?)?.toDouble() ?? ((item['cantidad'] as num?)?.toDouble() ?? 0.0)));
 
     pdf.addPage(
       pw.MultiPage(
@@ -44,7 +46,7 @@ class ConteoPdfService {
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'ACTA OFICIAL DE CONTEO FÍSICO INICIAL (CORTE DE APERTURA)',
+                      'ACTA OFICIAL DE CONTEO FÍSICO Y BALANCE EN TURNO',
                       style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700),
                     ),
                   ],
@@ -126,17 +128,18 @@ class ConteoPdfService {
           pw.SizedBox(height: 16),
 
           // 3. Tabla de Productos del Conteo Físico
-          pw.Text('DETALLE DE STOCK RECIBIDO EN BARRA',
+          pw.Text('DETALLE DE STOCK FÍSICO Y MOVIMIENTOS EN BARRA',
               style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey800)),
           pw.SizedBox(height: 8),
 
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
             columnWidths: {
-              0: const pw.FlexColumnWidth(1),
-              1: const pw.FlexColumnWidth(5),
-              2: const pw.FlexColumnWidth(2.5),
-              3: const pw.FlexColumnWidth(2.5),
+              0: const pw.FlexColumnWidth(0.8),
+              1: const pw.FlexColumnWidth(4.2),
+              2: const pw.FlexColumnWidth(1.8),
+              3: const pw.FlexColumnWidth(2.0),
+              4: const pw.FlexColumnWidth(2.2),
             },
             children: [
               pw.TableRow(
@@ -144,35 +147,27 @@ class ConteoPdfService {
                 children: [
                   _th('#'),
                   _th('PRODUCTO / INSUMO'),
-                  _th('CANTIDAD'),
-                  _th('FORMATO'),
+                  _th('APERTURA'),
+                  _th('INGRESOS (+)'),
+                  _th('TOTAL DISP.'),
                 ],
               ),
               ...items.asMap().entries.map((entry) {
                 final idx = entry.key + 1;
                 final item = entry.value;
-                final nombre = item['nombre']?.toString() ?? 'Producto';
-                final cant = (item['cantidad'] as num?)?.toDouble() ?? 0.0;
-                final esLicor = item['es_licor'] == true;
-
-                String formato = 'Unidades';
-                if (esLicor) {
-                  final enteros = cant.floor();
-                  final decimal = cant - enteros;
-                  String fraccionStr = '';
-                  if (decimal >= 0.70) fraccionStr = '+ 3/4 bot.';
-                  else if (decimal >= 0.45) fraccionStr = '+ 1/2 bot.';
-                  else if (decimal >= 0.20) fraccionStr = '+ 1/4 bot.';
-                  formato = '$enteros bot. $fraccionStr'.trim();
-                }
+                final nombre = item['nombre']?.toString() ?? item['producto_nombre']?.toString() ?? 'Producto';
+                final cantInicial = (item['cantidad_inicial'] as num?)?.toDouble() ?? (item['cantidad'] as num?)?.toDouble() ?? 0.0;
+                final ingresos = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
+                final totalDisp = (item['total_disponible'] as num?)?.toDouble() ?? (cantInicial + ingresos);
 
                 return pw.TableRow(
                   decoration: pw.BoxDecoration(color: idx % 2 == 0 ? PdfColors.grey50 : PdfColors.white),
                   children: [
                     _td(idx.toString(), align: pw.TextAlign.center),
                     _td(nombre),
-                    _td(cant.toStringAsFixed(2), align: pw.TextAlign.right, isBold: true),
-                    _td(formato, align: pw.TextAlign.center),
+                    _td(cantInicial.toStringAsFixed(2), align: pw.TextAlign.right),
+                    _td(ingresos > 0 ? '+${ingresos.toStringAsFixed(2)}' : '-', align: pw.TextAlign.right, color: ingresos > 0 ? PdfColors.green800 : PdfColors.black),
+                    _td(totalDisp.toStringAsFixed(2), align: pw.TextAlign.right, isBold: true),
                   ],
                 );
               }),
@@ -191,10 +186,10 @@ class ConteoPdfService {
             child: pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('Total de Artículos Auditados: $totalItems',
+                pw.Text('Total de Artículos: $totalItems',
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                pw.Text('Suma Total Unidades Físicas: ${totalUnidades.toStringAsFixed(2)}',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColors.blue900)),
+                pw.Text('Apertura: ${totalInicial.toStringAsFixed(2)} | Ingresos: +${totalIngresos.toStringAsFixed(2)} | Disp: ${totalDisponible.toStringAsFixed(2)} u.',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.blue900)),
               ],
             ),
           ),
@@ -299,12 +294,12 @@ class ConteoPdfService {
     );
   }
 
-  static pw.Widget _td(String texto, {pw.TextAlign align = pw.TextAlign.left, bool isBold = false}) {
+  static pw.Widget _td(String texto, {pw.TextAlign align = pw.TextAlign.left, bool isBold = false, PdfColor color = PdfColors.black}) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: pw.Text(
         texto,
-        style: pw.TextStyle(fontSize: 9, fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal),
+        style: pw.TextStyle(fontSize: 9, fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal, color: color),
         textAlign: align,
       ),
     );

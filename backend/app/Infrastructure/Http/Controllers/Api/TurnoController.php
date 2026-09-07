@@ -183,17 +183,30 @@ class TurnoController extends Controller
                 ], 404);
             }
 
+            // Ingresos acumulados durante el turno por producto (NUEVO INGRESO / Recepción de mercadería)
+            $ingresosPorProd = \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $id)
+                ->where('tipo_movimiento', 'ingreso_compra')
+                ->groupBy('producto_id')
+                ->selectRaw('producto_id, sum(cantidad) as total_ingresos')
+                ->pluck('total_ingresos', 'producto_id')
+                ->toArray();
+
             $cortes = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::with('producto')
                 ->where('turno_id', $id)
                 ->whereIn('tipo_corte', ['inicial', 'apertura'])
                 ->get()
-                ->map(function ($c) {
+                ->map(function ($c) use ($ingresosPorProd) {
+                    $ingreso = (float) ($ingresosPorProd[$c->producto_id] ?? 0.0);
+                    $inicial = (float) $c->cantidad;
                     return [
                         'producto_id' => $c->producto_id,
                         'producto_nombre' => $c->producto->nombre ?? 'Producto #' . $c->producto_id,
                         'codigo' => $c->producto->codigo_barra ?? 'S/C',
                         'tipo_producto' => $c->producto->tipo ?? 'terminado',
-                        'cantidad' => (float) $c->cantidad,
+                        'cantidad' => $inicial,
+                        'cantidad_inicial' => $inicial,
+                        'ingresos' => $ingreso,
+                        'total_disponible' => round($inicial + $ingreso, 2),
                     ];
                 });
 

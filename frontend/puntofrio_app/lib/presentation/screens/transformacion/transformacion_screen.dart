@@ -15,6 +15,7 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
   List<Map<String, dynamic>> _recetas = [];
   List<Map<String, dynamic>> _productos = [];
   Map<String, dynamic>? _recetaSeleccionada;
+  Map<int, double> _stockDisponiblePorProducto = {};
 
   // --- Campos para Receta Simple ---
   final _insumoSimpleCtrl = TextEditingController(text: '24');
@@ -69,6 +70,24 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
       if (resRecetas.data['success'] == true && resRecetas.data['data'] != null) {
         final todas = List<Map<String, dynamic>>.from(resRecetas.data['data']);
         _recetas = todas.where((r) => r['activo'] == 1 || r['activo'] == true).toList();
+      }
+    } catch (_) {}
+
+    try {
+      // 3. Cargar stock disponible en el turno para advertencia en tiempo real
+      final authState = ref.read(authProvider);
+      final turnoId = authState.turnoActivoId;
+      if (turnoId != null) {
+        final resCorte = await client.get('/turnos/$turnoId/corte-inicial');
+        if (resCorte.statusCode == 200 && resCorte.data['success'] == true && resCorte.data['data'] != null) {
+          final items = resCorte.data['data']['items'] as List?;
+          if (items != null) {
+            _stockDisponiblePorProducto = {
+              for (var i in items)
+                (i['producto_id'] as int): ((i['total_disponible'] ?? i['cantidad']) as num).toDouble()
+            };
+          }
+        }
       }
     } catch (_) {}
 
@@ -196,6 +215,16 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
         _producidasSimpleCtrl.text = '20';
         _roturasSimpleCtrl.text = '0';
         _obsCtrl.clear();
+        _cargarDatos();
+      } else if (!ok && mounted) {
+        final err = ref.read(transformacionProvider).errorMessage ?? 'Error al registrar transformación.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFC0392B),
+            content: Text('⚠️ $err'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } else {
       // Receta Compuesta
@@ -250,6 +279,16 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
         _producidasCompuestaCtrl.text = '1';
         _roturasCompuestaCtrl.text = '0';
         _obsCtrl.clear();
+        _cargarDatos();
+      } else if (!ok && mounted) {
+        final err = ref.read(transformacionProvider).errorMessage ?? 'Error al registrar mezcla.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFC0392B),
+            content: Text('⚠️ $err'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     }
   }
@@ -528,6 +567,8 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
 
   Widget _buildFormularioSimple(TransformacionState state) {
     final insumoOrigenId = _recetaSeleccionada!['insumo_origen_id'] as int?;
+    final insumoActualId = _insumoFisicoSimpleId ?? insumoOrigenId;
+    final stockDisp = insumoActualId != null ? _stockDisponiblePorProducto[insumoActualId] : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -571,6 +612,39 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
                   },
                 ),
               ),
+              if (stockDisp != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: stockDisp > 0 ? const Color(0xFF1B4D3E) : const Color(0xFF4D1B1B),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: stockDisp > 0 ? const Color(0xFF2ECC71) : const Color(0xFFE74C3C),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        stockDisp > 0 ? Icons.inventory_2 : Icons.warning_amber_rounded,
+                        size: 15,
+                        color: stockDisp > 0 ? const Color(0xFF2ECC71) : const Color(0xFFE74C3C),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Stock en barra: ${stockDisp.toStringAsFixed(0)} u. disponibles en turno',
+                        style: TextStyle(
+                          color: stockDisp > 0 ? const Color(0xFF2ECC71) : const Color(0xFFE74C3C),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

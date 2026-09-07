@@ -88,6 +88,51 @@ class RegistrarTransformacionUseCase
 
             $insumoOrigenId = (int) ($comando['insumo_origen_id'] ?? $receta['insumo_origen_id']);
 
+            // 3.1 Validar Stock Disponible en el Turno (Principio Constitucional III y Ecuación de Balance)
+            $calcularStockDisponible = function (int $prodId) use ($turnoId): float {
+                $stockInicial = (float) (\App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $turnoId)
+                    ->where('producto_id', $prodId)
+                    ->whereIn('tipo_corte', ['inicial', 'apertura'])
+                    ->value('cantidad') ?? 0.0);
+
+                $ingresos = (float) \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $turnoId)
+                    ->where('producto_id', $prodId)
+                    ->where('tipo_movimiento', 'ingreso_compra')
+                    ->sum('cantidad');
+
+                $bajas = (float) \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $turnoId)
+                    ->where('producto_id', $prodId)
+                    ->where('tipo_movimiento', 'baja_rotura')
+                    ->sum('cantidad');
+
+                $consumosPrevios = (float) \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $turnoId)
+                    ->where('producto_id', $prodId)
+                    ->where('tipo_movimiento', 'transformacion_consumo')
+                    ->sum('cantidad');
+
+                return round($stockInicial + $ingresos - $bajas - $consumosPrevios, 2);
+            };
+
+            if (!empty($insumosOrigenCompuestos) && is_array($insumosOrigenCompuestos)) {
+                foreach ($insumosOrigenCompuestos as $ingrediente) {
+                    $ingId = (int) $ingrediente['insumo_id'];
+                    $ingCant = (float) $ingrediente['cantidad'];
+                    $disp = $calcularStockDisponible($ingId);
+                    if ($ingCant > $disp) {
+                        $prod = \App\Infrastructure\Persistence\Eloquent\Models\Producto::find($ingId);
+                        $nombre = $prod ? $prod->nombre : "Insumo #{$ingId}";
+                        throw new DomainException("Stock insuficiente de '{$nombre}'. Disponible en tu turno: {$disp}, requerido: {$ingCant}.");
+                    }
+                }
+            } else {
+                $disp = $calcularStockDisponible($insumoOrigenId);
+                if ($cantidadInsumo > $disp) {
+                    $prod = \App\Infrastructure\Persistence\Eloquent\Models\Producto::find($insumoOrigenId);
+                    $nombre = $prod ? $prod->nombre : "Insumo #{$insumoOrigenId}";
+                    throw new DomainException("Stock insuficiente de '{$nombre}'. Disponible en tu turno: {$disp}, requerido para este relleno: {$cantidadInsumo}. Registra primero la recepción en 'NUEVO INGRESO' si llegaron más unidades.");
+                }
+            }
+
             $tarifa = (float) $receta['tarifa_comision_unidad'];
             $ratioEsperado = (float) $receta['ratio_referencia_esperado'];
             $toleranciaMax = (float) $receta['umbral_desviacion_alerta'];
