@@ -22,6 +22,7 @@ Route::prefix('v1')->group(function () {
     // Gestión de Turnos de 12h y Cortes de Inventario - User Story 3
     Route::post('/turnos/abrir', [TurnoController::class, 'abrirTurno']);
     Route::post('/turnos/{id}/cerrar', [TurnoController::class, 'cerrarTurno']);
+    Route::get('/turnos/activo', [TurnoController::class, 'turnoActivo']);
     Route::get('/turnos/{id}/corte-inicial', [TurnoController::class, 'corteInicial']);
     Route::get('/turnos/historial-cortes', [TurnoController::class, 'historialCortes']);
     Route::get('/productos/corte', [TurnoController::class, 'productosParaCorte']);

@@ -64,7 +64,18 @@ class DashboardBarmanScreen extends ConsumerWidget {
               subtitle: 'Transformación Corona (1 Bs/u)',
               icon: Icons.local_bar,
               gradient: const [Color(0xFFE67E22), Color(0xFFD35400)],
-              onTap: () {
+              onTap: () async {
+                final turnoId = await _asegurarTurnoActivo(context, ref, auth);
+                if (!context.mounted) return;
+                if (turnoId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.orange,
+                      content: Text('⚠️ Debes aperturar tu turno primero en "Corte Inventario".'),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TransformacionScreen()),
                 );
@@ -76,8 +87,18 @@ class DashboardBarmanScreen extends ConsumerWidget {
               subtitle: 'Cobro inmediato con reloj dinámico',
               icon: Icons.point_of_sale,
               gradient: const [Color(0xFF27AE60), Color(0xFF2ECC71)],
-              onTap: () {
-                final turnoId = auth.turnoActivoId ?? 1;
+              onTap: () async {
+                final turnoId = await _asegurarTurnoActivo(context, ref, auth);
+                if (!context.mounted) return;
+                if (turnoId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.orange,
+                      content: Text('⚠️ No tienes un turno activo abierto para cobrar.'),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => ResumenCajeraScreen(turnoId: turnoId)),
                 );
@@ -89,7 +110,11 @@ class DashboardBarmanScreen extends ConsumerWidget {
               subtitle: 'Apertura / Cierre con fracciones 1/4',
               icon: Icons.inventory_2,
               gradient: const [Color(0xFF2980B9), Color(0xFF3498DB)],
-              onTap: () {
+              onTap: () async {
+                await _asegurarTurnoActivo(context, ref, auth);
+                if (!context.mounted) return;
+                final updatedAuth = ref.read(authProvider);
+
                 showModalBottomSheet(
                   context: context,
                   backgroundColor: const Color(0xFF1B2332),
@@ -108,14 +133,14 @@ class DashboardBarmanScreen extends ConsumerWidget {
                         const SizedBox(height: 16),
 
                         // Si hay turno activo: Botón para Ver/Re-imprimir Conteo Inicial las veces que quiera
-                        if (auth.turnoActivoId != null) ...[
+                        if (updatedAuth.turnoActivoId != null) ...[
                           ListTile(
                             leading: const Icon(Icons.picture_as_pdf, color: Colors.amberAccent),
                             title: const Text('📄 Ver / Re-imprimir Conteo Inicial', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            subtitle: Text('Turno #${auth.turnoActivoId} activo - Generar PDF e imprimir o WhatsApp', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                            subtitle: Text('Turno #${updatedAuth.turnoActivoId} activo - Generar PDF e imprimir o WhatsApp', style: const TextStyle(color: Colors.white60, fontSize: 12)),
                             onTap: () {
                               Navigator.of(ctx).pop();
-                              _verConteoApertura(context, ref, auth.turnoActivoId!);
+                              _verConteoApertura(context, ref, updatedAuth.turnoActivoId!);
                             },
                           ),
                           const Divider(color: Colors.white12),
@@ -129,7 +154,7 @@ class DashboardBarmanScreen extends ConsumerWidget {
                                 MaterialPageRoute(
                                   builder: (_) => CorteInventarioScreen(
                                     tipoOperacion: TipoOperacionCorte.cierre,
-                                    turnoId: auth.turnoActivoId,
+                                    turnoId: updatedAuth.turnoActivoId,
                                   ),
                                 ),
                               );
@@ -483,5 +508,27 @@ class DashboardBarmanScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  Future<int?> _asegurarTurnoActivo(BuildContext context, WidgetRef ref, AuthState auth) async {
+    if (auth.turnoActivoId != null) {
+      return auth.turnoActivoId;
+    }
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final res = await client.get('/turnos/activo', queryParameters: {
+        'barman_id': auth.usuarioId,
+        'sucursal_id': auth.sucursalId,
+      });
+
+      if (res.statusCode == 200 && res.data['success'] == true && res.data['data'] != null) {
+        final id = res.data['data']['id'] as int;
+        ref.read(authProvider.notifier).actualizarTurnoActivo(id);
+        return id;
+      }
+    } catch (_) {}
+
+    return null;
   }
 }

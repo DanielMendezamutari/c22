@@ -253,4 +253,41 @@ class TurnoController extends Controller
             ], 400);
         }
     }
+
+    public function turnoActivo(Request $request): JsonResponse
+    {
+        try {
+            $user = auth('sanctum')->user() ?? $request->user();
+            $barmanId = (int) ($request->input('barman_id') ?? $user?->id ?? 1);
+            $sucursalId = (int) ($request->input('sucursal_id') ?? 1);
+
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario'])
+                ->where('barman_id', $barmanId)
+                ->where('sucursal_id', $sucursalId)
+                ->whereIn('estado', ['abierto', 'cobrado'])
+                ->latest('fecha_apertura')
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => $turno ? [
+                    'id' => $turno->id,
+                    'sucursal_id' => $turno->sucursal_id,
+                    'sucursal_nombre' => $turno->sucursal->nombre ?? 'N/A',
+                    'barman_id' => $turno->barman_id,
+                    'barman_nombre' => ($turno->usuario->nombre ?? 'Barman') . ' ' . ($turno->usuario->apellido ?? ''),
+                    'tipo_turno' => $turno->tipo_turno,
+                    'estado' => $turno->estado,
+                    'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : null,
+                    'total_transformaciones_netas' => (int) $turno->total_transformaciones_netas,
+                    'total_comision_bruta' => (float) $turno->total_comision_bruta,
+                ] : null,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

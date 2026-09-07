@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/transformacion_provider.dart';
 
@@ -128,7 +127,34 @@ class _TransformacionScreenState extends ConsumerState<TransformacionScreen> {
     if (_recetaSeleccionada == null) return;
 
     final authState = ref.read(authProvider);
-    final turnoId = authState.turnoActivoId ?? 1;
+    int? turnoId = authState.turnoActivoId;
+
+    if (turnoId == null) {
+      try {
+        final client = ref.read(apiClientProvider);
+        final res = await client.get('/turnos/activo', queryParameters: {
+          'barman_id': authState.usuarioId,
+          'sucursal_id': authState.sucursalId,
+        });
+        if (res.statusCode == 200 && res.data['success'] == true && res.data['data'] != null) {
+          turnoId = res.data['data']['id'] as int;
+          ref.read(authProvider.notifier).actualizarTurnoActivo(turnoId);
+        }
+      } catch (_) {}
+    }
+
+    if (turnoId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('⚠️ No tienes un turno activo abierto. Realiza tu Corte de Apertura primero.'),
+          ),
+        );
+      }
+      return;
+    }
+
     final esCompuesta = _recetaSeleccionada!['insumo_secundario_id'] != null;
     final recetaId = _recetaSeleccionada!['id'] as int;
 

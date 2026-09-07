@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../core/network/api_client.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import 'alertas_merma_screen.dart';
@@ -26,18 +24,31 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
   bool _esCelularMaestro = false;
   bool _isLoadingDispositivos = false;
   List<Map<String, dynamic>> _discrepanciasPendientes = [];
+  List<Map<String, dynamic>> _dispositivosRegistrados = [];
 
   @override
   void initState() {
     super.initState();
-    _cargarEstadoDispositivo();
+    _cargarDispositivos();
     _cargarDiscrepancias();
   }
 
-  Future<void> _cargarEstadoDispositivo() async {
+  Future<void> _cargarDispositivos() async {
     final prefs = ref.read(sharedPreferencesProvider);
+    final client = ref.read(apiClientProvider);
+    final auth = ref.read(authProvider);
     final vinculado = prefs.getBool('pref_celular_maestro_activo') ?? false;
     setState(() => _esCelularMaestro = vinculado);
+
+    try {
+      final res = await client.get('/dispositivos/maestros', queryParameters: {
+        'usuario_id': auth.usuarioId,
+      });
+      if (res.data['success'] == true && res.data['data'] != null) {
+        final list = List<Map<String, dynamic>>.from(res.data['data']);
+        if (mounted) setState(() => _dispositivosRegistrados = list);
+      }
+    } catch (_) {}
   }
 
   Future<void> _cargarDiscrepancias() async {
@@ -57,6 +68,7 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
   Future<void> _toggleCelularMaestro(bool valor) async {
     final prefs = ref.read(sharedPreferencesProvider);
     final client = ref.read(apiClientProvider);
+    final auth = ref.read(authProvider);
 
     setState(() => _isLoadingDispositivos = true);
 
@@ -70,7 +82,8 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
       if (valor) {
         await client.post('/dispositivos/registrar-maestro', data: {
           'device_id': deviceId,
-          'nombre_dispositivo': 'Celular Maestro de Daniel',
+          'nombre_dispositivo': 'Celular Maestro de ${auth.nombre ?? "Admin"}',
+          'usuario_id': auth.usuarioId,
         });
         await prefs.setBool('pref_celular_maestro_activo', true);
         setState(() => _esCelularMaestro = true);
@@ -85,6 +98,7 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
       } else {
         await client.post('/dispositivos/desvincular', data: {
           'device_id': deviceId,
+          'usuario_id': auth.usuarioId,
         });
         await prefs.setBool('pref_celular_maestro_activo', false);
         setState(() => _esCelularMaestro = false);

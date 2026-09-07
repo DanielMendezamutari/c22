@@ -47,6 +47,11 @@ class Turno extends Model
         return $this->belongsTo(Usuario::class, 'barman_id');
     }
 
+    public function usuario(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'barman_id');
+    }
+
     public function cortes(): HasMany
     {
         return $this->hasMany(CorteInventario::class, 'turno_id');
