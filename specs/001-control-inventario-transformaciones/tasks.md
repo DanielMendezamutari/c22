@@ -352,13 +352,13 @@
 3. En el Dashboard del Barman, la opción "Corte de Cierre" y "Registrar Relleno" deben estar habilitadas y operativas sin advertir que falta aperturar turno.
 4. Al cerrar el turno con inventario final, el proceso finaliza sin error 500/400 y el estado local se limpia (`turnoActivoId == null`).
 
-- [ ] T129 [US17] En `CorteInventarioRequest.php`, agregar regla de validación `'barman_id' => 'sometimes|integer|exists:usuarios,id'` en backend/app/Infrastructure/Http/Requests/CorteInventarioRequest.php
-- [ ] T130 [US17] En `TurnoController.php` (`abrirTurno` y `turnoActivo`), resolver `$barmanId` priorizando el `barman_id` enviado por la app y auto-adoptar turnos huérfanos en la sucursal en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
-- [ ] T131 [US17] En `EloquentTurnoRepository.php` (`buscarTurnoActivoPorBarman`), implementar fallback de auto-adopción de turnos huérfanos con `barman_id = 1` en la sucursal en backend/app/Infrastructure/Persistence/Eloquent/Repositories/EloquentTurnoRepository.php
-- [ ] T132 [US17] En `CerrarTurnoUseCase.php`, corregir propiedad `$turno->total_comision` a `$turno->total_comision_bruta` en backend/app/Application/UseCases/Turnos/CerrarTurnoUseCase.php
-- [ ] T133 [US17] En `corte_inventario_screen.dart`, enviar `'barman_id': auth.usuarioId` en la apertura y resetear `ref.read(authProvider.notifier).actualizarTurnoActivo(null)` al cerrar en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
-- [ ] T134 [US17] Ejecutar pruebas unitarias de backend (`php artisan test`) y análisis de frontend (`flutter analyze`)
-- [ ] T135 Compilar APK Release oficial y preparar despliegue
+- [X] T129 [US17] En `CorteInventarioRequest.php`, agregar regla de validación `'barman_id' => 'sometimes|integer|exists:usuarios,id'` en backend/app/Infrastructure/Http/Requests/CorteInventarioRequest.php
+- [X] T130 [US17] En `TurnoController.php` (`abrirTurno` y `turnoActivo`), resolver `$barmanId` priorizando el `barman_id` enviado por la app y auto-adoptar turnos huérfanos en la sucursal en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T131 [US17] En `EloquentTurnoRepository.php` (`buscarTurnoActivoPorBarman`), implementar fallback de auto-adopción de turnos huérfanos con `barman_id = 1` en la sucursal en backend/app/Infrastructure/Persistence/Eloquent/Repositories/EloquentTurnoRepository.php
+- [X] T132 [US17] En `CerrarTurnoUseCase.php`, corregir propiedad `$turno->total_comision` a `$turno->total_comision_bruta` en backend/app/Application/UseCases/Turnos/CerrarTurnoUseCase.php
+- [X] T133 [US17] En `corte_inventario_screen.dart`, enviar `'barman_id': auth.usuarioId` en la apertura y resetear `ref.read(authProvider.notifier).actualizarTurnoActivo(null)` al cerrar en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T134 [US17] Ejecutar pruebas unitarias de backend (`php artisan test`) y análisis de frontend (`flutter analyze`)
+- [X] T135 Compilar APK Release oficial y preparar despliegue
 
 ---
 
