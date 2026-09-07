@@ -166,6 +166,32 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
   - Backend: Campo `foto_comprobante_cobro` en tabla `turnos` y soporte en `POST /turnos/{id}/cobro-cajera`.
   - Frontend: Activación obligatoria de cámara con diálogo de vista previa en `ResumenCajeraScreen` al presionar "Cobro Recibido / Finalizar Turno".
 
+### FASE 7: Gestión de Proveedores y Selección Rápida en Recepción (US19)
+- **Ticket 7.1 (Backend Proveedores)**:
+  - Migración `create_proveedores_table` (`id`, `nombre`, `contacto_nombre`, `telefono`, `nit_o_ci`, `direccion`, `activo`, `timestamps`).
+  - Modelo `Proveedor` y relación con `Compra`.
+  - Controlador `ProveedorController` con CRUD completo (`GET /proveedores`, `POST /proveedores`, `PUT /proveedores/{id}`, `DELETE /proveedores/{id}`).
+- **Ticket 7.2 (Frontend Admin y Barman)**:
+  - Pantalla `ProveedoresAdminScreen` con CRUD (nombre, teléfono, NIT, switch activo) accesible desde tarjeta "GESTIÓN DE PROVEEDORES" en `DashboardAdminScreen`.
+  - En `IngresoMercaderiaScreen`: Selector desplegable con buscador rápido alimentado por `GET /proveedores?activo=1` para vincular automáticamente el proveedor.
+
+### FASE 8: Monitoreo Operativo por Sucursal e Informe PDF para Administrador (US20)
+- **Ticket 8.1 (Backend Auditoría Turno Sucursal)**:
+  - Endpoint `GET /auditoria/sucursal/{sucursal_id}/informe-turno`: compila metadatos de jornada, conteo inicial, compras recepcionadas (con proveedor y notas), traspasos entrantes/salientes, bajas con motivos, transformaciones/comisiones, balance en custodia y liquidación financiera.
+- **Ticket 8.2 (Frontend Pantalla y Servicio PDF)**:
+  - Pantalla `InformeSucursalesScreen` con selector de sucursal (Casa22, Corona, Madan), visualización del turno activo en vivo o historial de turnos pasados.
+  - Servicio `InformeOperativoTurnoPdfService`: generación de documento PDF oficial corporativo de auditoría con tablas de balance, firmas de custodios y botón de compartir en WhatsApp.
+
+### FASE 9: Traspasos Reales con Validación y Bloqueo de Stock en Origen (US21)
+- **Ticket 9.1 (Backend Control de Stock en Traspasos)**:
+  - En `EnviarTraspasoUseCase`: Validar stock disponible en la sucursal emisora para cada producto (`Apertura + Ingresos + Traspasos Entrantes - Traspasos Salientes Previos - Bajas - Consumos`). Lanzar `DomainException` HTTP 400 si la cantidad solicitada excede el stock físico en barra.
+  - Al despachar: Registrar movimiento `traspaso_salida` descontando stock de origen.
+  - En `RecibirTraspasoUseCase`: Al confirmar recepción, registrar movimiento `traspaso_entrada` acreditando stock en destino.
+- **Ticket 9.2 (Frontend Despacho Dinámico y Alerta)**:
+  - En `EnviarTraspasoScreen`: Poblar dinámicamente sucursales destino reales desde `GET /sucursales` (excluyendo la propia) y productos reales desde `GET /productos`.
+  - Consultar y mostrar el saldo en barra para cada producto (`Disponible en barra: X u.`).
+  - Validar en tiempo real: Si la cantidad excede las existencias físicas, resaltar en rojo y desactivar el botón "DESPACHAR TRASPASO".
+
 ---
 
 ## Complexity Tracking

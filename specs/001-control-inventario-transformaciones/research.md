@@ -89,3 +89,28 @@
 
 - **Decision**: Interceptor de cámara obligatorio al presionar "Cobro Recibido / Finalizar Turno" con diálogo de vista previa antes de sellar.
 - **Rationale**: La entrega de comisiones en barra es un punto crítico de conflicto si el barman o la cajera disputan la entrega del dinero. Exigir la fotografía de los billetes o comprobante y mostrar la vista previa antes de registrar el código de recibo elimina el 100% de la ambigüedad en auditorías posteriores.
+
+---
+
+## 10. Normalización de Proveedores y Catálogo Comercial
+
+- **Decision**: Crear la entidad `proveedores` en base de datos con nombre comercial, contacto, teléfono/WhatsApp, NIT/CI y estado activo, en lugar de cadenas de texto libre en `compras`.
+- **Rationale**: Mantiene el catálogo comercial ordenado y auditado por el Administrador. Evita duplicaciones y variaciones tipográficas (ej. "CBN", "C.B.N.", "Cervecería Boliviana"). En la interfaz del barman, un selector con búsqueda rápida permite elegir al proveedor en 1 toque.
+- **Alternatives considered**:
+  - *Mantener solo texto libre*: Provoca descontrol contable, dificulta saber cuánto se compró a cada proveedor real a lo largo del mes y confunde a los barmen nuevos.
+
+---
+
+## 11. Auditoría Operativa de Sucursal en Vivo y Generación de Informe PDF
+
+- **Decision**: Endpoint consolidado de auditoría `GET /auditoria/sucursal/{id}/informe-turno` que compila en una sola llamada el balance de masa de la jornada (apertura, compras, traspasos, bajas, transformaciones, balances y liquidación) y renderizado de PDF corporativo en el cliente mediante `InformeOperativoTurnoPdfService`.
+- **Rationale**: El Administrador necesita supervisar cualquier local remotamente en tiempo real (ej. ver cómo va Casa22 a medianoche). Generar el informe en formato PDF corporativo permite documentar la jornada, enviarlo por WhatsApp a socios o supervisores y respaldar la contabilidad de la empresa.
+- **Alternatives considered**:
+  - *Múltiples consultas separadas en la app*: Saturaría la conexión con 6 o 7 peticiones HTTP distintas (una para cortes, una para compras, una para bajas, etc.). El endpoint unificado garantiza atomicidad y rapidez.
+
+---
+
+## 12. Consistencia Contable y Control de Stock en Traspasos
+
+- **Decision**: Validar existencias físicas en la sucursal emisora antes de despachar un traspaso. Descontar inmediatamente en origen mediante el movimiento `traspaso_salida` y acreditar en destino mediante `traspaso_entrada` únicamente cuando el receptor confirme la entrega conforme.
+- **Rationale**: Cumple el Principio V de la Constitución ("Trazabilidad de Traspasos"): la mercadería despachada sale de la custodia del emisor pero no existe en el destino hasta que sea recibida. Además, validar stock en origen impide que un empleado transfiera mercadería que no tiene físicamente, evitando inventarios negativos.

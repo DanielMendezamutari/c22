@@ -273,3 +273,16 @@ Registro de facturas y notas de compra de proveedores conteniendo múltiples pro
   - `cantidad`: DECIMAL(8,2) NOT NULL
   - `costo_unitario`: DECIMAL(10,2) NOT NULL DEFAULT 0.00
   - `created_at`, `updated_at`: TIMESTAMP
+
+---
+
+### 2.14 `proveedores`
+Catálogo comercial de distribuidores, cervecerías y proveedores de insumos.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `nombre`: VARCHAR(150) NOT NULL UNIQUE (ej. 'Cervecería Boliviana Nacional', 'Embol / Coca-Cola', 'Licorería Punto Frío (Central)')
+- `contacto_nombre`: VARCHAR(100) NULLABLE
+- `telefono`: VARCHAR(50) NULLABLE (Teléfono o WhatsApp de pedidos)
+- `nit_o_ci`: VARCHAR(50) NULLABLE
+- `direccion`: VARCHAR(255) NULLABLE
+- `activo`: BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at`, `updated_at`: TIMESTAMP

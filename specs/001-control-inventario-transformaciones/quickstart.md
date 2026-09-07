@@ -208,3 +208,43 @@ flutter run
      - `Whisky Chancellor 750ml` (0.50 btl).
      - Producción resultante: 1 botella de `Whisky Johnnie Walker Red Label 750ml`.
    - Se asienta la transformación compuesta mediante `POST /api/v1/transformaciones/relleno` descontando las fracciones de ambas botellas e incrementando el stock de Red Label con la respectiva comisión para el personal.
+
+---
+
+### Escenario 13: Gestión de Proveedores y Selección Rápida en Recepción (US19)
+1. **Alta de Proveedor (Admin)**:
+   - En `DashboardAdminScreen`, ingresar a "GESTIÓN DE PROVEEDORES".
+   - Presionar "+ Nuevo Proveedor", ingresar `Distribuidora San Juan`, teléfono `70011223`, NIT `49582910` y confirmar.
+2. **Selección en Recepción (Barman)**:
+   - Ingresar a "RECEPCIÓN DE MERCADERÍA" (`IngresoMercaderiaScreen`).
+   - Al abrir el desplegable de proveedores, escribir "San Juan" en el buscador y seleccionar al proveedor.
+3. **Resultado esperado**:
+   - La recepción se asienta vinculada formalmente a `Distribuidora San Juan` tanto en la compra como en el reporte de inventario.
+
+---
+
+### Escenario 14: Monitoreo por Sucursal y Generación de Informe PDF (US20)
+1. **Acceso al Módulo (Admin)**:
+   - En `DashboardAdminScreen`, presionar la tarjeta "MONITOREO Y REPORTES DE SUCURSAL".
+2. **Selección de Sucursal y Turno**:
+   - Seleccionar `Casa22`. El sistema carga la tarjeta del turno activo en vivo con su barman responsable y fecha de apertura.
+3. **Generación de Informe PDF**:
+   - Presionar "GENERAR INFORME OFICIAL PDF".
+4. **Resultado esperado**:
+   - Se renderiza el PDF consolidado con desglose completo: Conteo Inicial, Compras/Ingresos de proveedores con facturas, Traspasos entrantes/salientes, Bajas justificadas, Rellenos efectuados y Liquidación al barman.
+   - Se puede compartir directamente al grupo de supervisores mediante el botón "COMPARTIR POR WHATSAPP".
+
+---
+
+### Escenario 15: Traspasos Reales con Validación de Stock y Bloqueo de Saldo Negativo (US21)
+1. **Carga de Datos Reales**:
+   - Ingresar a "Despachar Traspaso" (`EnviarTraspasoScreen`).
+   - Verificar que el selector de destino liste sucursales reales de la base de datos (excluyendo la propia) y productos reales del catálogo.
+2. **Validación de Stock Insuficiente**:
+   - Para un producto con 4 botellas en stock en barra, ingresar cantidad `20.00`.
+   - La app pinta el campo en rojo y muestra la alerta: `Stock insuficiente en barra (Disponible: 4, Solicitado: 20)`. El botón "DESPACHAR TRASPASO" se bloquea.
+3. **Despacho Exitoso y Recepción en Destino**:
+   - Cambiar la cantidad a `4.00` y confirmar el despacho.
+   - El backend descuenta 4 botellas de la barra origen (`traspaso_salida`) y deja la orden `en_transito`.
+   - En la sucursal receptora, el barman ingresa a "Recepcionar Traspasos" y confirma `4.00` conformes.
+   - Se asienta `traspaso_entrada` y el stock se acredita formalmente en destino.

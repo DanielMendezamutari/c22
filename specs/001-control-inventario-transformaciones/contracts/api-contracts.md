@@ -696,3 +696,186 @@ Crea una nueva regla de combo para el desglose automático de Ticket Z.
 }
 ```
 
+---
+
+## 8. Gestión de Proveedores (Admin y Recepción)
+
+### `GET /proveedores`
+Lista todos los proveedores registrados. Admite filtro opcional `?activo=1`.
+
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "nombre": "Licorería Punto Frío (Central)",
+      "contacto_nombre": "Oficina Central",
+      "telefono": "78912345",
+      "nit_o_ci": "102938475",
+      "direccion": "Av. Principal #123",
+      "activo": true
+    },
+    {
+      "id": 2,
+      "nombre": "Cervecería Boliviana Nacional (CBN)",
+      "contacto_nombre": "Preventista Zona",
+      "telefono": "67369293",
+      "nit_o_ci": "495829102",
+      "direccion": "Parque Industrial",
+      "activo": true
+    }
+  ]
+}
+```
+
+### `POST /proveedores`
+Crea un nuevo proveedor en el catálogo comercial.
+
+- **Headers**: `Authorization: Bearer <admin_token>`
+- **Request**:
+```json
+{
+  "nombre": "Embol / Coca-Cola",
+  "contacto_nombre": "Distribuidor Norte",
+  "telefono": "70011223",
+  "nit_o_ci": "33445566",
+  "direccion": "Av. Cristo Redentor",
+  "activo": true
+}
+```
+- **Response 201 Created**:
+```json
+{
+  "success": true,
+  "message": "Proveedor registrado exitosamente",
+  "data": {
+    "id": 3,
+    "nombre": "Embol / Coca-Cola",
+    "activo": true
+  }
+}
+```
+
+---
+
+## 9. Monitoreo e Informe Operativo Integral por Sucursal / Turno
+
+### `GET /auditoria/sucursal/{sucursal_id}/informe-turno`
+Retorna el estado consolidado de la sucursal: el turno activo en vivo (o el último turno cerrado) con el balance detallado de masa y la liquidación del personal.
+
+- **Query Parameters**:
+  - `turno_id` (opcional): ID del turno específico a auditar. Si se omite, retorna el turno activo en curso o el último cerrado.
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": {
+    "turno": {
+      "id": 15,
+      "sucursal": "Casa22",
+      "barman": "Víctor Valverde",
+      "tipo_turno": "noche",
+      "estado": "abierto",
+      "fecha_apertura": "2026-09-07 19:00:00",
+      "fecha_cierre": null
+    },
+    "conteo_inicial": [
+      { "producto_id": 1, "nombre": "Corona Botella 355ml", "cantidad": 48.00 },
+      { "producto_id": 3, "nombre": "Moema Lata 355ml", "cantidad": 24.00 }
+    ],
+    "ingresos_compras": [
+      {
+        "id": 8,
+        "proveedor": "Cervecería Boliviana Nacional (CBN)",
+        "numero_nota_factura": "F-8921",
+        "detalles": [
+          { "producto_id": 3, "nombre": "Moema Lata 355ml", "cantidad": 24.00 }
+        ]
+      }
+    ],
+    "traspasos": {
+      "entrantes": [],
+      "salientes": [
+        {
+          "traspaso_id": 4,
+          "sucursal_destino": "Madan",
+          "producto": "Corona Botella 355ml",
+          "cantidad": 12.00,
+          "estado": "en_transito"
+        }
+      ]
+    },
+    "bajas_roturas": [
+      { "producto": "Corona Botella 355ml", "cantidad": 1.00, "motivo": "Botella defectuosa" }
+    ],
+    "transformaciones": [
+      {
+        "receta": "Relleno Corona",
+        "producido": 20.00,
+        "consumido": 20.00,
+        "comision_bs": 20.00
+      }
+    ],
+    "balance_stock": [
+      {
+        "producto_id": 1,
+        "nombre": "Corona Botella 355ml",
+        "inicial": 48.00,
+        "ingresos": 0.00,
+        "traspasos_netos": -12.00,
+        "bajas": 1.00,
+        "rellenos_producidos": 20.00,
+        "stock_actual_esperado": 55.00
+      }
+    ],
+    "liquidacion": {
+      "sueldo_base_semanal": 500.00,
+      "comision_rellenos_bs": 20.00,
+      "sanciones_bs": 0.00,
+      "total_liquidado_bs": 520.00,
+      "estado_pago": "pendiente"
+    }
+  }
+}
+```
+
+---
+
+## 10. Traspasos Inter-Sucursales con Validación Estricta de Stock
+
+### `POST /traspasos/enviar`
+Valida previamente que la sucursal de origen disponga de existencias físicas suficientes. Descuenta el inventario local mediante `traspaso_salida`.
+
+- **Request**:
+```json
+{
+  "sucursal_origen_id": 1,
+  "sucursal_destino_id": 2,
+  "items": [
+    { "producto_id": 1, "cantidad": 12.00 }
+  ],
+  "observaciones": "Envío de urgencia para viernes noche"
+}
+```
+- **Response 201 Created**:
+```json
+{
+  "success": true,
+  "data": {
+    "traspaso_id": 6,
+    "estado": "en_transito",
+    "total_items": 1,
+    "fecha_envio": "2026-09-07 20:15:00"
+  }
+}
+```
+- **Response 400 Bad Request** (Stock Insuficiente):
+```json
+{
+  "success": false,
+  "error": "Stock insuficiente de 'Corona Botella 355ml'. Disponible en tu turno: 4, requerido para traspaso: 12."
+}
+```
+
