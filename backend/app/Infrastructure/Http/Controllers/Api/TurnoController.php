@@ -31,8 +31,8 @@ class TurnoController extends Controller
     public function abrirTurno(CorteInventarioRequest $request): JsonResponse
     {
         try {
-            $user = $request->user();
-            $barmanId = $user ? $user->id : (int) $request->input('barman_id', 1);
+            $user = auth('sanctum')->user() ?? $request->user();
+            $barmanId = (int) ($request->input('barman_id') ?? $user?->id ?? 1);
 
             $datos = $request->validated();
             $datos['barman_id'] = $barmanId;
@@ -267,6 +267,21 @@ class TurnoController extends Controller
                 ->whereIn('estado', ['abierto', 'cobrado'])
                 ->latest('fecha_apertura')
                 ->first();
+
+            // Si el barman no tiene turno directo pero existe un turno abierto en la sucursal (ej. asignado a default/admin), auto-adoptarlo
+            if (!$turno) {
+                $turnoHuerfano = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario'])
+                    ->where('sucursal_id', $sucursalId)
+                    ->whereIn('estado', ['abierto', 'cobrado'])
+                    ->where('barman_id', 1)
+                    ->latest('fecha_apertura')
+                    ->first();
+
+                if ($turnoHuerfano) {
+                    $turnoHuerfano->update(['barman_id' => $barmanId]);
+                    $turno = $turnoHuerfano->fresh(['sucursal', 'usuario']);
+                }
+            }
 
             return response()->json([
                 'success' => true,

@@ -342,6 +342,26 @@
 
 ---
 
+## Phase 21: User Story 17 - Persistencia de Turno por Barman, Auto-adopción de Turno y Cierre Seguro (Priority: P1)
+
+**Goal**: Garantizar que el barman mantenga la sesión de su turno activo ininterrumpidamente aunque cierre la aplicación o vuelva a ingresar con su PIN, resolver la asignación real del `barman_id` en la apertura, auto-adoptar turnos huérfanos o con fallback default (1) en la sucursal, y corregir la propiedad de comisión bruta en el cierre de turno.
+
+**Independent Test**:
+1. Con un turno abierto en Casa22, cerrar sesión o salir de la aplicación.
+2. Ingresar nuevamente con el PIN de Víctor Valverde (PIN 2222): el turno activo #1 debe ser reconocido inmediatamente (`turnoActivoId != null`).
+3. En el Dashboard del Barman, la opción "Corte de Cierre" y "Registrar Relleno" deben estar habilitadas y operativas sin advertir que falta aperturar turno.
+4. Al cerrar el turno con inventario final, el proceso finaliza sin error 500/400 y el estado local se limpia (`turnoActivoId == null`).
+
+- [ ] T129 [US17] En `CorteInventarioRequest.php`, agregar regla de validación `'barman_id' => 'sometimes|integer|exists:usuarios,id'` en backend/app/Infrastructure/Http/Requests/CorteInventarioRequest.php
+- [ ] T130 [US17] En `TurnoController.php` (`abrirTurno` y `turnoActivo`), resolver `$barmanId` priorizando el `barman_id` enviado por la app y auto-adoptar turnos huérfanos en la sucursal en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [ ] T131 [US17] En `EloquentTurnoRepository.php` (`buscarTurnoActivoPorBarman`), implementar fallback de auto-adopción de turnos huérfanos con `barman_id = 1` en la sucursal en backend/app/Infrastructure/Persistence/Eloquent/Repositories/EloquentTurnoRepository.php
+- [ ] T132 [US17] En `CerrarTurnoUseCase.php`, corregir propiedad `$turno->total_comision` a `$turno->total_comision_bruta` en backend/app/Application/UseCases/Turnos/CerrarTurnoUseCase.php
+- [ ] T133 [US17] En `corte_inventario_screen.dart`, enviar `'barman_id': auth.usuarioId` en la apertura y resetear `ref.read(authProvider.notifier).actualizarTurnoActivo(null)` al cerrar en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [ ] T134 [US17] Ejecutar pruebas unitarias de backend (`php artisan test`) y análisis de frontend (`flutter analyze`)
+- [ ] T135 Compilar APK Release oficial y preparar despliegue
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -362,6 +382,7 @@
 - **Phase 18 (US14 - Motivos de Baja Dinámicos & PDF Cierre)**: CRUD de motivos y acta oficial de cierre con envío a WhatsApp.
 - **Phase 19 (US15 - Alerta Inteligente de Fuga entre Turnos)**: Comparador automático cierre vs apertura y alerta roja con WhatsApp en móvil de Admin.
 - **Phase 20 (US16 - Estabilización Operativa, Rellenos 0 y Conteo Activo Re-imprimible)**: Corrige los 3 fallos críticos, habilita conteo activo en PDF hasta el cierre y soporte de rellenos cero.
+- **Phase 21 (US17 - Persistencia de Turno por Barman, Auto-adopción y Cierre)**: Corrige persistencia de turno en re-login, vinculación correcta de barman y propiedad de comisión en cierre.
 
 ---
 

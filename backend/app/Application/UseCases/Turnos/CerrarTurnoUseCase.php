@@ -55,9 +55,9 @@ class CerrarTurnoUseCase
                 'turno_id' => $turnoId,
                 'estado' => 'cerrado',
                 'fecha_cierre' => $ahora->toDateTimeString(),
-                'total_comision_bruta' => (float) $turno->total_comision,
+                'total_comision_bruta' => (float) ($turno->total_comision_bruta ?? 0),
                 'saldo_deudor_descontado' => 0.00,
-                'total_neto' => (float) $turno->total_comision,
+                'total_neto' => (float) ($turno->total_comision_bruta ?? 0),
                 'total_items_corte' => count($corteFinal),
             ];
         });

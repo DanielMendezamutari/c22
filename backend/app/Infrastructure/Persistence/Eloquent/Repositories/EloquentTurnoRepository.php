@@ -15,11 +15,28 @@ class EloquentTurnoRepository implements TurnoRepositoryPort
 
     public function buscarTurnoActivoPorBarman(int $barmanId, int $sucursalId): ?Turno
     {
-        return Turno::where('barman_id', $barmanId)
+        $turno = Turno::where('barman_id', $barmanId)
             ->where('sucursal_id', $sucursalId)
             ->whereIn('estado', ['abierto', 'cobrado'])
             ->latest('fecha_apertura')
             ->first();
+
+        // Fallback de contingencia: si no se encuentra con el barman_id,
+        // pero existe un turno abierto en la sucursal huérfano o asignado al default (1 - Admin)
+        if (!$turno) {
+            $turnoHuerfano = Turno::where('sucursal_id', $sucursalId)
+                ->whereIn('estado', ['abierto', 'cobrado'])
+                ->where('barman_id', 1)
+                ->latest('fecha_apertura')
+                ->first();
+
+            if ($turnoHuerfano) {
+                $turnoHuerfano->update(['barman_id' => $barmanId]);
+                $turno = $turnoHuerfano;
+            }
+        }
+
+        return $turno;
     }
 
     public function crear(array $datos): Turno

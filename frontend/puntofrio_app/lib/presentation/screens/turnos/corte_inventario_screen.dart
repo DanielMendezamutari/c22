@@ -153,6 +153,7 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
       if (widget.tipoOperacion == TipoOperacionCorte.apertura) {
         final payload = {
           'sucursal_id': sucursalId,
+          if (auth.usuarioId != null) 'barman_id': auth.usuarioId,
           'tipo_turno': _tipoTurnoSeleccionado,
           'corte_inicial': cortesArray,
         };
@@ -284,6 +285,7 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
         };
 
         await apiClient.post('/turnos/$turnoId/cerrar', data: payload);
+        ref.read(authProvider.notifier).actualizarTurnoActivo(null);
 
         if (mounted) {
           // Mostrar Acta Oficial de Cierre en PDF y botón de WhatsApp

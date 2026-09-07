@@ -17,6 +17,7 @@ class CorteInventarioRequest extends FormRequest
     {
         return [
             'sucursal_id' => 'sometimes|required|integer|exists:sucursales,id',
+            'barman_id' => 'sometimes|integer|exists:usuarios,id',
             'tipo_turno' => 'sometimes|required|string|in:dia,noche',
             'corte_inicial' => 'sometimes|array',
             'corte_inicial.*.producto_id' => 'required_with:corte_inicial|integer|exists:productos,id',
