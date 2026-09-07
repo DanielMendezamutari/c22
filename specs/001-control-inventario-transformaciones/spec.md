@@ -264,6 +264,12 @@ Como Barman en turno activo, quiero pulsar el botón "BAJAS / ROTURAS" de mi pan
 - **FR-034**: El sistema DEBE comparar automáticamente en el backend, al momento de abrir un turno (`POST /turnos/abrir`), el conteo físico inicial declarado contra el corte de cierre del último turno cerrado en esa misma sucursal; si se detecta cualquier discrepancia ($Cierre_{anterior} \neq Apertura_{entrante}$), el sistema DEBE registrar una alerta de fuga inter-turnos en `alertas_discrepancias`, advertir al barman entrante en pantalla y desplegar una alerta prioritaria en el teléfono móvil del Administrador (banner flotante rojo en `DashboardAdminScreen` y notificación en el dispositivo con detalle de sucursal, producto, cantidades y botón de llamada/WhatsApp a los responsables).
 - **FR-035**: El sistema DEBE validar de forma estricta y previa el balance de stock disponible en el turno (`Stock Disponible = Stock Apertura + Ingresos de Mercadería Recepcionados - Bajas/Roturas - Consumos Previos`) antes de asentar cualquier transformación o relleno; si la cantidad de insumos requerida supera el stock disponible en la barra, el sistema DEBE rechazar la transacción con error HTTP 400 explícito impidiendo saldos negativos y sobregiro de insumos.
 - **FR-036**: El sistema DEBE reflejar los nuevos ingresos de mercadería recepcionados durante el turno activo en el Acta de Conteo de inventario (PDF y vista móvil), incorporando la columna `Ingresos (+)` (`[Producto] | [Apertura] | [Ingresos (+)] | [Total Disponible]`), permitiendo re-imprimir y compartir por WhatsApp un balance físico fiel y acumulativo del turno en curso.
+- **FR-037**: El sistema DEBE proveer en la app Flutter (módulo de administración) y en la API RESTful de Laravel la funcionalidad para la gestión integral de Proveedores comerciales (creación, edición, consulta y estado `activo`), registrando nombre comercial, persona de contacto, teléfono/WhatsApp, NIT/CI y dirección física.
+- **FR-038**: En el formulario de Recepción de Mercadería (`ingreso_mercaderia_screen.dart`), el sistema DEBE desplegar un selector con búsqueda rápida de proveedores activos registrados en la base de datos, permitiendo al barman seleccionar el proveedor emisor en lugar de ingresar texto libre genérico.
+- **FR-039**: El sistema DEBE proveer un módulo centralizado de Supervisión y Auditoría Operativa por Sucursal en el Dashboard del Administrador (`InformeSucursalesScreen`), permitiendo seleccionar cualquier casa comercial (Casa22, Corona, Madan, etc.) y auditar el turno activo en curso o turnos pasados cerrados.
+- **FR-040**: El sistema DEBE compilar y generar un Informe Operativo Integral en formato PDF (`informe_operativo_turno_pdf_service.dart`) para cualquier turno seleccionado por el Administrador, desglosando: Metadatos de jornada, Conteo de Apertura, Recepciones de Mercadería (con notas/facturas), Traspasos Entrantes y Salientes, Bajas/Roturas justificadas, Rellenos/Transformaciones efectuadas (con comisiones), Balance de Stock en custodia/cierre, y Liquidación Económica del barman (sueldo base + comisiones brutas = total a pagar).
+- **FR-041**: En el módulo de despacho de traspasos (`enviar_traspaso_screen.dart`), el sistema DEBE cargar dinámicamente las sucursales destino reales desde la API `/sucursales` (excluyendo la sede emisora) y el catálogo de productos reales desde `/productos`, eliminando datos estáticos o quemados en código.
+- **FR-042**: El sistema DEBE validar y comprobar en tiempo real que la sucursal de origen disponga de stock físico suficiente en su turno/barra para cada ítem antes de autorizar el despacho de un traspaso inter-sucursal; si la cantidad solicitada excede el stock disponible, el sistema DEBE bloquear el envío tanto en la interfaz móvil (alerta roja) como en el backend (`EnviarTraspasoUseCase` con HTTP 400), y al despachar conforme, DEBE asentar el movimiento `traspaso_salida` descontando el inventario en custodia de la sede emisora, acreditándose en destino como `traspaso_entrada` únicamente tras la confirmación de recepción física.
 
 ### User Story 11 - Gestión Integral de Sucursales por el Administrador (Altas, Bajas/Suspensión y Edición) (Priority: P2)
 
@@ -348,9 +354,104 @@ Como Administrador general de Punto Frío, quiero que el sistema detecte automá
 
 ---
 
+### User Story 16 - Estabilización Operativa, Rellenos Cero (0) y Conteo Activo Re-imprimible hasta Cierre (Priority: P1)
+
+Como Barman, quiero poder re-imprimir y visualizar el PDF de mi conteo de apertura tantas veces como sea necesario durante mi turno activo (el cual desaparecerá al cerrar el turno para dar paso al historial), y registrar turnos con cero (0) rellenos sin bloqueos ni errores, para garantizar la transparencia operativa en barra.
+
+**Independent Test**:
+1. Con turno activo, presionar "Ver / Re-imprimir Conteo de Apertura": debe generarse el PDF.
+2. Al cerrar el turno, el botón desaparece y se muestra "Historial de Cortes".
+
+**Acceptance Scenarios**:
+1. **Given** un turno abierto, **When** el barman pulsa "Ver Conteo de Apertura", **Then** el sistema despliega el diálogo de impresión y envío a WhatsApp con los datos inmutables del corte inicial.
+2. **Given** el corte de cierre completado, **When** se refresca el dashboard, **Then** el botón de conteo activo se oculta.
+
+---
+
+### User Story 17 - Persistencia de Turno por Barman, Auto-adopción y Cierre Seguro (Priority: P1)
+
+Como Barman, quiero que al cerrar y reabrir la app con mi PIN el sistema reconozca inmediatamente mi turno abierto en la sucursal, permitiéndome registrar rellenos y efectuar el corte final sin advertencias de falta de apertura ni errores de liquidación.
+
+**Independent Test**:
+1. Abrir turno con PIN de barman, salir de la app, reingresar: el turno activo debe continuar reconocido.
+2. Registrar relleno y cerrar turno: finaliza exitosamente con liquidación de comisiones.
+
+**Acceptance Scenarios**:
+1. **Given** un barman que reingresa tras cerrar la app, **When** consulta su turno, **Then** el sistema vincula su ID al turno activo de la sucursal.
+2. **Given** el cierre de turno, **When** se calcula la comisión acumulada, **Then** el sistema persiste `total_comision_bruta` sin arrojar excepción 500.
+
+---
+
+### User Story 18 - Control Estricto de Stock en Rellenos y Columna de Ingresos en Conteo PDF (Priority: P1)
+
+Como Administrador y Barman, quiero que el sistema valide que existan insumos suficientes en el turno antes de permitir un relleno, muestre el stock disponible en la app y refleje los ingresos acumulados en el acta PDF de apertura, para evitar sobregiros de insumos y descuadres físicos.
+
+**Independent Test**:
+1. Con 4 latas en conteo inicial, intentar un relleno que requiere 24 latas: el sistema rechaza la operación con error 400 y mensaje en rojo.
+2. Registrar un ingreso de 24 latas: el stock disponible sube a 28 latas y el PDF de conteo muestra la columna `Ingresos (+)`.
+3. Registrar el relleno: se aprueba con éxito y descuenta 24 latas.
+
+**Acceptance Scenarios**:
+1. **Given** un intento de relleno con insumos insuficientes, **When** se envía la solicitud, **Then** el backend lanza error descriptivo y la app despliega un SnackBar rojo impidiendo el registro.
+2. **Given** mercadería recepcionada en el turno, **When** se genera el PDF de conteo, **Then** se detalla la columna `INGRESOS (+)` y el `TOTAL DISPONIBLE`.
+
+---
+
+### User Story 19 - Gestión Centralizada de Proveedores y Selección Rápida en Recepción de Mercadería (Priority: P1)
+
+Como Administrador, quiero gestionar el catálogo de proveedores comerciales (crear, editar, activar/inactivar) con sus datos de contacto, y como Barman, quiero seleccionar el proveedor de una lista desplegable con buscador al registrar un ingreso de mercadería en barra, para mantener la trazabilidad documental de quién entrega cada lote.
+
+**Independent Test**:
+1. En el Dashboard Admin, entrar a "GESTIÓN DE PROVEEDORES", crear un nuevo proveedor "Distribuidora San Juan" con teléfono y NIT.
+2. Ingresar como Barman a "RECEPCIÓN DE MERCADERÍA": el proveedor "Distribuidora San Juan" debe figurar en la lista desplegable de selección rápida.
+3. Registrar una recepción de mercadería seleccionando dicho proveedor: la compra y el movimiento de inventario quedan asociados formalmente a él.
+
+**Acceptance Scenarios**:
+1. **Given** el Administrador en `ProveedoresAdminScreen`, **When** registra un nuevo proveedor con nombre comercial y teléfono, **Then** el proveedor queda activo en la base de datos inmediatamente.
+2. **Given** el Barman en `IngresoMercaderiaScreen`, **When** toca el selector de proveedor, **Then** se despliega la lista oficial de proveedores activos cargados desde la API con opción de búsqueda.
+3. **Given** una compra registrada, **When** se consulta en el historial o reportes, **Then** se identifica con precisión el proveedor responsable del abastecimiento.
+
+---
+
+### User Story 20 - Monitoreo Operativo de Sucursal e Informe PDF en Vivo/Histórico para Administrador (Priority: P1)
+
+Como Administrador general de Punto Frío, quiero acceder a un módulo de monitoreo por sucursales en mi Dashboard móvil, seleccionar cualquier casa (Casa22, Corona, Madan) y generar un informe completo en PDF en tiempo real de lo que está pasando en el turno en curso (o de turnos cerrados pasados), consolidando conteo inicial, ingresos, traspasos, bajas, rellenos y liquidación pagada, para auditar cualquier sede remotamente.
+
+**Independent Test**:
+1. En el Dashboard Admin, presionar "MONITOREO Y REPORTES DE SUCURSAL".
+2. Seleccionar la sucursal "Casa22": el sistema muestra la tarjeta del turno en curso (si está abierto) o el historial de turnos recientes.
+3. Presionar "GENERAR INFORME OFICIAL PDF": el sistema compila y visualiza un PDF integral con: Conteo Inicial, Ingresos de proveedores, Traspasos entrantes/salientes, Bajas justificadas, Rellenos/Comisiones y Estado de liquidación.
+4. Presionar "COMPARTIR POR WHATSAPP": envía el PDF directamente a los supervisores.
+
+**Acceptance Scenarios**:
+1. **Given** el Administrador en la pantalla de monitoreo, **When** selecciona una sucursal, **Then** el sistema consulta y despliega la información del turno activo (Barman, hora inicio, estado) y el historial de turnos cerrados.
+2. **Given** un turno seleccionado (activo o cerrado), **When** se pulsa generar informe PDF, **Then** el sistema descarga el consolidado y lo renderiza con formato ejecutivo corporativo y firmas de auditoría.
+3. **Given** un turno cerrado, **When** se audita el informe, **Then** se desglosa el sueldo base asignado, comisiones brutas de relleno y el total efectivamente liquidado al barman.
+
+---
+
+### User Story 21 - Traspasos Inter-Sucursales Reales con Validación y Bloqueo de Stock en Origen (Priority: P1)
+
+Como Barman o Administrador emisor de un traspaso, quiero que la pantalla de envío cargue las sucursales y productos reales de la base de datos, muestre el stock disponible en la barra origen y me bloquee si intento enviar más unidades de las que realmente tengo, y que al despachar se descuente inmediatamente del stock en custodia y se acredite en destino únicamente al ser recibido conforme.
+
+**Independent Test**:
+1. En "Despachar Traspaso", verificar que el selector de sucursal destino liste las sucursales reales de la base de datos (excluyendo la sucursal emisora).
+2. Verificar que los productos correspondan al catálogo real y que muestren el stock disponible en barra.
+3. Intentar traspasar 50 botellas teniendo solo 10: el sistema muestra advertencia roja y bloquea el botón "DESPACHAR TRASPASO".
+4. Traspasar 5 botellas: el sistema aprueba la orden, descuenta 5 unidades del stock local (`traspaso_salida`) y deja el lote en estado "En Tránsito" hasta que la sede destino confirme la recepción (`traspaso_entrada`).
+
+**Acceptance Scenarios**:
+1. **Given** la pantalla `EnviarTraspasoScreen`, **When** se inicializa, **Then** carga dinámicamente las sucursales activas de `/sucursales` (omitiendo la sucursal propia) y el catálogo de `/productos`.
+2. **Given** una cantidad digitada mayor al saldo físico disponible en la barra emisora, **When** el usuario intenta enviar, **Then** la app despliega un mensaje de error en rojo y el botón se desactiva.
+3. **Given** un traspaso despachado exitosamente, **When** la sucursal receptora entra a "Recepcionar Traspaso", **Then** puede confirmar las unidades conformes y las mermas en tránsito, acreditando el inventario en destino conforme a la Constitución.
+
+---
+
 ### Key Entities *(include if feature involves data)*
 
 - **Sucursal**: Identificador de la casa (Casa22, Casa Coron, Madan, etc.), configuración local y umbrales de tolerancia de merma.
+- **Proveedor**: Identificador único, nombre comercial de la empresa o distribuidora (ej. CBN, Embol), persona de contacto, teléfono/WhatsApp, NIT/CI, dirección y estado activo.
+- **Informe Operativo de Turno**: Documento auditable consolidado que integra la fotografía completa de la jornada (conteo inicial, ingresos de compras con notas, traspasos entrantes y salientes, bajas y roturas justificadas, transformaciones con comisiones, stock de cierre y liquidación del personal).
 - **Usuario / Empleado**: Nombre, rol (Barman, Garzón, Administrador/Auditor), código PIN de 4 dígitos (cifrado), sucursal activa asignada para la semana en curso, historial de rotaciones semanales, esquema de remuneración (Sueldo Semanal Base para Barman Noche / Jornal Diario para Garzón Día) y saldo acumulado de sanciones/deudas por faltantes.
 - **Turno (Jornada 12h)**: Identificador único, barman responsable, sucursal, tipo de turno (Día / Noche), fecha/hora de apertura, fecha/hora de cierre, estado (Abierto, Cobrado, Cerrado, Auditado), código único de recibo de cobro y marca temporal de liquidación.
 - **Receta de Transformación**: Identificador, insumo origen (materia prima), producto terminado (destino), tarifa de comisión por unidad (Bs), ratio de consumo de referencia, umbral de tolerancia de desviación y estado activo/inactivo.
@@ -377,6 +478,9 @@ Como Administrador general de Punto Frío, quiero que el sistema detecte automá
 - **SC-007**: Generación del Informe de Liquidación Semanal consolidado para turnos nocturnos con cálculo automático de deducciones en menos de 3 clics para la administración.
 - **SC-008**: Cero interrupciones operativas en barra ante caídas de internet: 100% de los registros offline son sincronizados exitosamente al servidor al restaurar la conectividad sin intervención manual del usuario.
 - **SC-009**: Autenticación e ingreso a la app Flutter mediante PIN de 4 dígitos en menos de 3 segundos.
+- **SC-010**: Selección del proveedor comercial en la recepción de mercadería en menos de 5 segundos mediante selector con búsqueda sin requerir tipeo manual repetitivo.
+- **SC-011**: Generación y visualización del Informe Operativo Integral en PDF de cualquier sucursal y turno en menos de 3 segundos desde el panel móvil del Administrador.
+- **SC-012**: 100% de los despachos de traspasos inter-sucursales validados estrictamente contra el stock físico disponible en origen, imposibilitando traspasos con saldos negativos.
 
 ## Assumptions
 
