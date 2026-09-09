@@ -454,24 +454,42 @@
 
 ---
 
+## Phase 28: User Story 23 - Fiel Reflejo del Conteo Físico Inicial en Acta Oficial de Conteo en PDF (Apertura) y Persistencia Inmutable (Priority: P1)
+
+**Goal**: Corregir de raíz la omisión y enmascaramiento por ceros en el Acta Oficial de Conteo Físico y Balance en Turno (`conteo_pdf_service.dart`), garantizando que la cantidad física real ingresada por el barman en `corte_inventario_screen.dart` se asiente y refleje fielmente en la columna `APERTURA` y `TOTAL DISP.` (eliminando el despliegue erróneo de 0.00), y asegurar que `POST /turnos/abrir` y `GET /turnos/{id}/corte-inicial` persistan y retornen íntegramente las cantidades contadas para auditoría y reimpresiones.
+
+**Independent Test**:
+1. Apertura con conteo real: Iniciar turno en `CorteInventarioScreen` ingresando cantidades en el catálogo (ej. 24 Moema, 10 Corona, 2 Fernet 750).
+2. Diálogo modal inmediato: Presionar "Confirmar e Inmutabilizar"; en el diálogo "¡Turno de Barra Iniciado!", presionar "VER / IMPRIMIR PDF": verificar que el PDF muestre en `APERTURA` y `TOTAL DISP.` las cantidades exactas digitadas y el pie sume las unidades contadas.
+3. Compartir por WhatsApp: Presionar "COMPARTIR EN WHATSAPP": constatar que el PDF adjunto contenga las cifras reales.
+4. Reimpresión desde Dashboard: En `DashboardBarmanScreen`, presionar "📄 VER / RE-IMPRIMIR CONTEO DE APERTURA" y constatar que el backend retorne y compile las mismas cifras de apertura.
+
+- [X] T160 [US23] En `conteo_pdf_service.dart`, corregir la precedencia de resolución numérica sustituyendo la trampa de null-coalescing (`item['cantidad_inicial'] ?? item['cantidad']` que tomaba ceros por defecto) por la evaluación de cantidad positiva real (`cantInicial > 0 ? cantInicial : cantidad`), asegurando que `total_disponible` se calcule dinámicamente (`cantInicial + ingresos`) y la tabla y totales del PDF muestren el conteo físico fiel en frontend/puntofrio_app/lib/presentation/screens/turnos/conteo_pdf_service.dart
+- [X] T161 [P] [US23] En `corte_inventario_screen.dart`, en modo `apertura`, sincronizar el cambio de `BottleFractionSelector` tanto en `'cantidad'` como en `'cantidad_inicial'`, y antes de desplegar el diálogo modal "¡Turno de Barra Iniciado!", recalcular `total_disponible = cantidad_inicial + ingresos` en `_items` garantizando que el PDF generado inmediatamente reciba datos válidos en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T162 [P] [US23] En `TurnoController.php` (`corteInicial`) y `AbrirTurnoUseCase.php`, verificar que cada corte de apertura se inserte en `cortes_inventario` con `tipo_corte = 'apertura'` y que el endpoint `GET /turnos/{id}/corte-inicial` mapee fielmente `cantidad_inicial` desde la base de datos sin alterar los decimales en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T163 [US23] Validar el flujo end-to-end de apertura de turno, diálogo inmediato con PDF de conteo físico real, compartir en WhatsApp y regeneración desde el Dashboard según Scenario 20 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
 - **Phases 1 a 26**: Completadas y verificadas [X].
-- **Phase 27 (US22 - Balance Integral y Corrección de PDFs/Cierre)**: Depende de TurnoController y servicios de PDF existentes.
-  - T155 (Backend) habilita el endpoint con balance completo.
-  - T156 (PDF Cierre) y T157 (Selector UI) pueden ejecutarse en paralelo [P].
-  - T158 (Pantalla Cierre) integra backend y selector.
-  - T159 valida el flujo completo.
+- **Phase 27 (US22 - Balance Integral y Corrección de PDFs/Cierre)**: Completada y verificada [X].
+- **Phase 28 (US23 - Fiel Reflejo de Conteo de Apertura PDF y Persistencia)**:
+  - T160 (PDF Service) y T161 (Pantalla Apertura) corrigen la precedencia y sincronización reactiva en frontend [P].
+  - T162 (Backend) valida la inserción y retorno de cortes en base de datos [P].
+  - T163 valida el escenario completo end-to-end.
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Frontend Tareas Paralelas:
-Task T156: "Reforma de tabla y nombres en cierre_turno_pdf_service.dart"
-Task T157: "Cintillo de inicio e ingresos en bottle_fraction_selector.dart"
+# Tareas Paralelas Frontend y Backend:
+Task T160: "Corrección de precedencia numérica en conteo_pdf_service.dart"
+Task T161: "Sincronización de cantidad y apertura en corte_inventario_screen.dart"
+Task T162: "Consistencia de apertura en TurnoController.php y AbrirTurnoUseCase.php"
 ```
 
 ---
@@ -479,6 +497,7 @@ Task T157: "Cintillo de inicio e ingresos en bottle_fraction_selector.dart"
 ## Notes
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
+
 
 
 

@@ -270,3 +270,23 @@ flutter run
      - La tabla despliega las columnas oficiales de reconciliación requeridas por el reglamento:
        `[#] | [PRODUCTO / INSUMO] | [INICIAL] | [INGRESOS (+)] | [RELLENOS (±)] | [BAJAS (-)] | [TOTAL CIERRE]`.
      - Al pie de la tabla se refleja el resumen de totales sumando unidades de inicio, entradas y entrega final.
+
+---
+
+### Scenario 20: Fiel Reflejo del Conteo Físico Inicial en Acta de Conteo en PDF (Apertura) y Persistencia (US23)
+
+1. **Apertura de Turno con Conteo Físico Real**:
+   - Entrar al módulo "Corte de Apertura" (`CorteInventarioScreen`).
+   - Seleccionar tipo de turno (ej. Día o Noche) e ingresar cantidades reales en el selector de botellas (ej. Moema = `24.00`, Corona = `10.00`, Fernet 750 = `2.00`).
+   - Presionar "CONFIRMAR Y ABRIR TURNO" y confirmar la inmutabilidad en el diálogo modal.
+2. **Validación en Diálogo Inmediato**:
+   - En el diálogo "¡Turno de Barra Iniciado!", presionar "VER / IMPRIMIR PDF".
+   - En el visor del documento "ACTA OFICIAL DE CONTEO FÍSICO Y BALANCE EN TURNO", verificar:
+     - La columna `APERTURA` muestra exactamente `24.00`, `10.00`, `2.00` para los ítems contados (no `0.00`).
+     - La columna `TOTAL DISP.` totaliza `24.00`, `10.00`, `2.00`.
+     - El resumen de pie de página suma correctamente las unidades contadas.
+3. **Compartir por WhatsApp**:
+   - Presionar "COMPARTIR EN WHATSAPP": constatar que el PDF compilado y enviado preserva las cantidades reales.
+4. **Reimpresión desde el Dashboard del Barman**:
+   - En `DashboardBarmanScreen`, presionar "📄 VER / RE-IMPRIMIR CONTEO DE APERTURA":
+   - El sistema consulta `GET /turnos/{id}/corte-inicial` y compila el PDF con las cantidades asentadas en base de datos idénticas al conteo inicial.

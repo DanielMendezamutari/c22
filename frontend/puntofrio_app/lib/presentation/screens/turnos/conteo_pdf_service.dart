@@ -18,9 +18,26 @@ class ConteoPdfService {
         '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year} ${ahora.hour.toString().padLeft(2, '0')}:${ahora.minute.toString().padLeft(2, '0')}';
 
     final totalItems = items.length;
-    final totalInicial = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad_inicial'] ?? item['cantidad'] as num?)?.toDouble() ?? 0.0));
+    final totalInicial = items.fold<double>(0.0, (acc, item) {
+      final cantInicialRaw = (item['cantidad_inicial'] as num?)?.toDouble();
+      final cantDirectaRaw = (item['cantidad'] as num?)?.toDouble();
+      final cant = (cantInicialRaw != null && cantInicialRaw > 0)
+          ? cantInicialRaw
+          : (cantDirectaRaw ?? cantInicialRaw ?? 0.0);
+      return acc + cant;
+    });
     final totalIngresos = items.fold<double>(0.0, (acc, item) => acc + ((item['ingresos'] as num?)?.toDouble() ?? 0.0));
-    final totalDisponible = items.fold<double>(0.0, (acc, item) => acc + ((item['total_disponible'] as num?)?.toDouble() ?? ((item['cantidad'] as num?)?.toDouble() ?? 0.0)));
+    final totalDisponible = items.fold<double>(0.0, (acc, item) {
+      final cantInicialRaw = (item['cantidad_inicial'] as num?)?.toDouble();
+      final cantDirectaRaw = (item['cantidad'] as num?)?.toDouble();
+      final cant = (cantInicialRaw != null && cantInicialRaw > 0)
+          ? cantInicialRaw
+          : (cantDirectaRaw ?? cantInicialRaw ?? 0.0);
+      final ing = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
+      final dispRaw = (item['total_disponible'] as num?)?.toDouble();
+      final disp = (dispRaw != null && dispRaw > 0) ? dispRaw : (cant + ing);
+      return acc + disp;
+    });
 
     pdf.addPage(
       pw.MultiPage(
@@ -156,9 +173,14 @@ class ConteoPdfService {
                 final idx = entry.key + 1;
                 final item = entry.value;
                 final nombre = item['nombre']?.toString() ?? item['producto_nombre']?.toString() ?? 'Producto';
-                final cantInicial = (item['cantidad_inicial'] as num?)?.toDouble() ?? (item['cantidad'] as num?)?.toDouble() ?? 0.0;
+                final cantInicialRaw = (item['cantidad_inicial'] as num?)?.toDouble();
+                final cantDirectaRaw = (item['cantidad'] as num?)?.toDouble();
+                final cantInicial = (cantInicialRaw != null && cantInicialRaw > 0)
+                    ? cantInicialRaw
+                    : (cantDirectaRaw ?? cantInicialRaw ?? 0.0);
                 final ingresos = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
-                final totalDisp = (item['total_disponible'] as num?)?.toDouble() ?? (cantInicial + ingresos);
+                final dispRaw = (item['total_disponible'] as num?)?.toDouble();
+                final totalDisp = (dispRaw != null && dispRaw > 0) ? dispRaw : (cantInicial + ingresos);
 
                 return pw.TableRow(
                   decoration: pw.BoxDecoration(color: idx % 2 == 0 ? PdfColors.grey50 : PdfColors.white),

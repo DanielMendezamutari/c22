@@ -274,6 +274,7 @@ Como Barman en turno activo, quiero pulsar el botón "BAJAS / ROTURAS" de mi pan
 - **FR-041**: En el módulo de despacho de traspasos (`enviar_traspaso_screen.dart`), el sistema DEBE cargar dinámicamente las sucursales destino reales desde la API `/sucursales` (excluyendo la sede emisora) y el catálogo de productos reales desde `/productos`, eliminando datos estáticos o quemados en código.
 - **FR-042**: El sistema DEBE validar y comprobar en tiempo real que la sucursal de origen disponga de stock físico suficiente en su turno/barra para cada ítem antes de autorizar el despacho de un traspaso inter-sucursal; si la cantidad solicitada excede el stock disponible, el sistema DEBE bloquear el envío tanto en la interfaz móvil (alerta roja) como en el backend (`EnviarTraspasoUseCase` con HTTP 400), y al despachar conforme, DEBE asentar el movimiento `traspaso_salida` descontando el inventario en custodia de la sede emisora, acreditándose en destino como `traspaso_entrada` únicamente tras la confirmación de recepción física.
 - **FR-043**: En la pantalla de Corte de Cierre (`CorteInventarioScreen`), el sistema DEBE consultar y presentar en cada selector de producto (`BottleFractionSelector`) un cintillo informativo con los datos de partida del turno activo: `[Inició: X.XX | Ingresos: +Y.YY | Disp: Z.ZZ]`, calculando y actualizando en tiempo real la salida o venta estimada (`Venta/Consumo: Disp - Conteo Actual`) a medida que el barman digita las unidades físicas remanentes para entregar el turno con total transparencia.
+- **FR-044**: El sistema DEBE garantizar que el "Acta Oficial de Conteo Físico y Balance en Turno" en formato PDF (`ConteoPdfService`) refleje fiel y exactamente las cantidades físicas registradas por el barman en el Conteo de Apertura tanto en la columna `APERTURA` como en `TOTAL DISP.` (sin mostrarse en 0.00 ni ser enmascaradas por valores por defecto), resolviendo prioritariamente la cantidad física ingresada (`cantidad`), persistiendo inmutablemente cada ítem en `cortes_inventario` con `tipo_corte = 'apertura'`, y garantizando que tanto el modal inmediato post-apertura como las consultas subsecuentes (`GET /turnos/{id}/corte-inicial` desde el Dashboard) desplieguen y compartan por WhatsApp las cifras reales de la recepción de barra.
 
 ### User Story 11 - Gestión Integral de Sucursales por el Administrador (Altas, Bajas/Suspensión y Edición) (Priority: P2)
 
@@ -464,6 +465,23 @@ Como Barman y Supervisor de Punto Frío, quiero que el PDF de Conteo Inicial y B
 1. **Given** un turno con conteo inicial y recepciones registradas, **When** se consulta `GET /turnos/{id}/corte-inicial`, **Then** el backend contabiliza los movimientos con tipo `ingreso` y `traspaso_entrada` (en lugar de `ingreso_compra`) e incluye productos recibidos durante la jornada.
 2. **Given** el barman en la pantalla de Corte de Cierre, **When** visualiza los productos a contar, **Then** cada selector despliega un cintillo informativo con la cantidad con la que inició el turno y los ingresos recibidos.
 3. **Given** la confirmación del cierre de turno, **When** se genera el Acta Oficial en PDF (`CierreTurnoPdfService`), **Then** la tabla presenta los nombres descriptivos de cada producto y las columnas de conciliación completa requeridas por FR-033, con botón para compartir inmediatamente en WhatsApp.
+
+---
+
+### User Story 23 - Fiel Reflejo del Conteo Físico Inicial en Acta Oficial de Conteo en PDF (Apertura) y Persistencia Inmutable (Priority: P1)
+
+Como Barman Receptor y Supervisor de Operaciones de Punto Frío, quiero que al registrar las cantidades físicas de botellas e insumos en el Conteo de Apertura y aperturar el turno, el "Acta Oficial de Conteo Físico y Balance en Turno" en PDF refleje fiel y exactamente en la columna `APERTURA` y en `TOTAL DISP.` las cantidades reales ingresadas (en lugar de aparecer en 0.00), tanto en el diálogo inmediato tras confirmar como en la reimpresión posterior desde el Dashboard del Barman, para contar con un documento legalmente inmutable y certero que acredite la recepción conforme de la barra.
+
+**Independent Test**:
+1. Conteo Físico Real: Iniciar turno de apertura en `CorteInventarioScreen` introduciendo cantidades reales para el catálogo (ej. 24 Moema, 10 Corona, 2 Fernet 750, 5 Huari).
+2. Diálogo Inmediato Post-Apertura: Presionar "Confirmar e Inmutabilizar"; en el diálogo "¡Turno de Barra Iniciado!", presionar "VER / IMPRIMIR PDF": verificar que el PDF generado presente en cada fila la cantidad ingresada (24.00, 10.00, 2.00, 5.00) en `APERTURA` y en `TOTAL DISP.`, totalizando correctamente las unidades físicas sin ceros artificiales.
+3. Compartir en WhatsApp: Presionar "COMPARTIR EN WHATSAPP": verificar que el PDF adjuntado y generado contenga las mismas cantidades físicas exactas.
+4. Consulta y Reimpresión desde Dashboard: Ir al Dashboard del Barman, presionar "VER / RE-IMPRIMIR CONTEO DE APERTURA": el sistema consulta `GET /turnos/{id}/corte-inicial` y genera el PDF con las cantidades previamente asentadas en base de datos.
+
+**Acceptance Scenarios**:
+1. **Given** el barman en la pantalla de Corte de Apertura, **When** ingresa o ajusta la cantidad de cualquier producto, **Then** el objeto en memoria actualiza de forma consistente tanto `'cantidad'` como `'cantidad_inicial'`, evitando que existan propiedades con `0.0` que anulen la lectura de la cantidad real.
+2. **Given** la invocación a `ConteoPdfService.generarPdfBytes`, **When** procesa cada elemento de `items`, **Then** extrae la cantidad positiva real evaluando (`cantidad_inicial > 0 ? cantidad_inicial : cantidad`), calculando `total_disponible = cantidad_inicial + ingresos` de forma dinámica si no viene precalculado.
+3. **Given** el envío de `POST /turnos/abrir`, **When** el backend procesa `corte_inicial`, **Then** todos los registros de corte se insertan con `tipo_corte = 'apertura'` y el endpoint `GET /turnos/{id}/corte-inicial` los retorna fielmente mapeados para consumo del PDF y pantallas operativas.
 
 ---
 

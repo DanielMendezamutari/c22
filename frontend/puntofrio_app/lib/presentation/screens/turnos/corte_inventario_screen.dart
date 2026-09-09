@@ -215,6 +215,14 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
 
           ref.read(authProvider.notifier).actualizarTurnoActivo(nuevoTurnoId);
 
+          // Sincronizar _items para que el PDF inmediato refleje fielmente el conteo físico asentado
+          for (var it in _items) {
+            final c = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
+            it['cantidad_inicial'] = c;
+            final ing = (it['ingresos'] as num?)?.toDouble() ?? 0.0;
+            it['total_disponible'] = c + ing;
+          }
+
           if (mounted) {
             // Si hay discrepancias con el turno saliente, mostrar alerta con WhatsApp
             if (tieneDiscrepancias && discrepancias.isNotEmpty) {
@@ -226,6 +234,8 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                 discrepancias: discrepancias,
               );
             }
+
+            if (!mounted) return;
 
             // Mostrar Diálogo con Acciones de PDF para WhatsApp
             await showDialog(
@@ -677,6 +687,11 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                         onChanged: (newVal) {
                           setState(() {
                             item['cantidad'] = newVal;
+                            if (esApertura) {
+                              item['cantidad_inicial'] = newVal;
+                              final ing = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
+                              item['total_disponible'] = newVal + ing;
+                            }
                           });
                         },
                       );

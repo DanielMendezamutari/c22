@@ -200,13 +200,16 @@ class TurnoController extends Controller
             // Todos los IDs involucrados en el turno
             $todosProductoIds = $cortesIniciales->keys()->merge($movsPorProd->keys())->unique();
 
-            // Cargar productos del catálogo
-            $productos = \App\Infrastructure\Persistence\Eloquent\Models\Producto::whereIn('id', $todosProductoIds)->get()->keyBy('id');
+            // Cargar productos del catálogo ordenados alfabéticamente
+            $productos = \App\Infrastructure\Persistence\Eloquent\Models\Producto::whereIn('id', $todosProductoIds)
+                ->orderBy('nombre')
+                ->get()
+                ->keyBy('id');
 
-            $items = $todosProductoIds->map(function ($pid) use ($cortesIniciales, $movsPorProd, $productos) {
+            $items = $productos->map(function ($prod) use ($cortesIniciales, $movsPorProd) {
+                $pid = $prod->id;
                 $corte = $cortesIniciales->get($pid);
                 $pMovs = $movsPorProd->get($pid) ?? collect();
-                $prod = $productos->get($pid);
 
                 $inicial = $corte ? (float) $corte->cantidad : 0.0;
 

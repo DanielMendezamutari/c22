@@ -97,7 +97,7 @@ class RegistrarTransformacionUseCase
 
                 $ingresos = (float) \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $turnoId)
                     ->where('producto_id', $prodId)
-                    ->where('tipo_movimiento', 'ingreso_compra')
+                    ->whereIn('tipo_movimiento', ['ingreso', 'ingreso_compra', 'traspaso_entrada'])
                     ->sum('cantidad');
 
                 $bajas = (float) \App\Infrastructure\Persistence\Eloquent\Models\MovimientoInventario::where('turno_id', $turnoId)

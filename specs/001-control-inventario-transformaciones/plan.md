@@ -192,6 +192,32 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
   - Consultar y mostrar el saldo en barra para cada producto (`Disponible en barra: X u.`).
   - Validar en tiempo real: Si la cantidad excede las existencias físicas, resaltar en rojo y desactivar el botón "DESPACHAR TRASPASO".
 
+### FASE 10: Balance Integral en Conteo de Apertura PDF y Reconciliación en Cierre (US22)
+- **Ticket 10.1 (Backend Balance Acumulado)**:
+  - En `TurnoController.php`: Corregir consulta de ingresos (`['ingreso', 'traspaso_entrada']`), incluir productos recibidos en la jornada aunque no estuvieran en apertura, y calcular balances de transformaciones y bajas.
+- **Ticket 10.2 (Frontend PDFs y Selectores)**:
+  - En `cierre_turno_pdf_service.dart`: Reemplazar nombres genéricos por nombres descriptivos, suprimir columna "Tipo" y reformar tabla a 7 columnas de balance oficial.
+  - En `bottle_fraction_selector.dart` y `corte_inventario_screen.dart`: Visualizar pill informativo con stock de inicio, ingresos y salida estimada en corte final.
+
+### FASE 11: Fiel Reflejo del Conteo Físico Inicial en Acta Oficial de Conteo en PDF (Apertura) y Persistencia Inmutable (US23)
+- **Ticket 11.1 (Frontend Corrección de Precedencia y Estado en Conteo)**:
+  - En `corte_inventario_screen.dart`: En modo apertura, al modificar valores en `BottleFractionSelector`, sincronizar tanto `'cantidad'` como `'cantidad_inicial'` en el mapa de `_items`. Antes de desplegar el diálogo modal post-apertura, garantizar que `_items` contenga las cantidades reales contadas y `total_disponible = cantidad_inicial + ingresos`.
+  - En `conteo_pdf_service.dart`: Corregir la precedencia de extracción numérica de cantidades para evitar que un valor `0.0` en `'cantidad_inicial'` enmascare el conteo ingresado en `'cantidad'`:
+    ```dart
+    final cantInicialRaw = (item['cantidad_inicial'] as num?)?.toDouble();
+    final cantDirectaRaw = (item['cantidad'] as num?)?.toDouble();
+    final double cantInicial = (cantInicialRaw != null && cantInicialRaw > 0)
+        ? cantInicialRaw
+        : (cantDirectaRaw ?? cantInicialRaw ?? 0.0);
+    final double totalDisp = (item['total_disponible'] != null && (item['total_disponible'] as num).toDouble() > 0)
+        ? (item['total_disponible'] as num).toDouble()
+        : (cantInicial + ingresos);
+    ```
+    Garantizar que la tabla y el resumen de totales sumen con exactitud las unidades físicas ingresadas, sin ceros fantasmas.
+- **Ticket 11.2 (Backend Persistencia y Consistencia en API)**:
+  - En `TurnoController.php` (`corteInicial`): Asegurar que los cortes asentados con `tipo_corte = 'apertura'` o `'inicial'` se devuelvan íntegramente en `cantidad_inicial`, respetando los decimales exactos.
+  - En `AbrirTurnoUseCase.php`: Certificar que cada elemento de `corte_inicial` se inserte en `cortes_inventario` con `tipo_corte = 'apertura'` y su fracción decimal estricta (`FraccionLicor`).
+
 ---
 
 ## Complexity Tracking
