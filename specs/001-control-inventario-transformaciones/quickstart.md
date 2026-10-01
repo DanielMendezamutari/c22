@@ -290,3 +290,44 @@ flutter run
 4. **Reimpresión desde el Dashboard del Barman**:
    - En `DashboardBarmanScreen`, presionar "📄 VER / RE-IMPRIMIR CONTEO DE APERTURA":
    - El sistema consulta `GET /turnos/{id}/corte-inicial` y compila el PDF con las cantidades asentadas en base de datos idénticas al conteo inicial.
+
+---
+
+### Scenario 21: Flujo Operativo del Rol Cajera y Suplencia de Barra (US24)
+
+1. **Login de Cajera**:
+   - Seleccionar sucursal e ingresar PIN asignado de cajera (ej. `4444`).
+   - La aplicación redirige a `DashboardCajeraScreen`.
+2. **Suplencia de Apertura por Ausencia de Barman**:
+   - Si no hay turno abierto en la sucursal, la app muestra "Turno no iniciado".
+   - Presionar "ABRIR TURNO (SUPLENCIA)": seleccionar de la lista al barman programado y realizar el conteo de apertura.
+   - Confirmar el conteo: el turno se crea asignado al barman pero el Acta PDF y el sistema registran `realizado_por_usuario_id = cajera_id` con la firma "Suplencia por Cajera".
+3. **Auditoría Visual de Turno en Vivo**:
+   - Cuando el barman ya inició turno, la cajera visualiza el stock disponible en tiempo real y puede presionar "VER CONTEO FÍSICO (PDF)" para auditar el inventario sin pedir el teléfono del barman.
+4. **Confirmación de Comisiones con Fotografía**:
+   - Al finalizar la jornada, presionar "AUDITAR / LIQUIDAR COMISIONES":
+   - La cajera valida el monto exacto (ej. `18.00 Bs`), presiona "CONFIRMAR DESEMBOLSO", toma la foto de los billetes entregados con la cámara de su dispositivo y el turno queda sellado como `cobrado`.
+
+---
+
+### Scenario 22: Conteo Resiliente con Búsqueda, Refresco y Producto Provisional (US25)
+
+1. **Búsqueda Reactiva en Conteo**:
+   - Entrar al módulo de Conteo (`CorteInventarioScreen`).
+   - Escribir "corona" en la barra de búsqueda superior: la lista filtra inmediatamente mostrando solo las Coronas.
+   - Digitar `24.00` en Corona Botella. Limpiar el buscador: todos los demás productos vuelven a aparecer y Corona conserva sus `24.00`.
+2. **Refresco de Catálogo sin Pérdida de Avance**:
+   - Conteo en progreso (ej. Moema = 12, Corona = 24).
+   - El Administrador da de alta un nuevo producto "Gin Tanqueray" desde su panel.
+   - El barman presiona el botón de recarga (icono 🔄) en la barra superior:
+   - "Gin Tanqueray" se incorpora al final de la lista con `0.00`, mientras Moema y Corona conservan intactas sus `12.00` y `24.00` unidades sin borrarse ni ponerse a cero.
+3. **Restauración de Borrador Local ante Salidas Inesperadas**:
+   - Con cantidades digitadas, salir al Dashboard o forzar cierre de la aplicación.
+   - Volver a entrar al módulo de Conteo:
+   - La app muestra un mensaje flotante: *"Borrador de conteo restaurado automáticamente"* y todas las cantidades previamente introducidas están presentes.
+4. **Contabilización de Producto no Listado y Alerta al Admin**:
+   - Presionar "+ CONTABILIZAR PRODUCTO NO LISTADO".
+   - Ingresar Nombre: "Licor 43 750ml", Cantidad: "2.50", activar switch "Es Licor Fraccionable" y guardar.
+   - El producto aparece en la lista con distintivo *"Provisional"*.
+   - Confirmar el corte: el Administrador recibe inmediatamente una Alerta de Auditoría en su panel para aprobar o unificar el producto.
+

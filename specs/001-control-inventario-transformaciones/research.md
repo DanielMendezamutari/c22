@@ -114,3 +114,34 @@
 
 - **Decision**: Validar existencias físicas en la sucursal emisora antes de despachar un traspaso. Descontar inmediatamente en origen mediante el movimiento `traspaso_salida` y acreditar en destino mediante `traspaso_entrada` únicamente cuando el receptor confirme la entrega conforme.
 - **Rationale**: Cumple el Principio V de la Constitución ("Trazabilidad de Traspasos"): la mercadería despachada sale de la custodia del emisor pero no existe en el destino hasta que sea recibida. Además, validar stock en origen impide que un empleado transfiera mercadería que no tiene físicamente, evitando inventarios negativos.
+
+---
+
+## 13. Modelo de Roles, Autenticación y Suplencia Operativa de Cajeras (US24)
+
+- **Decision**: Incorporar el rol `cajera` como rol nativo en `RolUsuario` asignado a sucursal, con autenticación por PIN ciego de 4 dígitos y redirección a `DashboardCajeraScreen`. Habilitar la figura de suplencia operativa en apertura y cierre con firma inmutable `realizado_por_usuario_id = cajera_id` y `es_suplencia = true`.
+- **Rationale**: Permite que el negocio no se detenga si un barman o garzón se ausenta, manteniendo estricta la responsabilidad individual (Principio III de la Constitución) al registrar quién contó físicamente la mercadería en barra. Asimismo, otorga a la cajera autonomía para auditar stock y comisiones de relleno sin pedir prestado el teléfono del barman.
+- **Alternatives considered**:
+  - *Usar credenciales genéricas de barra o del barman ausente*: Rechazado tajantemente porque diluye la responsabilidad e incumple el Principio Constitucional III.
+
+---
+
+## 14. Resiliencia de Conteo en Barra: Búsqueda Reactiva, Refresco Diferencial y Persistencia Local (US25)
+
+- **Decision**:
+  1. Filtrado reactivo en memoria: El buscador filtra una copia de la lista de productos (`_itemsFiltrados`), garantizando que los productos ocultos por el filtro conserven intactas sus cantidades en `_items`.
+  2. Refresco diferencial con merge inteligente: Al pulsar refrescar (`Icons.refresh`), se consultan los productos a la API y se incorporan los nuevos con cantidad `0.0`, conservando intactas las cantidades ya introducidas en los ítems existentes (`Map<int, double> _cantidadesDigitadas`).
+  3. Persistencia local del borrador: Auto-guardado en `SharedPreferences` con clave compuesta `corte_draft_{sucursalId}_{tipoOperacion}`. El borrador sobrevive a cierres de app o apagado de batería y se purga automáticamente tras la confirmación exitosa del corte en el servidor.
+- **Rationale**: El cambio de turno en barra es un proceso de alta presión operativa. Perder un conteo a medio camino por agregar un producto nuevo o por un reinicio del teléfono genera frustración y pérdidas de 15 a 30 minutos por turno.
+- **Alternatives considered**:
+  - *Guardar borradores continuos en el servidor*: Rechazado por requerir conexión a internet activa permanente y sobrecargar el backend con peticiones concurrentes por cada pulsación en pantalla.
+
+---
+
+## 15. Contabilización Provisional de Productos no Listados y Control Anti-Fraude (US25)
+
+- **Decision**: Permitir al barman o cajera registrar productos no listados con nombre comercial, cantidad y switch de licor fraccionable, asentándolos en el turno como `es_provisional = true` y disparando simultáneamente una Alerta de Auditoría en `alertas_discrepancias` para resolución por el Administrador ("Aprobar como Oficial" o "Unificar con Existente").
+- **Rationale**: Resuelve la contingencia de botellas imprevistas en barra sin paralizar la apertura de turno, pero evita que el catálogo maestro se contamine con productos falsos o duplicados, manteniendo el principio de auditoría centralizada (Principio V).
+- **Alternatives considered**:
+  - *Bloquear la apertura hasta que el Admin cree el producto*: Rechazado por paralizar la operación comercial del local si el Administrador no está disponible al momento del cambio de turno.
+

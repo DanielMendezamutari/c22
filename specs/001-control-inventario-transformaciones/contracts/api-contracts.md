@@ -879,3 +879,84 @@ Valida previamente que la sucursal de origen disponga de existencias físicas su
 }
 ```
 
+---
+
+## 11. Endpoints para Rol Cajera y Suplencia Operativa (US24)
+
+### `POST /turnos/{id}/confirmar-pago-comision`
+Permite a la Cajera confirmar de forma autónoma el desembolso de comisiones devengadas por el barman, adjuntando la fotografía obligatoria del efectivo o comprobante.
+
+- **Headers**: `Content-Type: multipart/form-data`, `Authorization: Bearer <token>`
+- **Request Parameters**:
+  - `foto`: Archivo de imagen (JPG/PNG, máx 5MB)
+  - `observacion`: String opcional
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Desembolso de comisiones confirmado exitosamente",
+  "data": {
+    "turno_id": 14,
+    "estado": "cobrado",
+    "total_comision_neta_pagada": 18.00,
+    "cobrado_por": "Cajera Andrea",
+    "fecha_cobro": "2026-10-01 17:30:00",
+    "codigo_recibo": "REC-8291"
+  }
+}
+```
+
+---
+
+## 12. Endpoints para Conteo Resiliente y Productos Provisionales (US25)
+
+### `POST /alertas/{id}/aprobar-producto`
+Permite al Administrador convertir un producto contabilizado provisionalmente en un ítem oficial del catálogo maestro.
+
+- **Request**:
+```json
+{
+  "nombre_oficial": "Fernet Branca Menta 750ml",
+  "codigo_barra": "7791234567890",
+  "tipo": "terminado",
+  "unidad_medida": "fraccion_cuartos",
+  "precio_venta": 80.00
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Producto provisional aprobado y consolidado en el catálogo oficial",
+  "data": {
+    "producto_id": 28,
+    "nombre": "Fernet Branca Menta 750ml",
+    "alerta_resuelta": true
+  }
+}
+```
+
+### `POST /alertas/{id}/unificar-producto`
+Permite al Administrador asociar el ítem provisional a un producto preexistente si el barman utilizó un nombre coloquial o erróneo.
+
+- **Request**:
+```json
+{
+  "producto_id_oficial": 12
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Conteo provisional transferido al producto oficial existente exitosamente",
+  "data": {
+    "producto_id_oficial": 12,
+    "nombre_oficial": "Fernet Branca 750ml",
+    "unidades_transferidas": 3.00,
+    "alerta_resuelta": true
+  }
+}
+```
+
+

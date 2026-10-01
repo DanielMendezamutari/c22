@@ -15,9 +15,10 @@ Route::prefix('v1')->group(function () {
     Route::post('/transformaciones/relleno', [TransformacionController::class, 'registrarRelleno']);
     Route::post('/transformaciones/baja', [TransformacionController::class, 'registrarBaja']);
 
-    // Cobro a Cajera y Resumen Dinámico - User Story 1
+    // Cobro a Cajera y Resumen Dinámico - User Story 1 & User Story 24
     Route::get('/turnos/{id}/resumen-cajera', [TurnoController::class, 'resumenCajera']);
     Route::post('/turnos/{id}/cobro-recibido', [TurnoController::class, 'cobroRecibido']);
+    Route::post('/turnos/{id}/confirmar-pago-comision', [TurnoController::class, 'confirmarPagoComision']);
 
     // Gestión de Turnos de 12h y Cortes de Inventario - User Story 3
     Route::post('/turnos/abrir', [TurnoController::class, 'abrirTurno']);
@@ -88,9 +89,11 @@ Route::prefix('v1')->group(function () {
     Route::put('/sucursales/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalController::class, 'update']);
     Route::patch('/sucursales/{id}/toggle-activo', [\App\Infrastructure\Http\Controllers\Api\SucursalController::class, 'toggleActivo']);
 
-    // Alertas de Fuga / Discrepancias entre Turnos y Dispositivos Maestros - User Story 15
+    // Alertas de Fuga / Discrepancias entre Turnos y Dispositivos Maestros - User Story 15 & User Story 25
     Route::get('/alertas/discrepancias', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'listarDiscrepancias']);
     Route::post('/alertas/{id}/resolver', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'resolverDiscrepancia']);
+    Route::post('/alertas/{id}/aprobar-producto', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'aprobarProducto']);
+    Route::post('/alertas/{id}/unificar-producto', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'unificarProducto']);
     Route::post('/dispositivos/registrar-maestro', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'registrarDispositivoMaestro']);
     Route::post('/dispositivos/desvincular', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'desvincularDispositivo']);
     Route::get('/dispositivos/maestros', [\App\Infrastructure\Http\Controllers\Api\AlertaController::class, 'listarDispositivosMaestros']);

@@ -15,11 +15,16 @@ class CorteInventario extends Model
         'producto_id',
         'tipo_corte',
         'cantidad',
+        'es_provisional',
+        'nombre_provisional',
+        'es_licor',
         'created_at',
     ];
 
     protected $casts = [
         'cantidad' => 'decimal:2',
+        'es_provisional' => 'boolean',
+        'es_licor' => 'boolean',
         'created_at' => 'datetime',
     ];
 

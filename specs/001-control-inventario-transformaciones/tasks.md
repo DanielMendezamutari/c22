@@ -471,25 +471,69 @@
 
 ---
 
+## Phase 29: User Story 24 - Rol Cajera: Suplencia Operativa de Conteo, Auditoría Visual y Liquidación en Barra (Priority: P1)
+
+**Goal**: Permitir a las cajeras acceder a la aplicación móvil con su propio rol y PIN, auditar en tiempo real el stock de barra y el Acta PDF, realizar cortes de apertura y cierre en suplencia si el barman no asiste o se ausenta, y confirmar el desembolso de comisiones con fotografía obligatoria de comprobante.  
+**Independent Test**: Login con PIN de cajera; realizar apertura por suplencia seleccionando al barman programado; verificar que el Acta PDF señale "Suplencia por Cajera"; acceder a la liquidación de comisiones y confirmar el desembolso capturando foto del dinero.
+
+- [X] T164 [P] [US24] Agregar `case CAJERA = 'cajera'` en enum `RolUsuario.php` y habilitar autenticación por PIN con sucursal para el rol cajera en backend/app/Domain/Enums/RolUsuario.php y backend/app/Application/UseCases/Auth/LoginPinUseCase.php
+- [X] T165 [P] [US24] Crear migración para agregar `realizado_por_usuario_id`, `cerrado_por_usuario_id` y `es_suplencia` a la tabla `turnos` en backend/database/migrations/2026_10_01_000001_add_suplencia_fields_to_turnos_table.php
+- [X] T166 [US24] Modificar `AbrirTurnoUseCase` y `CerrarTurnoUseCase` para persistir la firma de suplencia y validar que la cajera solo pueda abrir a nombre de un barman asignado en backend/app/Application/UseCases/Turnos/AbrirTurnoUseCase.php y backend/app/Application/UseCases/Turnos/CerrarTurnoUseCase.php
+- [X] T167 [US24] Implementar endpoint `POST /turnos/{id}/confirmar-pago-comision` con validación de imagen fotográfica y sellado de estado `cobrado` en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T168 [P] [US24] Crear pantalla `DashboardCajeraScreen` con tarjetas de estado de barra (abrir suplencia, ver conteo/PDF en tiempo real, auditar comisiones con cámara y corte de cierre) en frontend/puntofrio_app/lib/presentation/screens/cajera/dashboard_cajera_screen.dart
+- [X] T169 [US24] En `login_screen.dart` y `auth_provider.dart`, añadir getter `esCajera` y enrutar automáticamente a `DashboardCajeraScreen` tras login con PIN en frontend/puntofrio_app/lib/presentation/screens/auth/login_screen.dart
+- [X] T170 [US24] Actualizar `conteo_pdf_service.dart` y `cierre_turno_pdf_service.dart` para desplegar el membrete y firma de "Suplencia por Cajera: [Nombre]" cuando `es_suplencia` sea verdadero en frontend/puntofrio_app/lib/presentation/screens/turnos/conteo_pdf_service.dart
+- [X] T171 [US24] Validar el flujo operativo completo del rol cajera según Scenario 21 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
+## Phase 30: User Story 25 - Conteo Resiliente: Búsqueda Reactiva, Refresco de Catálogo sin Pérdida de Estado y Contabilización de Productos Provisionales (Priority: P1)
+
+**Goal**: Dotar a la pantalla de conteo físico de búsqueda instantánea, refresco diferencial que no borre lo ya digitado, persistencia local de borrador en SharedPreferences y formulario rápido para contabilizar productos no listados con alerta al Administrador.  
+**Independent Test**: Digitar cantidades de productos; filtrar por buscador y verificar que los productos ocultos preserven sus números; presionar recargar catálogo simulando producto nuevo del Admin y constatar que no se resetee el conteo; simular salida forzada de la app y verificar restauración automática de borrador; registrar "+ Producto no listado" y validar emisión de alerta en backend.
+
+- [X] T172 [P] [US25] Crear migración para agregar `es_provisional` (boolean) y `nombre_provisional` (varchar nullable) a la tabla `cortes_inventario` en backend/database/migrations/2026_10_01_000002_add_provisional_fields_to_cortes_inventario_table.php
+- [X] T173 [US25] Actualizar `TurnoController.php` y `AbrirTurnoUseCase.php` para admitir ítems provisionales en el array de conteo y emitir alerta de auditoría `producto_provisional` en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T174 [P] [US25] Implementar endpoints `POST /alertas/{id}/aprobar-producto` y `POST /alertas/{id}/unificar-producto` en backend/app/Infrastructure/Http/Controllers/Api/AlertaController.php
+- [X] T175 [US25] En `corte_inventario_screen.dart`, integrar barra de búsqueda reactiva superior que filtre en memoria `_itemsFiltrados` preservando el estado de las cantidades en `_items` en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T176 [US25] En `corte_inventario_screen.dart`, implementar botón de refresco (`Icons.refresh`) en el AppBar con recarga de catálogo y merge inteligente con `Map<int, double> _cantidadesDigitadas` en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T177 [US25] En `corte_inventario_screen.dart`, implementar persistencia local del borrador de conteo con `SharedPreferences` (`corte_draft_{sucursalId}_{tipoOperacion}`) con auto-guardado en cada cambio, restauración automática y purga al confirmar en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T178 [US25] En `corte_inventario_screen.dart`, implementar modal rápido "+ Contabilizar Producto no Listado" (Nombre, Cantidad y Switch "Es Licor Fraccionable") marcando el ítem como provisional en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T179 [US25] Validar el flujo de búsqueda, recarga sin pérdida de datos, persistencia de borrador y alerta de auditoría de producto provisional según Scenario 22 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
-- **Phases 1 a 26**: Completadas y verificadas [X].
-- **Phase 27 (US22 - Balance Integral y Corrección de PDFs/Cierre)**: Completada y verificada [X].
-- **Phase 28 (US23 - Fiel Reflejo de Conteo de Apertura PDF y Persistencia)**:
-  - T160 (PDF Service) y T161 (Pantalla Apertura) corrigen la precedencia y sincronización reactiva en frontend [P].
-  - T162 (Backend) valida la inserción y retorno de cortes en base de datos [P].
-  - T163 valida el escenario completo end-to-end.
+- **Phases 1 a 28**: Completadas y verificadas [X].
+- **Phase 29 (US24 - Rol Cajera y Suplencia en Barra)**:
+  - T164 y T165 sientan las bases de modelo y permisos [P].
+  - T166 y T167 implementan la lógica de negocio y endpoints en Laravel.
+  - T168 y T169 construyen la interfaz en Flutter.
+  - T170 adapta los servicios de PDF de conteo y cierre.
+  - T171 valida el escenario end-to-end (Scenario 21).
+- **Phase 30 (US25 - Conteo Resiliente, Búsqueda, Refresco y Producto Provisional)**:
+  - T172 y T174 preparan migraciones y endpoints de resolución de alertas en Laravel [P].
+  - T173 implementa la recepción de ítems provisionales y emisión de alertas en backend.
+  - T175, T176, T177 y T178 modernizan `corte_inventario_screen.dart` en Flutter (buscador, refresco sin pérdida, borrador en SharedPreferences y modal provisional).
+  - T179 valida el escenario end-to-end (Scenario 22).
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Tareas Paralelas Frontend y Backend:
-Task T160: "Corrección de precedencia numérica en conteo_pdf_service.dart"
-Task T161: "Sincronización de cantidad y apertura en corte_inventario_screen.dart"
-Task T162: "Consistencia de apertura en TurnoController.php y AbrirTurnoUseCase.php"
+# Tareas Backend y Base de Datos Paralelas:
+Task T164: "Rol cajera en RolUsuario.php y LoginPinUseCase.php"
+Task T165: "Migración de suplencia en turnos"
+Task T172: "Migración de campos provisionales en cortes_inventario"
+Task T174: "Endpoints aprobar y unificar producto en AlertaController.php"
+
+# Tareas Frontend Paralelas:
+Task T168: "DashboardCajeraScreen en Flutter"
+Task T175: "Buscador reactivo en corte_inventario_screen.dart"
+Task T177: "Persistencia de borrador SharedPreferences en corte_inventario_screen.dart"
 ```
 
 ---

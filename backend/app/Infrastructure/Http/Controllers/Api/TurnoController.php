@@ -37,6 +37,15 @@ class TurnoController extends Controller
             $datos = $request->validated();
             $datos['barman_id'] = $barmanId;
 
+            // Soporte de suplencia por Cajera o Admin
+            if ($user && $user->rol === 'cajera') {
+                $datos['realizado_por_usuario_id'] = $user->id;
+                $datos['es_suplencia'] = true;
+            } elseif ($request->boolean('es_suplencia') && $user) {
+                $datos['realizado_por_usuario_id'] = $user->id;
+                $datos['es_suplencia'] = true;
+            }
+
             $resultado = $this->abrirUseCase->ejecutar($datos);
             $nuevoTurnoId = is_array($resultado) ? ($resultado['id'] ?? null) : $resultado->id;
 
@@ -59,34 +68,63 @@ class TurnoController extends Controller
 
                 $corteInicial = $datos['corte_inicial'] ?? [];
                 foreach ($corteInicial as $item) {
-                    $productoId = (int) $item['producto_id'];
+                    $esProvisional = (bool) ($item['es_provisional'] ?? false);
                     $cantidadDeclarada = (float) $item['cantidad'];
-                    $stockEsperado = (float) ($cortesCierreAnterior[$productoId] ?? 0.0);
-                    $diferencia = round($cantidadDeclarada - $stockEsperado, 2);
 
-                    if (abs($diferencia) >= 0.01) {
+                    if ($esProvisional) {
+                        $nombreProv = $item['nombre_provisional'] ?? 'Producto No Catalogado';
                         \App\Infrastructure\Persistence\Eloquent\Models\AlertaDiscrepancia::create([
                             'sucursal_id' => $sucursalId,
-                            'turno_saliente_id' => $turnoSaliente->id,
+                            'turno_saliente_id' => $turnoSaliente ? $turnoSaliente->id : $nuevoTurnoId,
                             'turno_entrante_id' => $nuevoTurnoId,
-                            'producto_id' => $productoId,
-                            'stock_esperado' => $stockEsperado,
+                            'producto_id' => null,
+                            'stock_esperado' => 0.0,
                             'stock_declarado' => $cantidadDeclarada,
-                            'diferencia' => $diferencia,
+                            'diferencia' => $cantidadDeclarada,
                             'resuelto' => false,
-                            'observaciones' => "Discrepancia en apertura: Cierre previo {$stockEsperado}, Apertura entrante {$cantidadDeclarada}",
+                            'observaciones' => "[PRODUCTO PROVISIONAL]: El barman contabilizó '{$nombreProv}' ({$cantidadDeclarada} unid.) no listado en el catálogo.",
                             'fecha_alerta' => now(),
                         ]);
 
-                        $prod = \App\Infrastructure\Persistence\Eloquent\Models\Producto::find($productoId);
                         $discrepancias[] = [
-                            'producto_id' => $productoId,
-                            'producto_nombre' => $prod ? $prod->nombre : "Producto #$productoId",
-                            'stock_esperado' => $stockEsperado,
+                            'producto_id' => null,
+                            'producto_nombre' => "[PROVISIONAL] " . $nombreProv,
+                            'stock_esperado' => 0.0,
                             'stock_declarado' => $cantidadDeclarada,
-                            'diferencia' => $diferencia,
-                            'turno_saliente_barman' => $turnoSaliente->usuario ? ($turnoSaliente->usuario->nombre . ' ' . $turnoSaliente->usuario->apellido) : 'Turno Anterior',
+                            'diferencia' => $cantidadDeclarada,
+                            'turno_saliente_barman' => 'Barra (No Listado)',
+                            'es_provisional' => true,
+                            'nombre_provisional' => $nombreProv,
                         ];
+                    } else {
+                        $productoId = (int) ($item['producto_id'] ?? 0);
+                        $stockEsperado = (float) ($cortesCierreAnterior[$productoId] ?? 0.0);
+                        $diferencia = round($cantidadDeclarada - $stockEsperado, 2);
+
+                        if (abs($diferencia) >= 0.01) {
+                            \App\Infrastructure\Persistence\Eloquent\Models\AlertaDiscrepancia::create([
+                                'sucursal_id' => $sucursalId,
+                                'turno_saliente_id' => $turnoSaliente->id,
+                                'turno_entrante_id' => $nuevoTurnoId,
+                                'producto_id' => $productoId,
+                                'stock_esperado' => $stockEsperado,
+                                'stock_declarado' => $cantidadDeclarada,
+                                'diferencia' => $diferencia,
+                                'resuelto' => false,
+                                'observaciones' => "Discrepancia en apertura: Cierre previo {$stockEsperado}, Apertura entrante {$cantidadDeclarada}",
+                                'fecha_alerta' => now(),
+                            ]);
+
+                            $prod = \App\Infrastructure\Persistence\Eloquent\Models\Producto::find($productoId);
+                            $discrepancias[] = [
+                                'producto_id' => $productoId,
+                                'producto_nombre' => $prod ? $prod->nombre : "Producto #$productoId",
+                                'stock_esperado' => $stockEsperado,
+                                'stock_declarado' => $cantidadDeclarada,
+                                'diferencia' => $diferencia,
+                                'turno_saliente_barman' => $turnoSaliente->usuario ? ($turnoSaliente->usuario->nombre . ' ' . $turnoSaliente->usuario->apellido) : 'Turno Anterior',
+                            ];
+                        }
                     }
                 }
             }
@@ -110,7 +148,18 @@ class TurnoController extends Controller
     {
         try {
             $corteFinal = $request->input('corte_final', []);
-            $resultado = $this->cerrarUseCase->ejecutar($id, $corteFinal);
+            $user = auth('sanctum')->user() ?? $request->user();
+
+            $opciones = [];
+            if ($user && $user->rol === 'cajera') {
+                $opciones['cerrado_por_usuario_id'] = $user->id;
+                $opciones['es_suplencia'] = true;
+            } elseif ($request->boolean('es_suplencia') && $user) {
+                $opciones['cerrado_por_usuario_id'] = $user->id;
+                $opciones['es_suplencia'] = true;
+            }
+
+            $resultado = $this->cerrarUseCase->ejecutar($id, $corteFinal, $opciones);
 
             return response()->json([
                 'success' => true,
@@ -175,7 +224,7 @@ class TurnoController extends Controller
     public function corteInicial(int $id): JsonResponse
     {
         try {
-            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario'])->find($id);
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario', 'realizadoPor', 'cerradoPor'])->find($id);
             if (!$turno) {
                 return response()->json([
                     'success' => false,
@@ -242,6 +291,37 @@ class TurnoController extends Controller
                 ];
             })->values();
 
+            // Incorporar ítems provisionales contados en el turno
+            $cortesProvisionales = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $id)
+                ->whereIn('tipo_corte', ['inicial', 'apertura'])
+                ->where('es_provisional', true)
+                ->get();
+
+            $itemsProvisionales = $cortesProvisionales->map(function ($corte) {
+                $nombre = $corte->nombre_provisional ?? 'Producto Provisional';
+                $cant = (float) $corte->cantidad;
+                return [
+                    'producto_id' => null,
+                    'nombre' => $nombre,
+                    'producto_nombre' => $nombre,
+                    'codigo' => 'PROV',
+                    'tipo_producto' => $corte->es_licor ? 'licor' : 'terminado',
+                    'cantidad' => $cant,
+                    'cantidad_inicial' => $cant,
+                    'ingresos' => 0.0,
+                    'rellenos_producidos' => 0.0,
+                    'rellenos_consumidos' => 0.0,
+                    'rellenos' => 0.0,
+                    'bajas' => 0.0,
+                    'traspasos_salida' => 0.0,
+                    'total_disponible' => $cant,
+                    'es_provisional' => true,
+                    'nombre_provisional' => $nombre,
+                ];
+            });
+
+            $todosLosItems = $items->concat($itemsProvisionales)->values();
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -250,11 +330,64 @@ class TurnoController extends Controller
                     'barman' => ($turno->usuario->nombre ?? 'Barman') . ' ' . ($turno->usuario->apellido ?? ''),
                     'tipo_turno' => $turno->tipo_turno ?? 'noche',
                     'estado' => $turno->estado,
+                    'es_suplencia' => (bool) ($turno->es_suplencia ?? false),
+                    'realizado_por' => $turno->realizadoPor ? ($turno->realizadoPor->nombre . ' ' . $turno->realizadoPor->apellido) : null,
+                    'cerrado_por' => $turno->cerradoPor ? ($turno->cerradoPor->nombre . ' ' . $turno->cerradoPor->apellido) : null,
                     'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : now()->toIso8601String(),
-                    'items' => $items,
+                    'items' => $todosLosItems,
                 ],
             ]);
         } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function confirmarPagoComision(int $id, Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'foto' => 'required|image|max:5120',
+                'observacion' => 'nullable|string|max:500',
+            ]);
+
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['barman', 'sucursal'])->find($id);
+            if (!$turno) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Turno no encontrado.',
+                ], 404);
+            }
+
+            $fotoPath = $request->file('foto')->store('comprobantes_comisiones', 'public');
+            $user = auth('sanctum')->user() ?? $request->user();
+            $nombreCobrador = $user ? ($user->nombre . ' ' . $user->apellido) : 'Cajera';
+
+            $codigoRecibo = 'REC-' . strtoupper(substr(md5(uniqid((string)$id, true)), 0, 6));
+
+            $turno->update([
+                'estado' => 'cobrado',
+                'foto_comprobante_cobro' => $fotoPath,
+                'fecha_cobro' => now(),
+                'observaciones' => trim(($turno->observaciones ?? '') . "\n[Cobro {$codigoRecibo} por {$nombreCobrador}]: " . ($request->input('observacion') ?? '')),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Desembolso de comisiones confirmado exitosamente',
+                'data' => [
+                    'turno_id' => $turno->id,
+                    'estado' => $turno->estado,
+                    'total_comision_neta_pagada' => (float) ($turno->total_comision_bruta ?? 0.0),
+                    'cobrado_por' => $nombreCobrador,
+                    'fecha_cobro' => $turno->fecha_cobro ? $turno->fecha_cobro->toDateTimeString() : now()->toDateTimeString(),
+                    'codigo_recibo' => $codigoRecibo,
+                    'foto_url' => asset('storage/' . $fotoPath),
+                ]
+            ], 200);
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),

@@ -43,13 +43,13 @@ Representa los puntos de venta / casas del Grupo Punto Frío.
 ---
 
 ### 2.2 `usuarios`
-Personal operativo (barmen/garzones) y administradores/auditores.
+Personal operativo (barmen/garzones/cajeras) y administradores/auditores.
 - `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 - `nombre`: VARCHAR(100) NOT NULL
 - `apellido`: VARCHAR(100) NOT NULL
-- `rol`: ENUM('barman', 'garzon', 'admin') NOT NULL DEFAULT 'barman'
+- `rol`: ENUM('barman', 'garzon', 'cajera', 'admin') NOT NULL DEFAULT 'barman'
 - `pin_hash`: VARCHAR(255) NOT NULL (Hash seguro bcrypt/Argon2 del PIN numérico de 4 dígitos)
-- `modalidad_cobro`: ENUM('diario', 'semanal') NOT NULL DEFAULT 'diario' (Diario para Turno Día / Semanal para Turno Noche)
+- `modalidad_cobro`: ENUM('diario', 'semanal') NOT NULL DEFAULT 'diario' (Diario para Garzón Día / Semanal para Barman Noche / Fijo para Cajera)
 - `sucursal_actual_id`: BIGINT UNSIGNED NULLABLE (Sucursal de rotación asignada para la semana activa)
   - *FK*: `sucursal_actual_id` REFERENCES `sucursales(id)` ON DELETE SET NULL
 - `saldo_deudor_acumulado`: DECIMAL(10,2) NOT NULL DEFAULT 0.00 (Monto en Bs adeudado por sanciones de faltantes)
@@ -99,12 +99,17 @@ Tabla de equivalencia para el desglose automático de combos vendidos en caja.
 ---
 
 ### 2.6 `turnos`
-Jornada de 12 horas asignada a un barman en una sucursal específica.
+Jornada de 12 horas asignada a un barman en una sucursal específica con auditoría de suplencia.
 - `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 - `sucursal_id`: BIGINT UNSIGNED NOT NULL
   - *FK*: `sucursal_id` REFERENCES `sucursales(id)`
 - `barman_id`: BIGINT UNSIGNED NOT NULL
   - *FK*: `barman_id` REFERENCES `usuarios(id)`
+- `realizado_por_usuario_id`: BIGINT UNSIGNED NULLABLE (ID del usuario que ejecutó físicamente la apertura; ej. Cajera en suplencia)
+  - *FK*: `realizado_por_usuario_id` REFERENCES `usuarios(id)`
+- `cerrado_por_usuario_id`: BIGINT UNSIGNED NULLABLE (ID del usuario que ejecutó físicamente el cierre; ej. Cajera en suplencia)
+  - *FK*: `cerrado_por_usuario_id` REFERENCES `usuarios(id)`
+- `es_suplencia`: BOOLEAN NOT NULL DEFAULT FALSE (Verdadero si el corte fue ejecutado por la cajera ante ausencia del barman)
 - `tipo_turno`: ENUM('dia', 'noche') NOT NULL
 - `estado`: ENUM('abierto', 'cobrado', 'cerrado', 'auditado') NOT NULL DEFAULT 'abierto'
 - `fecha_apertura`: DATETIME NOT NULL
@@ -121,12 +126,15 @@ Jornada de 12 horas asignada a un barman en una sucursal específica.
 ---
 
 ### 2.7 `cortes_inventario`
-Registros físicos de apertura y cierre de turno con conteo exacto de unidades y cuartos de botella.
+Registros físicos de apertura y cierre de turno con conteo exacto de unidades, cuartos y soporte de productos provisionales.
 - `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 - `turno_id`: BIGINT UNSIGNED NOT NULL
   - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE CASCADE
-- `producto_id`: BIGINT UNSIGNED NOT NULL
-  - *FK*: `producto_id` REFERENCES `productos(id)`
+- `producto_id`: BIGINT UNSIGNED NULLABLE (NULL si es producto provisional no listado)
+  - *FK*: `producto_id` REFERENCES `productos(id)` ON DELETE SET NULL
+- `es_provisional`: BOOLEAN NOT NULL DEFAULT FALSE (True si el producto no existía en el catálogo y fue registrado provisionalmente en barra)
+- `nombre_provisional`: VARCHAR(150) NULLABLE (Nombre descriptivo ingresado en barra para el producto provisional)
+- `es_licor`: BOOLEAN NOT NULL DEFAULT FALSE
 - `tipo_corte`: ENUM('inicial', 'final') NOT NULL
 - `cantidad`: DECIMAL(8,2) NOT NULL (Soporta fracciones exactas: 0.25, 0.50, 0.75, 1.00...)
 - `created_at`: TIMESTAMP

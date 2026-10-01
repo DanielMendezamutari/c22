@@ -8,8 +8,9 @@ interface TurnoRepositoryPort
 {
     public function buscarPorId(int $id): ?Turno;
     public function buscarTurnoActivoPorBarman(int $barmanId, int $sucursalId): ?Turno;
+    public function buscarTurnoActivoPorSucursal(int $sucursalId): ?Turno;
     public function crear(array $datos): Turno;
     public function actualizar(int $id, array $datos): bool;
-    public function asentarCorte(int $turnoId, int $productoId, string $tipoCorte, float $cantidad): void;
+    public function asentarCorte(int $turnoId, ?int $productoId, string $tipoCorte, float $cantidad, bool $esProvisional = false, ?string $nombreProvisional = null, bool $esLicor = false): void;
     public function obtenerCortes(int $turnoId, ?string $tipoCorte = null): array;
 }

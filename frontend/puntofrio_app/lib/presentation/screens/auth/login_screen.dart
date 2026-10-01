@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/numeric_pin_pad.dart';
 import '../admin/dashboard_admin_screen.dart';
+import '../cajera/dashboard_cajera_screen.dart';
 import '../dashboard/dashboard_barman_screen.dart';
 import '../settings/network_settings_dialog.dart';
 
@@ -76,6 +77,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (auth.esAdmin) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DashboardAdminScreen()),
+        );
+      } else if (auth.esCajera) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const DashboardCajeraScreen()),
         );
       } else {
         Navigator.of(context).pushReplacement(

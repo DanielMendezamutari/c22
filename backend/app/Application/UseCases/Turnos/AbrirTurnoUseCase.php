@@ -37,12 +37,17 @@ class AbrirTurnoUseCase
                 'tipo_turno' => $tipoTurno,
                 'estado' => 'abierto',
                 'fecha_apertura' => now(),
+                'realizado_por_usuario_id' => $comando['realizado_por_usuario_id'] ?? null,
+                'es_suplencia' => (bool) ($comando['es_suplencia'] ?? false),
             ]);
 
             // Asentar cortes iniciales
             foreach ($corteInicial as $item) {
-                $productoId = (int) $item['producto_id'];
+                $productoId = !empty($item['producto_id']) ? (int) $item['producto_id'] : null;
                 $cantidad = (float) $item['cantidad'];
+                $esProvisional = (bool) ($item['es_provisional'] ?? false);
+                $nombreProvisional = $item['nombre_provisional'] ?? null;
+                $esLicor = (bool) ($item['es_licor'] ?? false);
 
                 // Validación estricta de fracción
                 $fraccion = FraccionLicor::desdeDecimal($cantidad);
@@ -51,16 +56,22 @@ class AbrirTurnoUseCase
                     $turno->id,
                     $productoId,
                     'apertura',
-                    $fraccion->valor()
+                    $fraccion->valor(),
+                    $esProvisional,
+                    $nombreProvisional,
+                    $esLicor
                 );
             }
 
             return [
                 'turno_id' => $turno->id,
+                'id' => $turno->id,
                 'estado' => 'abierto',
                 'tipo_turno' => $tipoTurno,
                 'sucursal_id' => $sucursalId,
                 'barman_id' => $barmanId,
+                'realizado_por_usuario_id' => $turno->realizado_por_usuario_id ?? $barmanId,
+                'es_suplencia' => (bool) ($turno->es_suplencia ?? false),
                 'fecha_apertura' => $turno->fecha_apertura->toDateTimeString(),
                 'total_items_corte' => count($corteInicial),
             ];

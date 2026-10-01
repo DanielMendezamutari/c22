@@ -17,16 +17,16 @@
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs y US23 Fiel Reflejo Conteo Apertura)
+- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Fiel Reflejo Conteo Apertura, US24 Rol Cajera y US25 Conteo Resiliente)
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness
 
-- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-044)
+- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-053)
 - [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-012)
+- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-014)
 - [x] No implementation details leak into specification
 
 ## Notes
@@ -37,4 +37,6 @@
 - Especificados traspasos inter-sucursales con sucursales/productos reales y validación estricta de stock en origen (US21).
 - Especificado balance integral de corte inicial y cierre en PDF (US22).
 - Especificado fiel reflejo del conteo físico inicial de apertura en PDF y persistencia inmutable (US23 / FR-044).
+- Especificado rol Cajera con suplencia operativa de conteo apertura/cierre, auditoría visual en tiempo real y confirmación de comisiones con foto (US24 / FR-045 a FR-049 / SC-013).
+- Especificado conteo resiliente en APK: buscador reactivo, refresco sin pérdida de avance de conteo y contabilización provisional de productos nuevos con alerta al Admin (US25 / FR-050 a FR-053 / SC-014).
 - Spec ready for technical planning (`/speckit-plan`).

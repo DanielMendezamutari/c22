@@ -218,6 +218,35 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
   - En `TurnoController.php` (`corteInicial`): Asegurar que los cortes asentados con `tipo_corte = 'apertura'` o `'inicial'` se devuelvan íntegramente en `cantidad_inicial`, respetando los decimales exactos.
   - En `AbrirTurnoUseCase.php`: Certificar que cada elemento de `corte_inicial` se inserte en `cortes_inventario` con `tipo_corte = 'apertura'` y su fracción decimal estricta (`FraccionLicor`).
 
+### FASE 12: Rol Cajera: Suplencia Operativa de Conteo, Auditoría Visual y Liquidación en Barra (US24)
+- **Ticket 12.1 (Backend Rol Cajera y Endpoints de Suplencia)**:
+  - Agregar `case CAJERA = 'cajera'` en `RolUsuario.php`.
+  - Actualizar `LoginPinUseCase.php` para soportar autenticación por PIN con sucursal para el rol `cajera`.
+  - Modificar `AbrirTurnoUseCase` y `CerrarTurnoUseCase` para registrar `realizado_por_usuario_id`, `cerrado_por_usuario_id` y bandera `es_suplencia = true`.
+  - Endpoint `POST /turnos/{id}/confirmar-pago-comision`: recepción de fotografía obligatoria de comprobante, sellado del turno como `cobrado` y retorno de confirmación inmutable.
+  - Reflejar en `ConteoPdfService` y `CierreTurnoPdfService` la leyenda explícita de "Suplencia por Cajera: [Nombre]".
+- **Ticket 12.2 (Frontend Flutter Dashboard Cajera y Enrutamiento)**:
+  - En `login_screen.dart`: Evaluar `auth.esCajera` y redirigir a `DashboardCajeraScreen`.
+  - Crear pantalla `DashboardCajeraScreen`:
+    - Estado A (Sin turno): Información de barra + botón "Abrir Turno (Suplencia)" seleccionando al barman programado en `CorteInventarioScreen`.
+    - Estado B (Turno activo): Card con custodio actual + botón "Ver / Previsualizar Conteo de Barra (PDF)" + botón "Auditar / Liquidar Comisiones de Barra".
+    - Estado C (Turno pendiente de cierre): Botón "Realizar Corte de Cierre (Suplencia)".
+  - Diálogo de Confirmación de Desembolso: Captura de fotografía de respaldo con cámara del celular y confirmación directa desde la cuenta de la cajera.
+
+### FASE 13: Conteo Resiliente: Búsqueda Reactiva, Refresco de Catálogo sin Pérdida de Estado y Contabilización de Productos Provisionales (US25)
+- **Ticket 13.1 (Frontend Buscador, Refresco Inteligente y Persistencia de Borrador)**:
+  - En `corte_inventario_screen.dart`:
+    - Barra de búsqueda reactiva en la cabecera del conteo con filtrado instantáneo en memoria (`_filtroBusqueda`) que no altere ni limpie las cantidades de los productos ocultos.
+    - Botón de refresco (`Icons.refresh`): consulta `GET /productos` y realiza merge inteligente con `Map<int, double> _cantidadesDigitadas`, incorporando productos recién creados por el Admin con cantidad 0.0 y preservando las cantidades ya digitadas en los demás ítems.
+    - Persistencia local del borrador: Guardar automáticamente en `SharedPreferences` en cada modificación de cantidad (`corte_draft_{sucursalId}_{tipoOperacion}`). Al ingresar a la pantalla, si existe un borrador no confirmado, restaurarlo automáticamente notificando al usuario con opción de "Descartar Borrador". Al confirmar el corte con éxito, purgar el borrador local.
+    - Botón "+ Contabilizar Producto no Listado": Modal rápido con campos: Nombre comercial, Cantidad física contada y Switch "Es Licor / Botella Fraccionable" (para cuartos 0.25, 0.50, 0.75). Se incorpora a la lista de conteo con `es_provisional = true`.
+- **Ticket 13.2 (Backend Registro de Productos Provisionales y Alerta al Administrador)**:
+  - Migración en `cortes_inventario`: agregar columnas `es_provisional` (boolean default false) y `nombre_provisional` (string nullable).
+  - Al procesar `POST /turnos/abrir` o `POST /turnos/{id}/corte-cierre`: Si contiene ítems provisionales, asentarlos y disparar evento `AlertaDiscrepancia` de tipo `producto_provisional` con datos de sucursal, producto temporal y cantidad contada.
+  - Endpoints en `AlertaController`:
+    - `POST /alertas/{id}/aprobar-producto`: Permite al Admin transformar el ítem provisional en producto oficial del catálogo.
+    - `POST /alertas/{id}/unificar-producto`: Permite al Admin asociarlo a un producto oficial ya existente (`producto_id_oficial`), transfiriendo las cantidades de forma transparente.
+
 ---
 
 ## Complexity Tracking

@@ -168,4 +168,127 @@ class AlertaController extends Controller
             ], 400);
         }
     }
+
+    public function aprobarProducto(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'nombre_oficial' => 'required|string|max:150',
+            'codigo_barra' => 'nullable|string|max:100',
+            'tipo' => 'nullable|string|in:terminado,insumo,mixto',
+            'unidad_medida' => 'nullable|string|max:50',
+            'precio_venta' => 'nullable|numeric|min:0',
+        ]);
+
+        try {
+            $alerta = AlertaDiscrepancia::findOrFail($id);
+
+            // Crear el producto oficial en el catálogo maestro
+            $producto = \App\Infrastructure\Persistence\Eloquent\Models\Producto::create([
+                'nombre' => $request->input('nombre_oficial'),
+                'codigo_barra' => $request->input('codigo_barra') ?? ('GEN-' . strtoupper(substr(md5(uniqid('', true)), 0, 8))),
+                'tipo' => $request->input('tipo', 'terminado'),
+                'unidad_medida' => $request->input('unidad_medida', 'unidad'),
+                'precio_venta' => $request->input('precio_venta', 0.00),
+                'activo' => true,
+            ]);
+
+            // Consolidar el corte de inventario provisional asociado
+            if ($alerta->turno_entrante_id) {
+                \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $alerta->turno_entrante_id)
+                    ->where('es_provisional', true)
+                    ->whereNull('producto_id')
+                    ->update([
+                        'producto_id' => $producto->id,
+                        'es_provisional' => false,
+                        'nombre_provisional' => null,
+                    ]);
+            }
+
+            // Marcar alerta resuelta
+            $alerta->update([
+                'producto_id' => $producto->id,
+                'resuelto' => true,
+                'observaciones' => trim(($alerta->observaciones ?? '') . "\n[APROBADO]: Convertido en producto oficial '{$producto->nombre}' (ID: {$producto->id})."),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto provisional aprobado y consolidado en el catálogo oficial',
+                'data' => [
+                    'producto_id' => $producto->id,
+                    'nombre' => $producto->nombre,
+                    'alerta_resuelta' => true,
+                ],
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function unificarProducto(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'producto_id_oficial' => 'required|integer|exists:productos,id',
+        ]);
+
+        try {
+            $alerta = AlertaDiscrepancia::findOrFail($id);
+            $productoOficial = \App\Infrastructure\Persistence\Eloquent\Models\Producto::findOrFail((int) $request->input('producto_id_oficial'));
+
+            $unidadesTransferidas = (float) $alerta->stock_declarado;
+
+            // Actualizar o fusionar corte provisional
+            if ($alerta->turno_entrante_id) {
+                $corteProvisional = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $alerta->turno_entrante_id)
+                    ->where('es_provisional', true)
+                    ->whereNull('producto_id')
+                    ->first();
+
+                if ($corteProvisional) {
+                    $corteExistente = \App\Infrastructure\Persistence\Eloquent\Models\CorteInventario::where('turno_id', $alerta->turno_entrante_id)
+                        ->where('producto_id', $productoOficial->id)
+                        ->where('tipo_corte', $corteProvisional->tipo_corte)
+                        ->first();
+
+                    if ($corteExistente) {
+                        $corteExistente->cantidad += (float) $corteProvisional->cantidad;
+                        $corteExistente->save();
+                        $corteProvisional->delete();
+                    } else {
+                        $corteProvisional->update([
+                            'producto_id' => $productoOficial->id,
+                            'es_provisional' => false,
+                            'nombre_provisional' => null,
+                        ]);
+                    }
+                }
+            }
+
+            // Marcar alerta resuelta
+            $alerta->update([
+                'producto_id' => $productoOficial->id,
+                'resuelto' => true,
+                'observaciones' => trim(($alerta->observaciones ?? '') . "\n[UNIFICADO]: Transferido al producto oficial '{$productoOficial->nombre}' (ID: {$productoOficial->id})."),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Conteo provisional transferido al producto oficial existente exitosamente',
+                'data' => [
+                    'producto_id_oficial' => $productoOficial->id,
+                    'nombre_oficial' => $productoOficial->nombre,
+                    'unidades_transferidas' => $unidadesTransferidas,
+                    'alerta_resuelta' => true,
+                ],
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

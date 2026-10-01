@@ -14,6 +14,9 @@ class Turno extends Model
     protected $fillable = [
         'sucursal_id',
         'barman_id',
+        'realizado_por_usuario_id',
+        'cerrado_por_usuario_id',
+        'es_suplencia',
         'tipo_turno',
         'estado',
         'fecha_apertura',
@@ -31,6 +34,7 @@ class Turno extends Model
         'fecha_apertura' => 'datetime',
         'fecha_cierre' => 'datetime',
         'fecha_cobro' => 'datetime',
+        'es_suplencia' => 'boolean',
         'total_transformaciones_netas' => 'integer',
         'total_comision_bruta' => 'decimal:2',
         'total_sancion_descontada' => 'decimal:2',
@@ -45,6 +49,16 @@ class Turno extends Model
     public function barman(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'barman_id');
+    }
+
+    public function realizadoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'realizado_por_usuario_id');
+    }
+
+    public function cerradoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'cerrado_por_usuario_id');
     }
 
     public function usuario(): BelongsTo

@@ -39,6 +39,15 @@ class EloquentTurnoRepository implements TurnoRepositoryPort
         return $turno;
     }
 
+    public function buscarTurnoActivoPorSucursal(int $sucursalId): ?Turno
+    {
+        return Turno::with(['sucursal', 'barman'])
+            ->where('sucursal_id', $sucursalId)
+            ->whereIn('estado', ['abierto', 'cobrado'])
+            ->latest('fecha_apertura')
+            ->first();
+    }
+
     public function crear(array $datos): Turno
     {
         return Turno::create($datos);
@@ -50,7 +59,7 @@ class EloquentTurnoRepository implements TurnoRepositoryPort
         return $turno->update($datos);
     }
 
-    public function asentarCorte(int $turnoId, int $productoId, string $tipoCorte, float $cantidad): void
+    public function asentarCorte(int $turnoId, ?int $productoId, string $tipoCorte, float $cantidad, bool $esProvisional = false, ?string $nombreProvisional = null, bool $esLicor = false): void
     {
         $tipoNormalizado = match (strtolower($tipoCorte)) {
             'apertura' => 'inicial',
@@ -63,6 +72,9 @@ class EloquentTurnoRepository implements TurnoRepositoryPort
             'producto_id' => $productoId,
             'tipo_corte' => $tipoNormalizado,
             'cantidad' => $cantidad,
+            'es_provisional' => $esProvisional,
+            'nombre_provisional' => $nombreProvisional,
+            'es_licor' => $esLicor,
             'created_at' => now(),
         ]);
     }

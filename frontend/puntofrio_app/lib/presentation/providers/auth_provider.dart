@@ -45,6 +45,7 @@ class AuthState {
 
   bool get esAdmin => rol == 'admin';
   bool get esBarman => rol == 'barman';
+  bool get esCajera => rol == 'cajera';
 
   AuthState copyWith({
     bool? isAuthenticated,

@@ -77,19 +77,21 @@ class LoginPinUseCase
             ];
         }
 
-        // Para barman o garzón, validar que se haya proporcionado una sucursal
+        // Para barman, garzón o cajera, validar que se haya proporcionado una sucursal
         if (!$sucursalId || $sucursalId <= 0) {
             throw new DomainException("Por favor selecciona la sucursal de tu turno.");
         }
 
         // Si rota semanalmente a una nueva sucursal, actualizar sucursal actual
-        if ($usuario->rol === 'barman' && $usuario->sucursal_actual_id !== $sucursalId) {
+        if (in_array($usuario->rol, ['barman', 'cajera']) && $usuario->sucursal_actual_id !== $sucursalId) {
             $this->usuarioRepo->actualizarSucursalRotacion($usuario->id, $sucursalId);
             $usuario->sucursal_actual_id = $sucursalId;
         }
 
-        // Buscar turno activo del barman en la sucursal
-        $turnoActivo = $this->turnoRepo->buscarTurnoActivoPorBarman($usuario->id, $sucursalId);
+        // Buscar turno activo de la sucursal (para cajera) o del barman específico
+        $turnoActivo = $usuario->rol === 'cajera'
+            ? $this->turnoRepo->buscarTurnoActivoPorSucursal($sucursalId)
+            : $this->turnoRepo->buscarTurnoActivoPorBarman($usuario->id, $sucursalId);
 
         // Generar token Sanctum
         $token = $usuario->createToken('pin-auth-token')->plainTextToken;

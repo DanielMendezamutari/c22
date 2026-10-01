@@ -6,12 +6,18 @@ import 'package:printing/printing.dart';
 
 class ConteoPdfService {
   static Future<Uint8List> generarPdfBytes({
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? (turnoData?['turno_id'] as int? ?? 0));
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdf = pw.Document();
     final ahora = DateTime.now();
     final fechaStr =
@@ -38,6 +44,9 @@ class ConteoPdfService {
       final disp = (dispRaw != null && dispRaw > 0) ? dispRaw : (cant + ing);
       return acc + disp;
     });
+
+    final bool esSuplencia = (turnoData?['es_suplencia'] == true) || (turnoData?['es_suplencia'] == 1);
+    final String? realizadoPor = (turnoData?['realizado_por'] ?? turnoData?['cerrado_por']) as String?;
 
     pdf.addPage(
       pw.MultiPage(
@@ -71,7 +80,7 @@ class ConteoPdfService {
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
-                    pw.Text('TURNO #$turnoId',
+                    pw.Text('TURNO #$resolvedTurnoId',
                         style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                     pw.SizedBox(height: 2),
                     pw.Text('Fecha: $fechaStr', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
@@ -100,7 +109,7 @@ class ConteoPdfService {
                       text: pw.TextSpan(
                         children: [
                           pw.TextSpan(text: 'Sucursal: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                          pw.TextSpan(text: sucursal, style: const pw.TextStyle(fontSize: 11)),
+                          pw.TextSpan(text: resolvedSucursal, style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ),
@@ -108,11 +117,22 @@ class ConteoPdfService {
                     pw.RichText(
                       text: pw.TextSpan(
                         children: [
-                          pw.TextSpan(text: 'Barman Receptor: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                          pw.TextSpan(text: barman, style: const pw.TextStyle(fontSize: 11)),
+                          pw.TextSpan(text: 'Barman Titular: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                          pw.TextSpan(text: resolvedBarman, style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ),
+                    if (esSuplencia) ...[
+                      pw.SizedBox(height: 4),
+                      pw.RichText(
+                        text: pw.TextSpan(
+                          children: [
+                            pw.TextSpan(text: 'Modalidad: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.orange900)),
+                            pw.TextSpan(text: 'SUPLENCIA POR CAJERA (${realizadoPor ?? 'Cajera de Barra'})', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 pw.Column(
@@ -123,7 +143,7 @@ class ConteoPdfService {
                         children: [
                           pw.TextSpan(text: 'Jornada: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
                           pw.TextSpan(
-                              text: tipoTurno.toUpperCase() == 'DIA' ? 'Día (12h - Diario)' : 'Noche (12h - Semanal)',
+                              text: resolvedTipoTurno.toUpperCase() == 'DIA' ? 'Día (12h - Diario)' : 'Noche (12h - Semanal)',
                               style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
@@ -225,9 +245,18 @@ class ConteoPdfService {
                 children: [
                   pw.Container(width: 180, height: 1, color: PdfColors.black),
                   pw.SizedBox(height: 6),
-                  pw.Text('Firma Barman Entrante', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.Text(barman, style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
-                  pw.Text('Custodio de Inventario', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+                  pw.Text(
+                    esSuplencia ? 'Firma Cajera Suplente' : 'Firma Barman Entrante',
+                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.Text(
+                    esSuplencia ? (realizadoPor ?? 'Cajera de Turno') : resolvedBarman,
+                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                  ),
+                  pw.Text(
+                    esSuplencia ? 'Suplencia por ausencia de Barman' : 'Custodio de Inventario',
+                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+                  ),
                 ],
               ),
               pw.Column(
@@ -255,53 +284,83 @@ class ConteoPdfService {
     return pdf.save();
   }
 
+  static Future<Uint8List> generarPdf({
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
+    required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
+  }) => generarPdfBytes(
+    turnoId: turnoId,
+    sucursal: sucursal,
+    barman: barman,
+    tipoTurno: tipoTurno,
+    items: items,
+    turnoData: turnoData,
+  );
+
   static Future<void> compartirEnWhatsApp({
     required BuildContext context,
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? (turnoData?['turno_id'] as int? ?? 0));
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdfBytes = await generarPdfBytes(
-      turnoId: turnoId,
-      sucursal: sucursal,
-      barman: barman,
-      tipoTurno: tipoTurno,
+      turnoId: resolvedTurnoId,
+      sucursal: resolvedSucursal,
+      barman: resolvedBarman,
+      tipoTurno: resolvedTipoTurno,
       items: items,
+      turnoData: turnoData,
     );
 
     final fecha = DateTime.now();
     final fechaSimple = '${fecha.day.toString().padLeft(2, '0')}-${fecha.month.toString().padLeft(2, '0')}';
-    final nombreArchivo = 'Conteo_Inicial_Turno_${turnoId}_$fechaSimple.pdf';
+    final nombreArchivo = 'Conteo_Inicial_Turno_${resolvedTurnoId}_$fechaSimple.pdf';
 
     await Printing.sharePdf(
       bytes: pdfBytes,
       filename: nombreArchivo,
-      subject: 'Conteo Inicial de Barra - Turno #$turnoId ($sucursal)',
-      body: 'Adjunto Acta Oficial de Conteo Físico Inicial de Apertura para el Turno #$turnoId a cargo de $barman en $sucursal.',
+      subject: 'Conteo Inicial de Barra - Turno #$resolvedTurnoId ($resolvedSucursal)',
+      body: 'Adjunto Acta Oficial de Conteo Físico Inicial de Apertura para el Turno #$resolvedTurnoId a cargo de $resolvedBarman en $resolvedSucursal.',
     );
   }
 
   static Future<void> previsualizarOImprimir({
     required BuildContext context,
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? (turnoData?['turno_id'] as int? ?? 0));
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdfBytes = await generarPdfBytes(
-      turnoId: turnoId,
-      sucursal: sucursal,
-      barman: barman,
-      tipoTurno: tipoTurno,
+      turnoId: resolvedTurnoId,
+      sucursal: resolvedSucursal,
+      barman: resolvedBarman,
+      tipoTurno: resolvedTipoTurno,
       items: items,
+      turnoData: turnoData,
     );
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdfBytes,
-      name: 'Conteo_Inicial_Turno_$turnoId.pdf',
+      name: 'Conteo_Inicial_Turno_$resolvedTurnoId.pdf',
     );
   }
 

@@ -6,12 +6,18 @@ import 'package:printing/printing.dart';
 
 class CierreTurnoPdfService {
   static Future<Uint8List> generarPdfBytes({
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? 0);
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdf = pw.Document();
     final ahora = DateTime.now();
     final fechaStr =
@@ -23,6 +29,9 @@ class CierreTurnoPdfService {
     final totalRellenos = items.fold<double>(0.0, (acc, item) => acc + ((item['rellenos'] as num?)?.toDouble() ?? 0.0));
     final totalBajas = items.fold<double>(0.0, (acc, item) => acc + ((item['bajas'] as num?)?.toDouble() ?? 0.0));
     final totalUnidades = items.fold<double>(0.0, (acc, item) => acc + ((item['cantidad'] as num?)?.toDouble() ?? 0.0));
+
+    final bool esSuplencia = (turnoData?['es_suplencia'] == true) || (turnoData?['es_suplencia'] == 1);
+    final String? cerradoPor = (turnoData?['cerrado_por'] ?? turnoData?['realizado_por']) as String?;
 
     pdf.addPage(
       pw.MultiPage(
@@ -68,7 +77,7 @@ class CierreTurnoPdfService {
                         border: pw.Border.all(color: PdfColors.red800),
                         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
                       ),
-                      child: pw.Text('TURNO #$turnoId (CERRADO)',
+                      child: pw.Text('TURNO #$resolvedTurnoId (CERRADO)',
                           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
                     ),
                     pw.SizedBox(height: 4),
@@ -98,7 +107,7 @@ class CierreTurnoPdfService {
                       text: pw.TextSpan(
                         children: [
                           pw.TextSpan(text: 'Sucursal: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                          pw.TextSpan(text: sucursal, style: const pw.TextStyle(fontSize: 11)),
+                          pw.TextSpan(text: resolvedSucursal, style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ),
@@ -107,10 +116,21 @@ class CierreTurnoPdfService {
                       text: pw.TextSpan(
                         children: [
                           pw.TextSpan(text: 'Barman Saliente: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                          pw.TextSpan(text: barman, style: const pw.TextStyle(fontSize: 11)),
+                          pw.TextSpan(text: resolvedBarman, style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ),
+                    if (esSuplencia) ...[
+                      pw.SizedBox(height: 4),
+                      pw.RichText(
+                        text: pw.TextSpan(
+                          children: [
+                            pw.TextSpan(text: 'Modalidad: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.orange900)),
+                            pw.TextSpan(text: 'CIERRE EN SUPLENCIA (Cajera: ${cerradoPor ?? 'Cajera de Turno'})', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 pw.Column(
@@ -120,7 +140,7 @@ class CierreTurnoPdfService {
                       text: pw.TextSpan(
                         children: [
                           pw.TextSpan(text: 'Horario: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                          pw.TextSpan(text: tipoTurno.toUpperCase(), style: const pw.TextStyle(fontSize: 11)),
+                          pw.TextSpan(text: resolvedTipoTurno.toUpperCase(), style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ),
@@ -239,8 +259,14 @@ class CierreTurnoPdfService {
                 children: [
                   pw.Container(width: 170, height: 1, color: PdfColors.black),
                   pw.SizedBox(height: 4),
-                  pw.Text('Firma Barman Saliente', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  pw.Text(barman, style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text(
+                    esSuplencia ? 'Firma Cajera Suplente' : 'Firma Barman Saliente',
+                    style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.Text(
+                    esSuplencia ? (cerradoPor ?? 'Cajera de Turno') : resolvedBarman,
+                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                  ),
                 ],
               ),
               pw.Column(
@@ -262,47 +288,79 @@ class CierreTurnoPdfService {
 
   static Future<void> compartirEnWhatsApp({
     required BuildContext context,
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? 0);
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdfBytes = await generarPdfBytes(
-      turnoId: turnoId,
-      sucursal: sucursal,
-      barman: barman,
-      tipoTurno: tipoTurno,
+      turnoId: resolvedTurnoId,
+      sucursal: resolvedSucursal,
+      barman: resolvedBarman,
+      tipoTurno: resolvedTipoTurno,
       items: items,
+      turnoData: turnoData,
     );
 
-    final nombreArchivo = 'Acta_Cierre_Turno_${turnoId}_${sucursal.replaceAll(' ', '_')}.pdf';
+    final nombreArchivo = 'Acta_Cierre_Turno_${resolvedTurnoId}_${resolvedSucursal.replaceAll(' ', '_')}.pdf';
     await Printing.sharePdf(
       bytes: pdfBytes,
       filename: nombreArchivo,
-      subject: 'Acta Oficial de Cierre y Balance - Turno #$turnoId ($sucursal)',
+      subject: 'Acta Oficial de Cierre y Balance - Turno #$resolvedTurnoId ($resolvedSucursal)',
     );
   }
 
   static Future<void> previsualizarOImprimir({
     required BuildContext context,
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required String tipoTurno,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
     required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
   }) async {
+    final int resolvedTurnoId = turnoId ?? (turnoData?['id'] as int? ?? 0);
+    final String resolvedSucursal = sucursal ?? (turnoData?['sucursal_nombre'] ?? turnoData?['sucursal'] ?? 'PUNTO FRÍO').toString();
+    final String resolvedBarman = barman ?? (turnoData?['usuario_nombre'] ?? turnoData?['barman'] ?? 'Personal').toString();
+    final String resolvedTipoTurno = tipoTurno ?? (turnoData?['tipo_turno'] ?? 'Turno General').toString();
+
     final pdfBytes = await generarPdfBytes(
-      turnoId: turnoId,
-      sucursal: sucursal,
-      barman: barman,
-      tipoTurno: tipoTurno,
+      turnoId: resolvedTurnoId,
+      sucursal: resolvedSucursal,
+      barman: resolvedBarman,
+      tipoTurno: resolvedTipoTurno,
       items: items,
+      turnoData: turnoData,
     );
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdfBytes,
-      name: 'Acta_Cierre_Turno_$turnoId',
+      name: 'Acta_Cierre_Turno_$resolvedTurnoId',
     );
   }
+
+  static Future<void> imprimir({
+    required BuildContext context,
+    int? turnoId,
+    String? sucursal,
+    String? barman,
+    String? tipoTurno,
+    required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? turnoData,
+  }) => previsualizarOImprimir(
+    context: context,
+    turnoId: turnoId,
+    sucursal: sucursal,
+    barman: barman,
+    tipoTurno: tipoTurno,
+    items: items,
+    turnoData: turnoData,
+  );
 }

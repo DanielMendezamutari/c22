@@ -6,5 +6,6 @@ enum RolUsuario: string
 {
     case BARMAN = 'barman';
     case GARZON = 'garzon';
+    case CAJERA = 'cajera';
     case ADMIN = 'admin';
 }

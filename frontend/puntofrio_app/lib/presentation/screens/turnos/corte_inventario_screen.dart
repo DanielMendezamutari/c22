@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/bottle_fraction_selector.dart';
@@ -12,12 +14,17 @@ enum TipoOperacionCorte { apertura, cierre }
 class CorteInventarioScreen extends ConsumerStatefulWidget {
   final TipoOperacionCorte tipoOperacion;
   final int? turnoId;
+  final bool esSuplencia;
+  final int? barmanSuplidoId;
 
   const CorteInventarioScreen({
     super.key,
-    required this.tipoOperacion,
+    TipoOperacionCorte? tipoOperacion,
+    bool esCierre = false,
     this.turnoId,
-  });
+    this.esSuplencia = false,
+    this.barmanSuplidoId,
+  }) : tipoOperacion = tipoOperacion ?? (esCierre ? TipoOperacionCorte.cierre : TipoOperacionCorte.apertura);
 
   @override
   ConsumerState<CorteInventarioScreen> createState() => _CorteInventarioScreenState();
@@ -28,39 +35,17 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
   bool _isSubmitting = false;
   String _tipoTurnoSeleccionado = 'dia';
 
+  // Buscador reactivo
+  final TextEditingController _busquedaController = TextEditingController();
+  String _filtroBusqueda = '';
+
   // Lista de productos con sus cantidades seleccionadas
-  final List<Map<String, dynamic>> _items = [
-    {
-      'producto_id': 1,
-      'nombre': 'Corona en Lata 355ml (Insumo)',
-      'es_licor': false,
-      'cantidad': 48.0,
-    },
-    {
-      'producto_id': 2,
-      'nombre': 'Corona en Botella 355ml (Terminado)',
-      'es_licor': false,
-      'cantidad': 24.0,
-    },
-    {
-      'producto_id': 3,
-      'nombre': 'Ron Flor de Caña 750ml',
-      'es_licor': true,
-      'cantidad': 3.75,
-    },
-    {
-      'producto_id': 4,
-      'nombre': 'Vodka Absolut 750ml',
-      'es_licor': true,
-      'cantidad': 2.50,
-    },
-    {
-      'producto_id': 5,
-      'nombre': 'Whisky Red Label 750ml',
-      'es_licor': true,
-      'cantidad': 1.25,
-    },
-  ];
+  final List<Map<String, dynamic>> _items = [];
+
+  String get _draftKey {
+    final sucursalId = ref.read(authProvider).sucursalId ?? 1;
+    return 'corte_draft_${sucursalId}_${widget.tipoOperacion.name}';
+  }
 
   @override
   void initState() {
@@ -68,87 +53,421 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     _cargarProductosRemotos();
   }
 
-  Future<void> _cargarProductosRemotos() async {
+  @override
+  void dispose() {
+    _busquedaController.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _itemsFiltrados {
+    if (_filtroBusqueda.trim().isEmpty) {
+      return _items;
+    }
+    final q = _filtroBusqueda.toLowerCase().trim();
+    return _items.where((i) {
+      final n = (i['nombre'] ?? '').toString().toLowerCase();
+      final pn = (i['producto_nombre'] ?? '').toString().toLowerCase();
+      final prov = (i['nombre_provisional'] ?? '').toString().toLowerCase();
+      return n.contains(q) || pn.contains(q) || prov.contains(q);
+    }).toList();
+  }
+
+  Future<void> _guardarBorrador() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = _items.map((i) => {
+        'producto_id': i['producto_id'],
+        'nombre': i['nombre'],
+        'producto_nombre': i['producto_nombre'],
+        'nombre_provisional': i['nombre_provisional'],
+        'es_provisional': i['es_provisional'] ?? false,
+        'es_licor': i['es_licor'] ?? false,
+        'cantidad': i['cantidad'] ?? 0.0,
+        'cantidad_inicial': i['cantidad_inicial'] ?? 0.0,
+        'ingresos': i['ingresos'] ?? 0.0,
+        'rellenos': i['rellenos'] ?? 0.0,
+        'bajas': i['bajas'] ?? 0.0,
+        'total_disponible': i['total_disponible'] ?? 0.0,
+      }).toList();
+      await prefs.setString(_draftKey, jsonEncode(data));
+    } catch (_) {}
+  }
+
+  Future<void> _restaurarBorradorSiExiste() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_draftKey);
+      if (raw != null && raw.isNotEmpty) {
+        final List list = jsonDecode(raw);
+        if (list.isNotEmpty) {
+          final Map<String, double> draftMap = {};
+          final List<Map<String, dynamic>> provisionalesDraft = [];
+
+          for (var it in list) {
+            if (it['es_provisional'] == true) {
+              provisionalesDraft.add(Map<String, dynamic>.from(it));
+            } else if (it['producto_id'] != null) {
+              draftMap['p_${it['producto_id']}'] = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
+            }
+          }
+
+          bool huboRestauracion = false;
+          for (var item in _items) {
+            final pid = item['producto_id'];
+            if (pid != null && draftMap.containsKey('p_$pid')) {
+              final cant = draftMap['p_$pid']!;
+              if (cant > 0) {
+                item['cantidad'] = cant;
+                item['cantidad_inicial'] = cant;
+                huboRestauracion = true;
+              }
+            }
+          }
+
+          for (var prov in provisionalesDraft) {
+            final yaExiste = _items.any((i) =>
+                i['es_provisional'] == true &&
+                i['nombre_provisional'] == prov['nombre_provisional']);
+            if (!yaExiste) {
+              _items.insert(0, prov);
+              huboRestauracion = true;
+            }
+          }
+
+          if (huboRestauracion && mounted) {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Color(0xFF1E3A8A),
+                duration: Duration(seconds: 2),
+                content: Text('💾 Borrador local recuperado. Cantidades intactas.'),
+              ),
+            );
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _purgarBorrador() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftKey);
+    } catch (_) {}
+  }
+
+  Future<void> _cargarProductosRemotos({
+    bool preservarCantidades = false,
+    Map<String, double>? cantidadesRespaldo,
+    List<Map<String, dynamic>>? provisionalesRespaldo,
+  }) async {
     setState(() => _isLoading = true);
     try {
       final apiClient = ref.read(apiClientProvider);
       final auth = ref.read(authProvider);
       final turnoId = widget.turnoId ?? auth.turnoActivoId;
 
+      List<Map<String, dynamic>> nuevosItems = [];
+
       // Si es Cierre de Turno, cargar el corte inicial y movimientos acumulados del turno
       if (widget.tipoOperacion == TipoOperacionCorte.cierre && turnoId != null) {
         final resTurno = await apiClient.get('/turnos/$turnoId/corte-inicial');
         if (resTurno.statusCode == 200 && resTurno.data['data'] != null && resTurno.data['data']['items'] != null) {
           final List list = resTurno.data['data']['items'];
-          if (list.isNotEmpty) {
-            setState(() {
-              _items.clear();
-              for (var p in list) {
-                final rawTipo = (p['tipo_producto'] ?? p['tipo'] ?? '').toString();
-                final tipoBadge = rawTipo.isNotEmpty && rawTipo != 'null' ? ' (${rawTipo.toUpperCase()})' : '';
-                final nombreBase = (p['nombre'] ?? p['producto_nombre'] ?? 'Producto').toString();
-                final esLicor = rawTipo.toLowerCase().contains('terminado') &&
+          for (var p in list) {
+            final rawTipo = (p['tipo_producto'] ?? p['tipo'] ?? '').toString();
+            final tipoBadge = rawTipo.isNotEmpty && rawTipo != 'null' ? ' (${rawTipo.toUpperCase()})' : '';
+            final nombreBase = (p['nombre'] ?? p['producto_nombre'] ?? 'Producto').toString();
+            final esLicor = (p['es_licor'] == true) ||
+                (rawTipo.toLowerCase().contains('terminado') &&
                     (nombreBase.toLowerCase().contains('ron') ||
                         nombreBase.toLowerCase().contains('vodka') ||
                         nombreBase.toLowerCase().contains('whisky') ||
                         nombreBase.toLowerCase().contains('tequila') ||
-                        nombreBase.toLowerCase().contains('gin'));
+                        nombreBase.toLowerCase().contains('gin')));
 
-                _items.add({
-                  'producto_id': p['producto_id'] ?? p['id'],
-                  'nombre': '$nombreBase$tipoBadge',
-                  'producto_nombre': nombreBase,
-                  'es_licor': esLicor,
-                  'cantidad': 0.0,
-                  'cantidad_inicial': (p['cantidad_inicial'] as num?)?.toDouble() ?? 0.0,
-                  'ingresos': (p['ingresos'] as num?)?.toDouble() ?? 0.0,
-                  'rellenos': (p['rellenos'] as num?)?.toDouble() ?? 0.0,
-                  'bajas': (p['bajas'] as num?)?.toDouble() ?? 0.0,
-                  'total_disponible': (p['total_disponible'] as num?)?.toDouble() ?? 0.0,
-                });
-              }
+            final pid = p['producto_id'] ?? p['id'];
+            final cantIni = (p['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+            final keyPid = pid != null ? 'p_$pid' : null;
+
+            double cantPreservada = 0.0;
+            if (preservarCantidades && keyPid != null && cantidadesRespaldo != null && cantidadesRespaldo.containsKey(keyPid)) {
+              cantPreservada = cantidadesRespaldo[keyPid]!;
+            }
+
+            nuevosItems.add({
+              'producto_id': pid,
+              'nombre': '$nombreBase$tipoBadge',
+              'producto_nombre': nombreBase,
+              'nombre_provisional': p['nombre_provisional'],
+              'es_provisional': p['es_provisional'] == true,
+              'es_licor': esLicor,
+              'cantidad': cantPreservada,
+              'cantidad_inicial': cantIni,
+              'ingresos': (p['ingresos'] as num?)?.toDouble() ?? 0.0,
+              'rellenos': (p['rellenos'] as num?)?.toDouble() ?? 0.0,
+              'bajas': (p['bajas'] as num?)?.toDouble() ?? 0.0,
+              'total_disponible': (p['total_disponible'] as num?)?.toDouble() ?? 0.0,
             });
-            return;
+          }
+        }
+      } else {
+        // Apertura o fallback: cargar catálogo general de productos activos
+        final res = await apiClient.get('/productos/corte');
+        if (res.statusCode == 200 && res.data['data'] != null) {
+          final List list = res.data['data'];
+          for (var p in list) {
+            final rawTipo = (p['tipo_producto'] ?? p['tipo'] ?? '').toString();
+            final tipoBadge = rawTipo.isNotEmpty && rawTipo != 'null' ? ' (${rawTipo.toUpperCase()})' : '';
+            final esLicor = (p['unidad_medida'] == 'fraccion_cuartos') ||
+                (rawTipo.toLowerCase().contains('terminado') &&
+                    (p['nombre'].toString().toLowerCase().contains('ron') ||
+                        p['nombre'].toString().toLowerCase().contains('vodka') ||
+                        p['nombre'].toString().toLowerCase().contains('whisky') ||
+                        p['nombre'].toString().toLowerCase().contains('tequila') ||
+                        p['nombre'].toString().toLowerCase().contains('gin')));
+
+            final pid = p['id'] as int;
+            final keyPid = 'p_$pid';
+
+            double cantPreservada = 0.0;
+            if (preservarCantidades && cantidadesRespaldo != null && cantidadesRespaldo.containsKey(keyPid)) {
+              cantPreservada = cantidadesRespaldo[keyPid]!;
+            }
+
+            nuevosItems.add({
+              'producto_id': pid,
+              'nombre': '${p['nombre']}$tipoBadge',
+              'producto_nombre': p['nombre'],
+              'nombre_provisional': null,
+              'es_provisional': false,
+              'es_licor': esLicor,
+              'cantidad': cantPreservada,
+              'cantidad_inicial': cantPreservada,
+              'ingresos': 0.0,
+              'rellenos': 0.0,
+              'bajas': 0.0,
+              'total_disponible': cantPreservada,
+            });
           }
         }
       }
 
-      // Si es Apertura o fallback, cargar catálogo general
-      final res = await apiClient.get('/productos/corte');
-      if (res.statusCode == 200 && res.data['data'] != null) {
-        final List list = res.data['data'];
-        if (list.isNotEmpty) {
-          setState(() {
-            _items.clear();
-            for (var p in list) {
-              final rawTipo = (p['tipo_producto'] ?? p['tipo'] ?? '').toString();
-              final tipoBadge = rawTipo.isNotEmpty && rawTipo != 'null' ? ' (${rawTipo.toUpperCase()})' : '';
-              final esLicor = rawTipo.toLowerCase().contains('terminado') &&
-                  (p['nombre'].toString().toLowerCase().contains('ron') ||
-                      p['nombre'].toString().toLowerCase().contains('vodka') ||
-                      p['nombre'].toString().toLowerCase().contains('whisky') ||
-                      p['nombre'].toString().toLowerCase().contains('tequila') ||
-                      p['nombre'].toString().toLowerCase().contains('gin'));
-              _items.add({
-                'producto_id': p['id'],
-                'nombre': '${p['nombre']}$tipoBadge',
-                'producto_nombre': p['nombre'],
-                'es_licor': esLicor,
-                'cantidad': 0.0,
-                'cantidad_inicial': 0.0,
-                'ingresos': 0.0,
-                'rellenos': 0.0,
-                'bajas': 0.0,
-                'total_disponible': 0.0,
-              });
-            }
-          });
+      // Re-incorporar productos provisionales respaldados
+      if (provisionalesRespaldo != null && provisionalesRespaldo.isNotEmpty) {
+        for (var prov in provisionalesRespaldo) {
+          final yaEsta = nuevosItems.any((i) =>
+              i['es_provisional'] == true &&
+              i['nombre_provisional'] == prov['nombre_provisional']);
+          if (!yaEsta) {
+            nuevosItems.insert(0, prov);
+          }
         }
       }
+
+      if (nuevosItems.isNotEmpty) {
+        setState(() {
+          _items.clear();
+          _items.addAll(nuevosItems);
+        });
+      }
+
+      if (!preservarCantidades) {
+        await _restaurarBorradorSiExiste();
+      }
     } catch (_) {
-      // Fallback a los datos por defecto si está offline
+      // Fallback local si ocurre falla de red
+      if (_items.isEmpty) {
+        _items.addAll([
+          {
+            'producto_id': 1,
+            'nombre': 'Corona en Lata 355ml (Insumo)',
+            'producto_nombre': 'Corona en Lata 355ml',
+            'es_licor': false,
+            'cantidad': 0.0,
+            'cantidad_inicial': 0.0,
+            'ingresos': 0.0,
+            'rellenos': 0.0,
+            'bajas': 0.0,
+            'total_disponible': 0.0,
+          },
+          {
+            'producto_id': 2,
+            'nombre': 'Corona en Botella 355ml (Terminado)',
+            'producto_nombre': 'Corona en Botella 355ml',
+            'es_licor': false,
+            'cantidad': 0.0,
+            'cantidad_inicial': 0.0,
+            'ingresos': 0.0,
+            'rellenos': 0.0,
+            'bajas': 0.0,
+            'total_disponible': 0.0,
+          },
+        ]);
+        await _restaurarBorradorSiExiste();
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _refrescarCatalogo() async {
+    // Respaldar cantidades actuales
+    final Map<String, double> respaldo = {};
+    final List<Map<String, dynamic>> provisionales = [];
+
+    for (var it in _items) {
+      if (it['es_provisional'] == true) {
+        provisionales.add(Map<String, dynamic>.from(it));
+      } else if (it['producto_id'] != null) {
+        respaldo['p_${it['producto_id']}'] = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+
+    await _cargarProductosRemotos(
+      preservarCantidades: true,
+      cantidadesRespaldo: respaldo,
+      provisionalesRespaldo: provisionales,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+          content: Text('✅ Catálogo actualizado sin perder tus cantidades contadas.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _mostrarModalProductoNoListado() async {
+    final nombreCtrl = TextEditingController();
+    final cantidadCtrl = TextEditingController(text: '1.0');
+    bool esLicor = false;
+
+    final res = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dctx) {
+        return StatefulBuilder(
+          builder: (context, setDState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1B2332),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.add_shopping_cart, color: Colors.amberAccent),
+                  SizedBox(width: 8),
+                  Text('Producto No Listado', style: TextStyle(color: Colors.white, fontSize: 18)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Si llegó un producto nuevo que no figura en el catálogo, puedes contabilizarlo provisionalmente. Se emitirá una alerta al Administrador para su validación oficial.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: nombreCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Nombre del Producto *',
+                        labelStyle: const TextStyle(color: Colors.amberAccent),
+                        hintText: 'Ej. Fernet Menta 750ml, Monster Energy',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF26324A),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: cantidadCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Cantidad Física Contada *',
+                        labelStyle: const TextStyle(color: Colors.amberAccent),
+                        hintText: 'Ej. 1.0, 2.50, 6.0',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF26324A),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SwitchListTile(
+                      title: const Text('¿Es licor fraccionable?', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      subtitle: const Text('Medición en cuartos de botella', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      value: esLicor,
+                      activeColor: Colors.amberAccent,
+                      onChanged: (val) => setDState(() => esLicor = val),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dctx),
+                  child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent, foregroundColor: Colors.black),
+                  onPressed: () {
+                    final nom = nombreCtrl.text.trim();
+                    final cant = double.tryParse(cantidadCtrl.text.trim()) ?? 0.0;
+                    if (nom.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(backgroundColor: Colors.orange, content: Text('El nombre del producto es obligatorio')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(dctx, {
+                      'nombre': nom,
+                      'cantidad': cant,
+                      'es_licor': esLicor,
+                    });
+                  },
+                  child: const Text('Agregar a Conteo', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (res != null) {
+      setState(() {
+        _items.insert(0, {
+          'producto_id': null,
+          'nombre': '${res['nombre']} (PROVISIONAL)',
+          'producto_nombre': res['nombre'],
+          'nombre_provisional': res['nombre'],
+          'es_provisional': true,
+          'es_licor': res['es_licor'],
+          'cantidad': res['cantidad'],
+          'cantidad_inicial': res['cantidad'],
+          'ingresos': 0.0,
+          'rellenos': 0.0,
+          'bajas': 0.0,
+          'total_disponible': res['cantidad'],
+        });
+      });
+      _guardarBorrador();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.orange,
+            content: Text('⚠️ "${res['nombre']}" agregado al conteo. Se alertará al Administrador.'),
+          ),
+        );
+      }
     }
   }
 
@@ -159,11 +478,17 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     final barmanNombre = auth.nombre ?? 'Barman Turno';
 
     final cortesArray = _items
-        .where((i) => (i['cantidad'] as double) >= 0)
-        .map((i) => {
-              'producto_id': i['producto_id'],
-              'cantidad': i['cantidad'],
-            })
+        .where((i) => ((i['cantidad'] as num?)?.toDouble() ?? 0.0) >= 0)
+        .map((i) {
+          final esProv = i['es_provisional'] == true;
+          return {
+            'producto_id': esProv ? null : i['producto_id'],
+            'cantidad': (i['cantidad'] as num?)?.toDouble() ?? 0.0,
+            'es_provisional': esProv,
+            'nombre_provisional': esProv ? i['nombre_provisional'] : null,
+            'es_licor': i['es_licor'] == true,
+          };
+        })
         .toList();
 
     if (widget.tipoOperacion == TipoOperacionCorte.cierre) {
@@ -201,8 +526,10 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
       if (widget.tipoOperacion == TipoOperacionCorte.apertura) {
         final payload = {
           'sucursal_id': sucursalId,
-          if (auth.usuarioId != null) 'barman_id': auth.usuarioId,
+          'barman_id': widget.barmanSuplidoId ?? auth.usuarioId,
           'tipo_turno': _tipoTurnoSeleccionado,
+          'es_suplencia': widget.esSuplencia,
+          if (widget.esSuplencia) 'realizado_por_usuario_id': auth.usuarioId,
           'corte_inicial': cortesArray,
         };
 
@@ -210,12 +537,17 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
         if (res.statusCode == 201) {
           final data = res.data['data'] as Map<String, dynamic>;
           final nuevoTurnoId = (data['turno_id'] ?? data['id']) as int;
-          final tieneDiscrepancias = data['tiene_discrepancias'] == true;
-          final discrepancias = (data['discrepancias'] as List?) ?? [];
+          final tieneDiscrepancias = res.data['tiene_discrepancias'] == true;
+          final discrepancias = (res.data['discrepancias'] as List?) ?? [];
 
-          ref.read(authProvider.notifier).actualizarTurnoActivo(nuevoTurnoId);
+          // Purgar borrador local
+          await _purgarBorrador();
 
-          // Sincronizar _items para que el PDF inmediato refleje fielmente el conteo físico asentado
+          if (!widget.esSuplencia) {
+            ref.read(authProvider.notifier).actualizarTurnoActivo(nuevoTurnoId);
+          }
+
+          // Sincronizar _items para el PDF
           for (var it in _items) {
             final c = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
             it['cantidad_inicial'] = c;
@@ -223,21 +555,8 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
             it['total_disponible'] = c + ing;
           }
 
+
           if (mounted) {
-            // Si hay discrepancias con el turno saliente, mostrar alerta con WhatsApp
-            if (tieneDiscrepancias && discrepancias.isNotEmpty) {
-              await _mostrarAlertaDiscrepanciaApertura(
-                context: context,
-                turnoId: nuevoTurnoId,
-                sucursal: sucursalNombre,
-                barman: barmanNombre,
-                discrepancias: discrepancias,
-              );
-            }
-
-            if (!mounted) return;
-
-            // Mostrar Diálogo con Acciones de PDF para WhatsApp
             await showDialog(
               context: context,
               barrierDismissible: false,
@@ -246,14 +565,9 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 title: Row(
                   children: const [
-                    Icon(Icons.check_circle, color: Color(0xFF27AE60), size: 28),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '¡Turno de Barra Iniciado!',
-                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                    ),
+                    Icon(Icons.check_circle_outline, color: Color(0xFF2ECC71), size: 28),
+                    SizedBox(width: 8),
+                    Text('¡Turno de Barra Iniciado!', style: TextStyle(color: Colors.white, fontSize: 18)),
                   ],
                 ),
                 content: Column(
@@ -261,206 +575,257 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Turno #$nuevoTurnoId aperturado con éxito.',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      'Turno #$nuevoTurnoId aperturado exitosamente en $sucursalNombre.',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'El conteo físico ha sido asentado inmutablemente. Puede compartir el acta oficial en PDF directamente al grupo de WhatsApp de supervisores.',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                    const SizedBox(height: 18),
-                    // Botón Compartir WhatsApp
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF25D366),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: const Icon(Icons.share, size: 20),
-                        label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontWeight: FontWeight.bold)),
-                        onPressed: () async {
-                          await ConteoPdfService.compartirEnWhatsApp(
-                            context: ctx,
-                            turnoId: nuevoTurnoId,
-                            sucursal: sucursalNombre,
-                            barman: barmanNombre,
-                            tipoTurno: _tipoTurnoSeleccionado,
-                            items: _items,
-                          );
-                        },
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF26324A),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    // Botón Ver / Imprimir PDF
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF3498DB),
-                          side: const BorderSide(color: Color(0xFF3498DB)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: const Icon(Icons.picture_as_pdf, size: 20),
-                        label: const Text('VER / IMPRIMIR PDF', style: TextStyle(fontWeight: FontWeight.bold)),
-                        onPressed: () async {
-                          await ConteoPdfService.previsualizarOImprimir(
-                            context: ctx,
-                            turnoId: nuevoTurnoId,
-                            sucursal: sucursalNombre,
-                            barman: barmanNombre,
-                            tipoTurno: _tipoTurnoSeleccionado,
-                            items: _items,
-                          );
-                        },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '📄 Acta Oficial de Conteo Inicial',
+                            style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Se ha generado el PDF con el balance físico recibido. Puedes imprimirlo o compartirlo de inmediato por WhatsApp:',
+                            style: TextStyle(color: Colors.white60, fontSize: 12),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(color: Colors.white24),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  icon: const Icon(Icons.print, size: 16),
+                                  label: const Text('VER / IMPRIMIR PDF', style: TextStyle(fontSize: 11)),
+                                  onPressed: () {
+                                    ConteoPdfService.previsualizarOImprimir(
+                                      context: ctx,
+                                      turnoId: nuevoTurnoId,
+                                      sucursal: sucursalNombre,
+                                      barman: barmanNombre,
+                                      tipoTurno: _tipoTurnoSeleccionado,
+                                      items: List<Map<String, dynamic>>.from(_items),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF25D366),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  icon: const Icon(Icons.share, size: 16),
+                                  label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () {
+                                    ConteoPdfService.compartirEnWhatsApp(
+                                      context: ctx,
+                                      turnoId: nuevoTurnoId,
+                                      sucursal: sucursalNombre,
+                                      barman: barmanNombre,
+                                      tipoTurno: _tipoTurnoSeleccionado,
+                                      items: List<Map<String, dynamic>>.from(_items),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
                 actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text('Continuar a Barra', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2980B9),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Continuar al Panel', style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
             );
-            return;
+
+            if (tieneDiscrepancias && discrepancias.isNotEmpty && mounted) {
+              await _mostrarModalDiscrepancias(
+                context,
+                discrepancias,
+                nuevoTurnoId,
+                sucursalNombre,
+                barmanNombre,
+              );
+            }
+
+            if (mounted) Navigator.of(context).pop(true);
           }
         }
       } else {
         // Cierre de Turno
-        final turnoId = widget.turnoId ?? auth.turnoActivoId ?? 1;
+        final turnoId = widget.turnoId ?? auth.turnoActivoId;
+        if (turnoId == null) {
+          throw Exception('No se encontró un turno activo para cerrar.');
+        }
+
         final payload = {
           'corte_final': cortesArray,
+          'es_suplencia': widget.esSuplencia,
+          if (widget.esSuplencia) 'cerrado_por_usuario_id': auth.usuarioId,
         };
 
-        await apiClient.post('/turnos/$turnoId/cerrar', data: payload);
-        ref.read(authProvider.notifier).actualizarTurnoActivo(null);
+        final res = await apiClient.post('/turnos/$turnoId/cerrar', data: payload);
+        if (res.statusCode == 200) {
+          await _purgarBorrador();
 
-        if (mounted) {
-          // Mostrar Acta Oficial de Cierre en PDF y botón de WhatsApp
-          await showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF1B2332),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Row(
-                children: const [
-                  Icon(Icons.lock_clock, color: Color(0xFFE74C3C), size: 28),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '¡Turno Cerrado con Éxito!',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Turno #$turnoId cerrado y balance asentado.',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Se ha generado el Acta Oficial de Cierre y Balance. Compártala por WhatsApp para respaldar la entrega de barra.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                  const SizedBox(height: 18),
-                  // Botón Compartir WhatsApp
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.share, size: 20),
-                      label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        await CierreTurnoPdfService.compartirEnWhatsApp(
-                          context: ctx,
-                          turnoId: turnoId,
-                          sucursal: sucursalNombre,
-                          barman: barmanNombre,
-                          tipoTurno: _tipoTurnoSeleccionado,
-                          items: _items,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Botón Ver / Imprimir PDF
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF3498DB),
-                        side: const BorderSide(color: Color(0xFF3498DB)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf, size: 20),
-                      label: const Text('VER / IMPRIMIR PDF', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        await CierreTurnoPdfService.previsualizarOImprimir(
-                          context: ctx,
-                          turnoId: turnoId,
-                          sucursal: sucursalNombre,
-                          barman: barmanNombre,
-                          tipoTurno: _tipoTurnoSeleccionado,
-                          items: _items,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Finalizar', style: TextStyle(color: Colors.white60, fontSize: 13)),
+          if (!widget.esSuplencia) {
+            ref.read(authProvider.notifier).actualizarTurnoActivo(null);
+          }
+
+          final turnoData = {
+            'id': turnoId,
+            'turno_id': turnoId,
+            'sucursal': sucursalNombre,
+            'barman': barmanNombre,
+            'tipo_turno': _tipoTurnoSeleccionado,
+            'fecha_cierre': DateTime.now().toIso8601String(),
+            'es_suplencia': widget.esSuplencia,
+            'cerrado_por': widget.esSuplencia ? auth.nombre : null,
+          };
+
+          if (mounted) {
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1B2332),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: const [
+                    Icon(Icons.check_circle_outline, color: Color(0xFF2ECC71), size: 28),
+                    SizedBox(width: 8),
+                    Text('¡Turno Cerrado!', style: TextStyle(color: Colors.white, fontSize: 18)),
+                  ],
                 ),
-              ],
-            ),
-          );
-          return;
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Turno #$turnoId cerrado exitosamente en $sucursalNombre.',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF26324A),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '📜 Acta Oficial de Cierre y Balance',
+                            style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Se ha generado el Acta en PDF con el inventario físico entregado.',
+                            style: TextStyle(color: Colors.white60, fontSize: 12),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(color: Colors.white24),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  icon: const Icon(Icons.print, size: 16),
+                                  label: const Text('VER ACTA', style: TextStyle(fontSize: 11)),
+                                  onPressed: () {
+                                    CierreTurnoPdfService.imprimir(
+                                      context: ctx,
+                                      turnoData: turnoData,
+                                      items: List<Map<String, dynamic>>.from(_items),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF25D366),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  icon: const Icon(Icons.share, size: 16),
+                                  label: const Text('COMPARTIR EN WHATSAPP', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () {
+                                    CierreTurnoPdfService.compartirEnWhatsApp(
+                                      context: ctx,
+                                      turnoData: turnoData,
+                                      items: List<Map<String, dynamic>>.from(_items),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC0392B),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Finalizar', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+
+            if (mounted) Navigator.of(context).pop(true);
+          }
         }
       }
     } catch (e) {
-      String mensaje = e.toString();
-      if (e is DioException) {
-        final data = e.response?.data;
-        if (data is Map && data['error'] != null) {
-          mensaje = data['error'].toString();
-        } else if (data is Map && data['message'] != null) {
-          mensaje = data['message'].toString();
-        }
-      }
-
       if (mounted) {
+        String errorMsg = e.toString();
+        if (e is DioException && e.response?.data != null) {
+          final resData = e.response!.data;
+          if (resData is Map && resData['error'] != null) {
+            errorMsg = resData['error'].toString();
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $mensaje'),
-            backgroundColor: Colors.redAccent,
-            duration: const Duration(seconds: 5),
+            backgroundColor: const Color(0xFFC0392B),
+            content: Text('Error: $errorMsg'),
           ),
         );
       }
@@ -469,32 +834,37 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     }
   }
 
-  Future<void> _mostrarAlertaDiscrepanciaApertura({
-    required BuildContext context,
-    required int turnoId,
-    required String sucursal,
-    required String barman,
-    required List discrepancias,
-  }) async {
-    // Redactar mensaje pre-llenado de WhatsApp para Daniel (67369293)
-    final buffer = StringBuffer();
-    buffer.writeln('🚨 *ALERTA PUNTO FRÍO - DISCREPANCIA EN APERTURA*');
-    buffer.writeln('📍 *Sucursal:* $sucursal');
-    buffer.writeln('👤 *Barman Entrante:* $barman');
-    buffer.writeln('🕒 *Turno Entrante:* #$turnoId');
-    buffer.writeln('⚠️ *Detalle de Faltantes respecto al Cierre Anterior:*');
-    for (final d in discrepancias) {
+  Future<void> _mostrarModalDiscrepancias(
+    BuildContext context,
+    List discrepancias,
+    int turnoId,
+    String sucursalNombre,
+    String barmanNombre,
+  ) async {
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('🚨 *ALERTA DE DISCREPANCIA EN APERTURA - PUNTO FRÍO*');
+    sb.writeln('📍 *Sucursal:* $sucursalNombre');
+    sb.writeln('👤 *Barman Entrante:* $barmanNombre');
+    sb.writeln('🔢 *Turno Entrante:* #$turnoId');
+    sb.writeln('────────────────────');
+    sb.writeln('*Diferencias detectadas:*');
+
+    for (var d in discrepancias) {
       final prod = d['producto_nombre'] ?? 'Producto #${d['producto_id']}';
       final esp = d['stock_esperado'];
       final dec = d['stock_declarado'];
       final dif = d['diferencia'];
-      buffer.writeln('• $prod: Esperado $esp | Declarado $dec (Diferencia: $dif)');
+      sb.writeln('• *$prod:*');
+      sb.writeln('   - Cierre saliente: $esp');
+      sb.writeln('   - Conteo entrante: $dec');
+      sb.writeln('   - Faltante/Diferencia: *$dif botellas*');
     }
-    buffer.writeln('');
-    buffer.writeln('Favor verificar de inmediato con el turno saliente.');
 
-    final encodedText = Uri.encodeComponent(buffer.toString());
-    final urlWhatsApp = Uri.parse('https://wa.me/59167369293?text=$encodedText');
+    sb.writeln('────────────────────');
+    sb.writeln('Por favor verificar esta situación de inmediato.');
+
+    final mensajeUrl = Uri.encodeComponent(sb.toString());
+    final urlWhatsApp = Uri.parse('https://wa.me/59167369293?text=$mensajeUrl');
 
     await showDialog(
       context: context,
@@ -505,8 +875,8 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: Color(0xFFE74C3C), width: 2),
         ),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.warning_amber_rounded, color: Color(0xFFE74C3C), size: 30),
             SizedBox(width: 10),
             Expanded(
@@ -565,7 +935,6 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                 );
               }),
               const SizedBox(height: 16),
-              // Botón Verde Directo a WhatsApp de Daniel (67369293)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -603,23 +972,34 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
   @override
   Widget build(BuildContext context) {
     final esApertura = widget.tipoOperacion == TipoOperacionCorte.apertura;
+    final itemsVisibles = _itemsFiltrados;
 
     return Scaffold(
       backgroundColor: const Color(0xFF121620),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B2332),
         title: Text(
-          esApertura ? 'Corte de Apertura' : 'Corte de Cierre',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          esApertura
+              ? (widget.esSuplencia ? 'Apertura (Suplencia Cajera)' : 'Corte de Apertura')
+              : (widget.esSuplencia ? 'Cierre (Suplencia Cajera)' : 'Corte de Cierre'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white70),
+            tooltip: 'Actualizar catálogo',
+            onPressed: _isLoading ? null : _refrescarCatalogo,
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.amberAccent))
           : Column(
               children: [
+                // Banner superior de instrucción
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   color: esApertura
                       ? const Color(0xFF2980B9).withOpacity(0.2)
                       : const Color(0xFFC0392B).withOpacity(0.2),
@@ -634,16 +1014,76 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                         child: Text(
                           esApertura
                               ? 'Ingrese el conteo inicial físico al recibir la barra.'
-                              : 'Conteo final al entregar el turno. Medición estricta en múltiplos de 1/4.',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                              : 'Conteo final al entregar el turno. Medición en múltiplos de 1/4.',
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ),
                     ],
                   ),
                 ),
+
+                // Buscador reactivo y botón "+ Producto no listado"
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1B2332),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: TextField(
+                            controller: _busquedaController,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            onChanged: (val) {
+                              setState(() {
+                                _filtroBusqueda = val;
+                              });
+                            },
+                            decoration: InputDecoration(
+                              hintText: 'Buscar producto...',
+                              hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                              prefixIcon: const Icon(Icons.search, color: Colors.amberAccent, size: 20),
+                              suffixIcon: _filtroBusqueda.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                                      onPressed: () {
+                                        _busquedaController.clear();
+                                        setState(() => _filtroBusqueda = '');
+                                      },
+                                    )
+                                  : null,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF26324A),
+                          foregroundColor: Colors.amberAccent,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(color: Colors.amberAccent, width: 0.8),
+                          ),
+                        ),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('+ No listado', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _mostrarModalProductoNoListado,
+                      ),
+                    ],
+                  ),
+                ),
+
                 if (esApertura)
                   Padding(
-                    padding: const EdgeInsets.all(12.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 4,
@@ -671,33 +1111,69 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                       ],
                     ),
                   ),
+
+                // Lista de productos con buscador
                 Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      final item = _items[index];
-                      return BottleFractionSelector(
-                        productName: item['nombre'],
-                        value: item['cantidad'] as double,
-                        cantidadInicial: item['cantidad_inicial'] as double?,
-                        ingresos: item['ingresos'] as double?,
-                        totalDisponible: item['total_disponible'] as double?,
-                        esCierre: !esApertura,
-                        onChanged: (newVal) {
-                          setState(() {
-                            item['cantidad'] = newVal;
-                            if (esApertura) {
-                              item['cantidad_inicial'] = newVal;
-                              final ing = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
-                              item['total_disponible'] = newVal + ing;
-                            }
-                          });
-                        },
-                      );
-                    },
-                  ),
+                  child: itemsVisibles.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.search_off, color: Colors.white30, size: 48),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No se halló "$_filtroBusqueda"',
+                                style: const TextStyle(color: Colors.white60, fontSize: 14),
+                              ),
+                              const SizedBox(height: 12),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent, foregroundColor: Colors.black),
+                                onPressed: _mostrarModalProductoNoListado,
+                                child: const Text('Agregar como Producto No Listado'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: itemsVisibles.length,
+                          itemBuilder: (context, index) {
+                            final item = itemsVisibles[index];
+                            final esProv = item['es_provisional'] == true;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: esProv
+                                  ? BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.5), width: 1.5),
+                                    )
+                                  : null,
+                              child: BottleFractionSelector(
+                                productName: item['nombre'],
+                                value: (item['cantidad'] as num?)?.toDouble() ?? 0.0,
+                                cantidadInicial: (item['cantidad_inicial'] as num?)?.toDouble(),
+                                ingresos: (item['ingresos'] as num?)?.toDouble(),
+                                totalDisponible: (item['total_disponible'] as num?)?.toDouble(),
+                                esCierre: !esApertura,
+                                onChanged: (newVal) {
+                                  setState(() {
+                                    item['cantidad'] = newVal;
+                                    if (esApertura) {
+                                      item['cantidad_inicial'] = newVal;
+                                      final ing = (item['ingresos'] as num?)?.toDouble() ?? 0.0;
+                                      item['total_disponible'] = newVal + ing;
+                                    }
+                                  });
+                                  _guardarBorrador();
+                                },
+                              ),
+                            );
+                          },
+                        ),
                 ),
+
+                // Botón de Confirmación
                 Container(
                   padding: const EdgeInsets.all(16),
                   color: const Color(0xFF1B2332),
@@ -712,10 +1188,12 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                       child: _isSubmitting
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
-                              esApertura ? 'CONFIRMAR Y ABRIR TURNO' : 'CONFIRMAR Y CERRAR TURNO',
+                              esApertura
+                                  ? (widget.esSuplencia ? 'CONFIRMAR APERTURA POR SUPLENCIA' : 'CONFIRMAR Y ABRIR TURNO')
+                                  : (widget.esSuplencia ? 'CONFIRMAR CIERRE POR SUPLENCIA' : 'CONFIRMAR Y CERRAR TURNO'),
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
