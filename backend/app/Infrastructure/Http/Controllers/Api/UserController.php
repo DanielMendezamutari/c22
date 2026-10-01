@@ -28,7 +28,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'nombre' => 'required|string|max:100',
             'apellido' => 'required|string|max:100',
-            'rol' => 'required|in:barman,garzon,admin',
+            'rol' => 'required|in:barman,garzon,cajera,admin',
             'pin' => 'required|string|size:4|regex:/^[0-9]{4}$/',
             'sueldo_base_semanal' => 'nullable|numeric|min:0',
             'modalidad_cobro' => 'nullable|in:diario,semanal',
@@ -37,7 +37,7 @@ class UserController extends Controller
         ]);
 
         try {
-            $modalidad = $validated['modalidad_cobro'] ?? ($validated['rol'] === 'barman' ? 'semanal' : 'diario');
+            $modalidad = $validated['modalidad_cobro'] ?? (($validated['rol'] === 'barman' || $validated['rol'] === 'cajera') ? 'semanal' : 'diario');
 
             $usuario = Usuario::create([
                 'nombre' => $validated['nombre'],
@@ -77,7 +77,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'nombre' => 'sometimes|required|string|max:100',
             'apellido' => 'sometimes|required|string|max:100',
-            'rol' => 'sometimes|required|in:barman,garzon,admin',
+            'rol' => 'sometimes|required|in:barman,garzon,cajera,admin',
             'sueldo_base_semanal' => 'nullable|numeric|min:0',
             'modalidad_cobro' => 'nullable|in:diario,semanal',
             'sucursal_actual_id' => 'nullable|integer|exists:sucursales,id',

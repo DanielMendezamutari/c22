@@ -178,6 +178,7 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
                           items: const [
                             DropdownMenuItem(value: 'barman', child: Text('Barman (Cierre semanal)')),
                             DropdownMenuItem(value: 'garzon', child: Text('Garzón / Día (Cobro diario)')),
+                            DropdownMenuItem(value: 'cajera', child: Text('Cajera (Arqueos / Suplencias)')),
                             DropdownMenuItem(value: 'admin', child: Text('Administrador / Auditor')),
                           ],
                           onChanged: (val) {
@@ -189,6 +190,9 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
                                   sueldoCtrl.text = '700.00';
                                 } else if (val == 'garzon') {
                                   modalidadSeleccionada = 'diario';
+                                  sueldoCtrl.text = '0.00';
+                                } else if (val == 'cajera') {
+                                  modalidadSeleccionada = 'semanal';
                                   sueldoCtrl.text = '0.00';
                                 } else {
                                   modalidadSeleccionada = 'semanal';
@@ -458,6 +462,7 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
                           items: const [
                             DropdownMenuItem(value: 'barman', child: Text('Barman')),
                             DropdownMenuItem(value: 'garzon', child: Text('Garzón')),
+                            DropdownMenuItem(value: 'cajera', child: Text('Cajera')),
                             DropdownMenuItem(value: 'admin', child: Text('Administrador')),
                           ],
                           onChanged: (val) {
@@ -588,18 +593,23 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: const Color(0xFF1E293B).withOpacity(0.5),
-            child: Row(
-              children: [
-                const Text('Filtrar:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 12),
-                _buildFilterChip('Todos', 'todos'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Barmen', 'barman'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Garzones', 'garzon'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Admins', 'admin'),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Text('Filtrar:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                  _buildFilterChip('Todos', 'todos'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Barmen', 'barman'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Garzones', 'garzon'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Cajeras', 'cajera'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Admins', 'admin'),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -661,6 +671,9 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
       case 'barman':
         rolColor = Colors.cyanAccent;
         break;
+      case 'cajera':
+        rolColor = Colors.pinkAccent;
+        break;
       default:
         rolColor = Colors.amberAccent;
     }
@@ -682,7 +695,9 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
                 CircleAvatar(
                   backgroundColor: rolColor.withOpacity(0.2),
                   child: Icon(
-                    u.rol == 'admin' ? Icons.admin_panel_settings : Icons.person,
+                    u.rol == 'admin'
+                        ? Icons.admin_panel_settings
+                        : (u.rol == 'cajera' ? Icons.point_of_sale : Icons.person),
                     color: rolColor,
                   ),
                 ),
@@ -743,6 +758,9 @@ class _UsuariosAdminScreenState extends ConsumerState<UsuariosAdminScreen> {
                 ] else if (u.rol == 'garzon') ...[
                   const Icon(Icons.today, size: 16, color: Colors.amberAccent),
                   const Text('Cobro diario por turno', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+                ] else if (u.rol == 'cajera') ...[
+                  const Icon(Icons.point_of_sale, size: 16, color: Colors.pinkAccent),
+                  const Text('Cajera / Arqueos y Suplencias', style: TextStyle(color: Colors.pinkAccent, fontSize: 12)),
                 ] else ...[
                   const Icon(Icons.all_inclusive, size: 16, color: Colors.purpleAccent),
                   const Text('Acceso Global Admin', style: TextStyle(color: Colors.purpleAccent, fontSize: 12)),
