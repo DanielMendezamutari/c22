@@ -9,6 +9,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Limpieza previa en caso de ejecución parcial previa
+        Schema::dropIfExists('registros_traslados_taxis');
+        Schema::dropIfExists('tarifas_rutas_taxis');
+
         // 1. Tarifas paramétricas de referencia entre sucursales
         Schema::create('tarifas_rutas_taxis', function (Blueprint $table) {
             $table->id();
@@ -19,7 +23,7 @@ return new class extends Migration
             $table->boolean('activo')->default(true);
             $table->timestamps();
 
-            $table->unique(['origen_sucursal_id', 'destino_sucursal_id']);
+            $table->unique(['origen_sucursal_id', 'destino_sucursal_id'], 'uq_tarifas_origen_destino');
         });
 
         // 2. Registros de traslados, rotación de chicas y taxis auditados con IA
@@ -46,7 +50,7 @@ return new class extends Migration
             $table->foreignId('aprobado_por_id')->nullable()->constrained('usuarios')->nullOnDelete();
             $table->timestamps();
 
-            $table->index(['fecha_hora', 'estado_auditoria']);
+            $table->index(['fecha_hora', 'estado_auditoria'], 'idx_traslados_fecha_estado');
         });
 
         // 3. Poblar tarifas base entre sucursales si existen (T220)
