@@ -1,49 +1,44 @@
 #!/bin/bash
 # ==========================================================
-# C22 Inventario - Script de Despliegue en cPanel / Hosting
+# C22 Inventario - Script de Despliegue Automatizado en cPanel
 # Servidor: bh8970 (c22.ribersoft.com)
 # ==========================================================
 
+set -e
+
 PHP_BIN="/opt/cpanel/ea-php82/root/usr/bin/php"
 
-echo "=== 1. Verificando PHP 8.2 en cPanel ==="
+echo "=========================================================="
+echo " [SDD] Iniciando Despliegue C22 en c22.ribersoft.com"
+echo "=========================================================="
+
+echo "=== 1. Actualizando repositorio Git (origin/main) ==="
+git pull origin main
+
+echo "=== 2. Verificando binario PHP 8.2 ==="
 $PHP_BIN -v
 
-echo "=== 2. Modo Mantenimiento ==="
+echo "=== 3. Modo Mantenimiento temporal ==="
 $PHP_BIN artisan down || true
 
-echo "=== 3. Instalando dependencias Composer ==="
-if [ -f "composer.phar" ]; then
-    $PHP_BIN composer.phar install --no-dev --optimize-autoloader
-elif command -v composer &> /dev/null; then
-    $PHP_BIN $(which composer) install --no-dev --optimize-autoloader
-else
-    echo "Descargando composer.phar..."
-    $PHP_BIN -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-    $PHP_BIN composer-setup.php
-    $PHP_BIN -r "unlink('composer-setup.php');"
-    $PHP_BIN composer.phar install --no-dev --optimize-autoloader
-fi
-
-echo "=== 4. Generando clave si no existe ==="
-if ! grep -q "APP_KEY=base64:" .env 2>/dev/null; then
-    $PHP_BIN artisan key:generate --force
-fi
-
-echo "=== 5. Ejecutando Migraciones y Seed ==="
+echo "=== 4. Ejecutando Migraciones Pendientes (--force) ==="
 $PHP_BIN artisan migrate --force
 
-echo "=== 6. Enlazando Storage ==="
+echo "=== 5. Asegurando enlace simbólico a Storage ==="
 $PHP_BIN artisan storage:link || true
 
-echo "=== 7. Optimizando Caché de Laravel ==="
+echo "=== 6. Limpieza y Reconstrucción de Cachés ==="
+$PHP_BIN artisan config:clear
+$PHP_BIN artisan route:clear
+$PHP_BIN artisan view:clear
 $PHP_BIN artisan config:cache
 $PHP_BIN artisan route:cache
 $PHP_BIN artisan view:cache
 
-echo "=== 8. Desactivando Mantenimiento ==="
+echo "=== 7. Activando Sistema Productivo ==="
 $PHP_BIN artisan up
 
-echo "=========================================="
-echo " ¡Despliegue de C22 completado con éxito! "
-echo "=========================================="
+echo "=========================================================="
+echo " ¡Despliegue C22 finalizado con éxito!                    "
+echo " URL: https://c22.ribersoft.com                           "
+echo "=========================================================="

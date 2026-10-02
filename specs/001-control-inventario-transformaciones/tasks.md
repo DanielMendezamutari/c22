@@ -585,6 +585,19 @@
 
 ---
 
+## Phase 36: User Story 31 - Despliegue y Resiliencia Web en Hosting cPanel (Priority: P1)
+
+**Goal**: Garantizar que el frontend web SPA y la API de Laravel funcionen de forma resiliente en el hosting cPanel (`c22.ribersoft.com`) sin dependencias de sesiones en base de datos, con fallback a driver `file`, desvinculación de `StartSession` en rutas web SPA estáticas, migración de `sessions` en caso de requerirse, y script de despliegue automatizado `deploy.sh` testeado y verificado.  
+**Independent Test**: Visitar `https://c22.ribersoft.com/` y `/login` sin que se invoque la tabla de sesiones en MySQL; ejecutar `deploy.sh` en cPanel y verificar código 200 HTTP.
+
+- [X] T222 [P] [US31] Crear migración para tabla `sessions` en `backend/database/migrations/2026_10_02_000005_create_sessions_table.php`
+- [X] T223 [US31] Configurar resiliencia de driver de sesión con fallback seguro a `file` en `backend/config/session.php`
+- [X] T224 [US31] Desacoplar middleware `StartSession` de las rutas web SPA en `backend/bootstrap/app.php` para entrega inmediata sin DB
+- [X] T225 [US31] Empaquetar y sincronizar bundle compilado de producción en `backend/public/` (`index.html`, `assets/`, `images/`)
+- [X] T226 [US31] Actualizar script automatizado `backend/deploy.sh` con pull, migración forzada y limpieza de caché
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

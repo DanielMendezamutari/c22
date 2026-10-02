@@ -12,7 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // En arquitectura SPA + API REST desacoplada, removemos el middleware de sesiones
+        // de base de datos en las rutas web para garantizar carga inmediata y resiliencia offline/hosting.
+        $middleware->web(remove: [
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
