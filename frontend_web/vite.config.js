@@ -95,6 +95,8 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: fileURLToPath(new URL('../backend/public', import.meta.url)),
+    emptyOutDir: false,
     chunkSizeWarningLimit: 5000,
   },
   optimizeDeps: {
