@@ -23,11 +23,15 @@ class LoginPinUseCase
 
     public function ejecutar(?int $sucursalId, ?int $usuarioId, string $pin): array
     {
-        \Illuminate\Support\Facades\Log::info('LoginPinUseCase::ejecutar', [
-            'pin' => $pin,
-            'sucursal_id' => $sucursalId,
-            'usuario_id' => $usuarioId,
-        ]);
+        try {
+            \Illuminate\Support\Facades\Log::info('LoginPinUseCase::ejecutar', [
+                'pin' => $pin,
+                'sucursal_id' => $sucursalId,
+                'usuario_id' => $usuarioId,
+            ]);
+        } catch (\Throwable $e) {
+            // Protección SDD: fallos de disco o logs jamás deben interrumpir el login operativo del barman
+        }
 
         if (strlen($pin) !== 4 || !ctype_digit($pin)) {
             throw new InvalidArgumentException("El PIN debe ser exactamente de 4 dígitos numéricos.");
