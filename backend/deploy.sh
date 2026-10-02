@@ -21,13 +21,17 @@ $PHP_BIN -v
 echo "=== 3. Modo Mantenimiento temporal ==="
 $PHP_BIN artisan down || true
 
-echo "=== 4. Ejecutando Migraciones Pendientes (--force) ==="
+echo "=== 4. Creando directorios requeridos de Storage y Framework ==="
+mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache storage/framework/cache/data storage/logs bootstrap/cache
+chmod -R 775 storage bootstrap/cache || true
+
+echo "=== 5. Ejecutando Migraciones Pendientes (--force) ==="
 $PHP_BIN artisan migrate --force
 
-echo "=== 5. Asegurando enlace simbólico a Storage ==="
+echo "=== 6. Asegurando enlace simbólico a Storage ==="
 $PHP_BIN artisan storage:link || true
 
-echo "=== 6. Limpieza y Reconstrucción de Cachés ==="
+echo "=== 7. Limpieza y Reconstrucción de Cachés ==="
 $PHP_BIN artisan config:clear
 $PHP_BIN artisan route:clear
 $PHP_BIN artisan view:clear
@@ -35,7 +39,7 @@ $PHP_BIN artisan config:cache
 $PHP_BIN artisan route:cache
 $PHP_BIN artisan view:cache
 
-echo "=== 7. Activando Sistema Productivo ==="
+echo "=== 8. Activando Sistema Productivo ==="
 $PHP_BIN artisan up
 
 echo "=========================================================="
