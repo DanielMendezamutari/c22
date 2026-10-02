@@ -6,10 +6,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
-    // Autenticación por PIN y Bootstrap - User Story 7
+    // Autenticación por PIN y Bootstrap - User Story 7 & Web Auth User Story 27
     Route::get('/auth/sucursales', [\App\Infrastructure\Http\Controllers\Api\AuthController::class, 'listarSucursales']);
     Route::get('/auth/sucursales-usuarios', [\App\Infrastructure\Http\Controllers\Api\AuthController::class, 'listarSucursalesYUsuarios']);
     Route::post('/auth/login-pin', [\App\Infrastructure\Http\Controllers\Api\AuthController::class, 'loginPin']);
+    Route::post('/auth/web/login', [\App\Infrastructure\Http\Controllers\Api\AuthController::class, 'loginWeb']);
+    Route::get('/auth/me', [\App\Infrastructure\Http\Controllers\Api\AuthController::class, 'me']);
 
     // Transformaciones (Relleno y Bajas) - User Story 1
     Route::post('/transformaciones/relleno', [TransformacionController::class, 'registrarRelleno']);
@@ -112,6 +114,28 @@ Route::prefix('v1')->group(function () {
     // Desbloqueo y Aplicación de Reconteo de Inventario - User Story 26
     Route::post('/turnos/{id}/autorizar-reconteo', [TurnoController::class, 'autorizarReconteo']);
     Route::post('/turnos/{id}/aplicar-reconteo', [TurnoController::class, 'aplicarReconteo']);
+
+    // Plataforma Web en Tiempo Real (Sync 1 min) y Consola Super Usuario - User Story 27
+    Route::get('/dashboard/metricas-tiempo-real', [\App\Infrastructure\Http\Controllers\Api\DashboardController::class, 'metricasTiempoReal']);
+    Route::get('/sistema/logs-en-vivo', [\App\Infrastructure\Http\Controllers\Api\DashboardController::class, 'logsEnVivo']);
+    Route::post('/turnos/{id}/forzar-resincronizacion', [TurnoController::class, 'forzarResincronizacion']);
+
+    // Auditoría con Gemini Vision de Planillas Físicas vs Vouchers de Depósito - User Story 28
+    Route::post('/recaudaciones/procesar-planilla', [\App\Infrastructure\Http\Controllers\Api\RecaudacionController::class, 'procesarPlanilla']);
+    Route::post('/recaudaciones/procesar-voucher', [\App\Infrastructure\Http\Controllers\Api\RecaudacionController::class, 'procesarVoucher']);
+    Route::get('/recaudaciones/diarias', [\App\Infrastructure\Http\Controllers\Api\RecaudacionController::class, 'listarRecaudacionesDiarias']);
+
+    // Auditoría Híbrida de Caja Chica y Reposiciones desde Ventas - User Story 29
+    Route::get('/gastos-caja-chica', [\App\Infrastructure\Http\Controllers\Api\GastoCajaChicaController::class, 'index']);
+    Route::post('/gastos-caja-chica', [\App\Infrastructure\Http\Controllers\Api\GastoCajaChicaController::class, 'store']);
+    Route::post('/gastos-caja-chica/{id}/aprobar', [\App\Infrastructure\Http\Controllers\Api\GastoCajaChicaController::class, 'aprobar']);
+    Route::get('/gastos-caja-chica/pendientes', [\App\Infrastructure\Http\Controllers\Api\GastoCajaChicaController::class, 'pendientes']);
+    Route::post('/gastos-caja-chica/cruzar-planilla', [\App\Infrastructure\Http\Controllers\Api\GastoCajaChicaController::class, 'cruzarConPlanilla']);
+
+    // Control Inteligente de Taxis, Rotación de Chicas y Comisiones con IA - User Story 30
+    Route::post('/taxis/procesar-mensaje', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'procesarMensaje']);
+    Route::get('/taxis/reporte-diario', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'reporteDiario']);
+    Route::get('/taxis/tarifas', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'listarTarifas']);
 });
 
 

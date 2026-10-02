@@ -66,6 +66,13 @@
 - Q: ¿Cómo debe funcionar el algoritmo de conciliación entre ventas POS y comprobantes QR? → A: Conciliación Inteligente con Agente IA + Servidor MCP: La IA (Gemini) resuelve emparejamientos complejos (pagos divididos, transferencias diferidas, glosas de clientes vs comprobantes) entregando a la contadora y dueño un porcentaje de certeza y explicación justificada, complementado con un Copiloto IA conversacional en la web conectado por MCP.
 - Q: ¿Qué sistema operativo tienen las computadoras de caja en las sucursales donde se instalará el Agente Local? → A: Opción A (Windows 10/11 con ejecutable como Servicio de Windows): Instalador .exe liviano que arranca automáticamente con la computadora de caja en segundo plano, invisible para el cajero, monitoreando la BD local y transmitiendo ventas cada minuto.
 
+### Session 2026-10-02
+- Q: ¿Cómo debe recibir el sistema las fotografías de las planillas físicas y los vouchers de depósito al banco para su auditoría con IA? → A: Ingesta Dual: El Bot de WhatsApp escucha silenciosamente las fotos en el grupo de recaudación y las procesa automáticamente con Gemini Vision, con opción de subida y corrección manual en la Plataforma Web.
+- Q: Si el monto depositado en el voucher bancario es menor al efectivo neto declarado en la planilla física de la casa, ¿cómo debe actuar el sistema? → A: Alerta en Grupo Exclusivo de Recaudaciones: El sistema calcula la diferencia exacta y el bot emite una alerta directa en el grupo de WhatsApp específico de recaudaciones (donde están Daniel, el Dueño y el Recaudador), dejando el turno marcado en la web con discrepancia de efectivo pendiente de justificación.
+- Q: Para los gastos operativos y reposiciones de caja chica que se pagan con las ventas en efectivo, ¿cómo deben respaldarse para que la IA los audite? → A: Respaldo Híbrido Auditado por IA: El personal anota los gastos a mano en la planilla física habitual de caja, pero envía las fotos de los recibos/comprobantes al grupo de WhatsApp correspondiente; la IA (Gemini) cruza los montos y conceptos de la planilla escrita contra las fotos de los recibos recibidos, marcando cualquier gasto sin comprobante como 'Observado'.
+- Q: ¿Cómo debe controlar y auditar la IA los gastos de taxis y traslados en los grupos de rotación de chicas y comisiones de taxis? → A: Extracción Inteligente con Control de Tarifas y Viajes Compartidos: La IA analiza los mensajes de los grupos de rotación y comisiones de taxis, extrae quién se trasladó, origen, destino y monto, y detecta automáticamente cobros duplicados o tarifas infladas que superen el rango normal parametrizado entre casas.
+- Q: ¿Qué herramientas y capacidades específicas debe incluir la vista de Super Usuario (Daniel) en la Plataforma Web? → A: Consola Maestra de Control Técnico y Operativo: Métricas en vivo de todas las casas con actualización reactiva cada 1 minuto, visor de logs de API e IA en tiempo real, monitor de estado de las computadoras de caja, consola para forzar resincronización de turnos y gestión total de parámetros del sistema.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Registro de Rellenos y Liquidación Visual a Cajera (Priority: P1)
@@ -567,25 +574,85 @@ Como Administrador / Encargado, quiero disponer en mi APK móvil de la opción "
 
 ---
 
+### User Story 27 - Plataforma Web en Tiempo Real (Sync 1 min) y Consola de Control Super Usuario (Priority: P1)
+
+Como Super Usuario / Desarrollador (Ing. Daniel), quiero disponer de una plataforma web en tiempo real (desarrollada en Vue 3 / Vite) con refresco automático cada 60 segundos, acceso exclusivo por correo y contraseña con JWT, monitoreo en vivo de todas las casas (Casa22, Casa Coron, Madan), visor de logs de API/IA y herramientas para forzar resincronización de turnos y ajustar parámetros técnicos, para tener control absoluto, métricas en vivo y resolución inmediata de contingencias del sistema.
+
+Como Dueño de Grupo Punto Frío, quiero acceder a la plataforma web con mi rol ejecutivo para visualizar KPIs consolidados en tiempo real (ventas totales, dinero en efectivo vs. QR, stock valorado y alertas rojas de auditoría) desde cualquier navegador de escritorio o móvil sin depender del celular del administrador.
+
+**Independent Test**:
+1. Acceso y Roles Web: Ingresar a la web con credenciales de Super Usuario; constatar que el menú cargue la Consola Maestra de Daniel (logs, conectividad de cajas, herramientas de resincronización). Ingresar con credenciales de Dueño y constatar que solo cargue los dashboards ejecutivos.
+2. Refresco en Tiempo Real: Con la pantalla web abierta en el dashboard de casas, realizar una venta o cierre en una sucursal; constatar que el reloj de 60 segundos actualice los contadores y métricas sin requerir F5 manual.
+3. Consola de Emergencia: Desde el panel de Daniel, seleccionar un turno desfasado y presionar "Forzar Resincronización / Recálculo de Saldos", verificando que la API ejecute la reconciliación y emita el log en vivo.
+
+**Acceptance Scenarios**:
+1. **Given** un usuario con rol `super_admin`, **When** inicia sesión en la plataforma web, **Then** el sistema valida el JWT y le otorga acceso a la Consola Maestra de Control Técnico con visor de logs en tiempo real, latencias de API y estado de los agentes de sincronización de cada caja.
+2. **Given** el dashboard web abierto, **When** transcurren 60 segundos de inactividad, **Then** un polling reactivo silencioso consulta `GET /api/v1/dashboard/metricas-tiempo-real` y actualiza las tarjetas de ventas, efectivo en custodia y turnos en servicio.
+
+---
+
+### User Story 28 - Auditoría con Gemini Vision de Planillas Físicas vs Vouchers de Depósito en Grupo de Recaudaciones (Priority: P1)
+
+Como Daniel (Super Admin) y Dueño, quiero que un Bot silencioso de WhatsApp integrado con Gemini 1.5 Flash Vision procese automáticamente las fotos de las planillas de caja manuscritas y los vouchers de depósito bancario subidos al "Grupo de Recaudaciones", cruzando matemáticamente el efectivo recaudado contra el dinero efectivamente depositado en la cuenta del banco y alertando de inmediato si existe faltante, para blindar el flujo de efectivo y evitar fugas de dinero en los sobres.
+
+**Independent Test**:
+1. Ingesta de Planilla Manuscrita: El recaudador envía una foto de la planilla física de Casa22 con texto escrito a mano (ej. Total Efectivo: 5,000 Bs - Gastos: 300 Bs = Neto Sobre: 4,700 Bs). El Bot procesa la foto con Gemini Vision y asienta en base de datos el valor del sobre esperado (4,700 Bs).
+2. Ingesta de Voucher Bancario: El recaudador sube la foto del comprobante de depósito bancario al mismo grupo. La IA extrae monto depositado (ej. 4,700 Bs), fecha y número de operación.
+3. Cuadre Exitoso: Al coincidir el monto del sobre con el voucher, el bot emite confirmación silenciosa y la web marca la recaudación como `CUADRADA`.
+4. Alerta de Faltante en Grupo de Recaudaciones: Si la planilla indicaba un neto de 4,700 Bs pero el voucher es por 4,200 Bs, la IA emite de inmediato una alerta en el Grupo de Recaudaciones: `"🚨 ALERTA RECAUDACIÓN CASA22: Planilla indica 4,700 Bs en sobre, pero voucher bancario es de 4,200 Bs. Faltante detectado: 500 Bs."` y marca la recaudación en la web como `DISCREPANCIA_PENDIENTE`.
+
+**Acceptance Scenarios**:
+1. **Given** una fotografía de una planilla física subida al grupo de recaudaciones o a la web, **When** el servicio de IA ejecuta el OCR con Gemini Vision, **Then** extrae la matriz de ingresos en efectivo, deducciones y total neto en formato JSON estructurado con nivel de confianza > 90%.
+2. **Given** una diferencia entre el efectivo del sobre y el depósito bancario, **When** se detecta una brecha negativa, **Then** el sistema emite notificación automática en el grupo exclusivo de recaudaciones de WhatsApp donde participan Daniel, el Dueño y el Recaudador.
+
+---
+
+### User Story 29 - Auditoría Híbrida de Caja Chica y Reposición desde Ventas de Barra (Priority: P1)
+
+Como Dueño y Contadora, quiero que todo gasto operativo o reposición de caja chica pagado con dinero de las ventas en efectivo (ej. hielo, insumos menores, reparaciones urgentes) deba anotarse en la planilla física de caja y respaldarse obligatoriamente con la foto del recibo/comprobante enviada al grupo de WhatsApp de gastos, para que la IA cruce los conceptos e impida deducciones de efectivo arbitrarias o sin respaldo.
+
+**Independent Test**:
+1. Gasto con Respaldo Fotográfico: En la planilla se anota "Gasto Hielo 80 Bs" y se envía la foto del recibo de la hielería al grupo. La IA cruza ambos registros, valida el gasto y aprueba la deducción del efectivo de caja.
+2. Gasto Sin Respaldo: En la planilla se anota "Taxi compras 50 Bs" pero no se envió recibo alguno al grupo. La IA marca en la web el ítem como `OBSERVADO_SIN_COMPROBANTE` y no lo descuenta automáticamente del arqueo de efectivo hasta aprobación expresa de Daniel.
+
+**Acceptance Scenarios**:
+1. **Given** un gasto declarado en la planilla manuscrita, **When** el sistema busca en el lote de fotos de comprobantes del día, **Then** empareja el recibo por monto y concepto asociándolo a la línea de gasto de la caja chica.
+2. **Given** gastos sin comprobante fotográfico, **When** la contadora o Daniel revisan la caja del día en la web, **Then** el sistema resalta los montos huérfanos en color naranja requiriendo autorización manual o imputación a la cajera.
+
+---
+
+### User Story 30 - Control Inteligente de Taxis, Rotación de Chicas y Comisiones con IA (Priority: P2)
+
+Como Administrador y Dueño, quiero que la IA supervise los mensajes y fotos en los grupos de "Rotación de Chicas" y "Comisiones de Taxi", identificando quién se trasladó, origen, destino y monto cobrado, validándolo contra una tabla de tarifas máximas autorizadas entre casas (Casa22, Coron, Madan) y detectando carreras duplicadas para evitar cobros dobles en viajes compartidos o tarifas infladas.
+
+**Independent Test**:
+1. Carrera dentro del Rango: Mensaje en grupo "Taxi 2 chicas Casa22 a Madan 15 Bs". La IA valida que la tarifa estándar está entre 12 y 18 Bs y que es un solo cobro para ambas personas: registra el gasto en estado `CONFORME`.
+2. Tarifa Inflada: Mensaje "Taxi Casa22 a Madan 40 Bs". La IA alerta en el informe diario: `"⚠️ Tarifa de taxi Casa22 a Madan excede en +120% el promedio histórico (40 Bs vs 15 Bs)"`.
+3. Cobro Duplicado: Mensajes separados cobrando taxi individual para dos personas que rotaron en el mismo horario y trayecto: la IA agrupa el movimiento y emite bandera de posible cobro duplicado.
+
+**Acceptance Scenarios**:
+1. **Given** un mensaje de texto o nota de voz de solicitud de taxi en el grupo de rotación, **When** la IA procesa el mensaje, **Then** extrae `{origen, destino, personal: [], monto_bs}` y evalúa contra la tabla de tarifas de rutas.
+2. **Given** una desviación mayor al 25% sobre la tarifa de referencia, **When** se consolida el reporte diario de movilidad, **Then** el gasto se marca como `TARIFA_ANOMALA` para auditoría de Daniel.
+
+---
+
 ### Key Entities *(include if feature involves data)*
 
 - **Sucursal**: Identificador de la casa (Casa22, Casa Coron, Madan, etc.), configuración local y umbrales de tolerancia de merma.
 - **Proveedor**: Identificador único, nombre comercial de la empresa o distribuidora (ej. CBN, Embol), persona de contacto, teléfono/WhatsApp, NIT/CI, dirección y estado activo.
 - **Informe Operativo de Turno**: Documento auditable consolidado que integra la fotografía completa de la jornada (conteo inicial, ingresos de compras con notas, traspasos entrantes y salientes, bajas y roturas justificadas, transformaciones con comisiones, stock de cierre y liquidación del personal).
-- **Usuario / Empleado**: Nombre, rol (Barman, Garzón, Cajera, Administrador/Auditor), código PIN de 4 dígitos (cifrado), sucursal activa asignada para la semana en curso, historial de rotaciones semanales, esquema de remuneración (Sueldo Semanal Base para Barman Noche / Jornal Diario para Garzón Día / Salario Caja) y saldo acumulado de sanciones/deudas por faltantes.
-- **Turno (Jornada 12h)**: Identificador único, barman responsable, sucursal, tipo de turno (Día / Noche), fecha/hora de apertura, fecha/hora de cierre, estado (Abierto, Cobrado, Cerrado, Auditado), código único de recibo de cobro y marca temporal de liquidación.
-- **Receta de Transformación**: Identificador, insumo origen (materia prima), producto terminado (destino), tarifa de comisión por unidad (Bs), ratio de consumo de referencia, umbral de tolerancia de desviación y estado activo/inactivo.
-- **Receta de Combo / Equivalencia**: Identificador, nombre del combo (ej. Balde 6 Coronas), producto terminado base asociado (Corona), unidades individuales equivalentes por combo (6) y estado activo.
-- **Corte de Inventario**: Registro de apertura o cierre asociado a un turno, detallando cantidades por producto (enteros y fracciones de 0.25, 0.50, 0.75).
-- **Registro de Transformación (Relleno)**: Turno asociado, receta referenciada, producto origen, cantidad consumida, producto destino, cantidad obtenida, unidades rotas, ratio resultante (`origen / destino`), comisión generada.
-- **Ingreso de Mercadería**: Turno y sucursal, proveedor/origen, detalle de productos, fotografía adjunta, marca de tiempo y usuario receptor.
-- **Traspaso**: Sucursal origen, sucursal destino, productos y cantidades enviadas, cantidades recibidas conformes, unidades clasificadas como merma en tránsito, estado (En Tránsito, Recibido Conforme, Recibido con Discrepancia), fotos o notas de remisión adjuntas, fecha/hora y firmas de emisor y receptor.
-- **Cierre de Auditoría (Ticket Z)**: Turno auditado, ventas reportadas en Ticket Z, balance calculado por el sistema, diferencia resultante (cuadrado, sobrante en azul, faltante en rojo), estatus de sanción y observaciones del auditor.
-- **Sanción / Deuda de Inventario**: Empleado afectado, turno generador, monto en Bs imputado por faltante, estado (Pendiente, Descontado, Anulado por Auditoría).
-- **Informe de Liquidación Semanal**: Período semanal, empleado (Barman Noche), sueldo base semanal, total sanciones deducidas por faltantes de inventario de la semana, sueldo neto exacto a liquidar y estado de pago (Pendiente / Pagado).
-- **Configuración de Conexión (App Flutter)**: URL base de la API (Hosting compartido predeterminado / IP y puerto local alternativo), estado de conectividad y cola de sincronización offline.
+- **Usuario / Empleado**: Nombre, rol (Barman, Garzón, Cajera, Administrador/Auditor, Super Admin Daniel, Dueño, Contadora), credenciales PIN o JWT, sucursal activa.
+- **Turno (Jornada 12h)**: Identificador único, barman responsable, sucursal, tipo de turno (Día / Noche), fecha/hora de apertura, fecha/hora de cierre, estado, código de recibo, reconteo auditado.
+- **PlanillaFisicaCaja**: Identificador, sucursal, fecha de turno, foto original de la planilla de papel, total ventas en efectivo reportado, total deducciones de gastos manuscritos, efectivo neto esperado en sobre, resultado OCR de Gemini Vision.
+- **VoucherDepositoBanco**: Identificador, recaudación_id, foto del comprobante de depósito, banco destino, nro de comprobante/transacción, monto depositado en Bs, fecha/hora del depósito bancario, validación OCR.
+- **RecaudacionDiaria**: Turno/Jornada, recaudador_usuario_id, planilla_id, voucher_id, monto_sobre_declarado, monto_depositado_banco, diferencia_neta, estado_auditoria (`CUADRADA`, `DISCREPANCIA_PENDIENTE`, `JUSTIFICADA`).
+- **GastoCajaChica**: Sucursal, fecha, concepto (hielo, insumos, limpieza, taxis), monto en Bs, foto de respaldo, estado_comprobante (`AUDITADO_CONFORME`, `OBSERVADO_SIN_FOTO`), aprobado_por_usuario_id.
+- **RegistroTrasladoTaxi**: Origen, destino, cantidad_personas, lista_personal, monto_bs, tarifa_referencia_bs, estado_tarifa (`CONFORME`, `SOBREPRECIO_DETECTADO`), grupo_origen_id.
+- **ComprobanteQrBanco**: Foto de comprobante QR/transferencia, nro de transacción, banco, monto en Bs, titular, fecha/hora, estado de conciliación (`CONCILIADO`, `PENDIENTE`, `DUPLICADO_FRAUDE`).
 
-## Success Criteria *(mandatory)*
+---
+
+### Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
@@ -594,24 +661,29 @@ Como Administrador / Encargado, quiero disponer en mi APK móvil de la opción "
 - **SC-003**: 100% de los ingresos de mercadería externa cuentan con fotografía y marca de tiempo registradas antes de ser aceptados en inventario.
 - **SC-004**: Los administradores pueden ejecutar la conciliación de un Ticket Z de 12 horas e identificar discrepancias en menos de 2 minutos por turno.
 - **SC-005**: 100% de las discrepancias entre stock físico y ventas de caja quedan imputadas con nombre y apellido del barman responsable del turno correspondiente.
-- **SC-006**: Visibilidad del ratio de transformación histórico alcanzable con 1 solo clic en el panel de auditoría, permitiendo detectar desviaciones superiores al 15% respecto a la media de la sucursal.
+- **SC-006**: Visibilidad del ratio de transformación histórico alcanzable con 1 solo clic en el panel de auditoría.
 - **SC-007**: Generación del Informe de Liquidación Semanal consolidado para turnos nocturnos con cálculo automático de deducciones en menos de 3 clics para la administración.
-- **SC-008**: Cero interrupciones operativas en barra ante caídas de internet: 100% de los registros offline son sincronizados exitosamente al servidor al restaurar la conectividad sin intervención manual del usuario.
+- **SC-008**: Cero interrupciones operativas en barra ante caídas de internet: 100% de los registros offline sincronizados exitosamente.
 - **SC-009**: Autenticación e ingreso a la app Flutter mediante PIN de 4 dígitos en menos de 3 segundos.
-- **SC-010**: Selección del proveedor comercial en la recepción de mercadería en menos de 5 segundos mediante selector con búsqueda sin requerir tipeo manual repetitivo.
-- **SC-011**: Generación y visualización del Informe Operativo Integral en PDF de cualquier sucursal y turno en menos de 3 segundos desde el panel móvil del Administrador.
-- **SC-012**: 100% de los despachos de traspasos inter-sucursales validados estrictamente contra el stock físico disponible en origen, imposibilitando traspasos con saldos negativos.
-- **SC-013**: Las cajeras pueden completar la auditoría visual de inventario, la suplencia de corte o la confirmación de pago de comisiones en menos de 45 segundos desde su aplicación móvil.
-- **SC-014**: Cero pérdidas de datos de conteo en progreso ante refrescos de catálogo o salidas momentáneas de pantalla, reduciendo en un 100% el retrabajo operativo de re-conteo en barra.
-- **SC-015**: Capacidad de corregir un error de conteo físico en menos de 30 segundos tras la autorización remota del Administrador, gracias a la precarga íntegra de la memoria del conteo previo sin alterar los productos correctos.
+- **SC-010**: Selección del proveedor comercial en la recepción de mercadería en menos de 5 segundos mediante selector con búsqueda.
+- **SC-011**: Generación y visualización del Informe Operativo Integral en PDF en menos de 3 segundos.
+- **SC-012**: 100% de los despachos de traspasos inter-sucursales validados estrictamente contra el stock físico disponible en origen.
+- **SC-013**: Las cajeras pueden completar la auditoría visual de inventario o suplencia en menos de 45 segundos desde su móvil.
+- **SC-014**: Cero pérdidas de datos de conteo en progreso ante refrescos de catálogo o salidas momentáneas de pantalla.
+- **SC-015**: Capacidad de corregir un error de conteo físico en menos de 30 segundos tras la autorización remota del Administrador gracias a la precarga de memoria previa.
+- **SC-016**: La plataforma web de Super Usuario actualiza automáticamente las métricas de las 3 sucursales cada 60 segundos por sondeo reactivo.
+- **SC-017**: Extracción OCR con Gemini Vision de planillas manuscritas y vouchers bancarios con una precisión de lectura de montos superior al 95% en menos de 4 segundos por foto.
+- **SC-018**: Emisión de alerta de discrepancia en el Grupo Exclusivo de Recaudaciones de WhatsApp en menos de 30 segundos tras la ingesta de la foto del voucher bancario.
+- **SC-019**: 100% de los gastos de caja chica deducidos de las ventas en efectivo cruzados automáticamente contra comprobante fotográfico.
+- **SC-020**: Detección y marcado de tarifas de taxi anómalas que excedan en más del 25% el rango estipulado entre sucursales.
 
-## Assumptions
+---
+
+### Assumptions
 
 - **Tecnología Móvil Barman (Flutter)**: La aplicación de los barmen está desarrollada en Flutter para dispositivos móviles Android e iOS.
-- **Infraestructura de Servidor (Hosting Compartido)**: La API backend está construida como un servicio REST/JSON modular optimizado para operar en hosting compartido convencional (PHP/MySQL en Apache), sin requerir servidores dedicados costosos.
-- **Ciclo de Rotación Semanal**: Los barmen rotan de sucursal cada fin de semana, manteniendo su asignación fija de lunes a domingo para efectos de auditoría y liquidación de inventario.
-- **Acceso Autónomo de Caja**: Las cajeras disponen de la aplicación instalada con rol propio y PIN de 4 dígitos para auditoría visual en tiempo real, suplencia de cortes y confirmación directa de comisiones, manteniendo compatibilidad con la vista de Resumen a Cajera del dispositivo del barman.
-- **Dispositivos Móviles en Barra**: Los barmen disponen de smartphones con cámara funcional y la app Flutter instalada.
-- **Tarifas de Comisión**: La tarifa de comisión por unidad y los productos transformables se gestionan dinámicamente mediante el catálogo de recetas, inicializándose con la receta predeterminada "Cerveza en Lata → Botella Corona" a 1 Bs/unidad.
-- **Carga Manual de Ticket Z**: En esta versión v1.2, las ventas del Ticket Z son introducidas manualmente por el administrador en el módulo de auditoría de la app Flutter, manteniendo independencia total del software POS.
-- **Modalidades de Liquidación**: El sistema diferencia operativamente entre turnos de día (cobro diario en efectivo ante cajera con descuento de deudas) y turnos de noche (liquidación semanal centralizada en administración con reporte de descuentos).
+- **Plataforma Web (Vue 3 / Vite)**: La plataforma de control para Super Usuario, Dueño y Contabilidad se ejecuta sobre `frontend_web/` utilizando Vite, Vue 3 y Vuetify.
+- **Infraestructura de Servidor (Hosting Compartido cPanel)**: Backend en Laravel 11 y PHP 8.2 en `c22.ribersoft.com`, con endpoints RESTful optimizados.
+- **Motor de Inteligencia Artificial**: Se utiliza Google Gemini 1.5 Flash Vision API para el procesamiento de alta velocidad y bajo costo de comprobantes, vouchers y manuscritos.
+- **Bot de WhatsApp**: Integrado mediante Baileys / Evolution API para monitoreo de los grupos de comprobantes, recaudación y rotación.
+- **Agente Local de Caja**: Servicio ligero en Windows para las computadoras de caja que envía las ventas cada 60 segundos por HTTPS.

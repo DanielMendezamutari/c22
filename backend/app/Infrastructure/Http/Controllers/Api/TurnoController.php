@@ -675,5 +675,76 @@ class TurnoController extends Controller
             ], 400);
         }
     }
+
+    /**
+     * Herramienta técnica exclusiva para Daniel (Super Admin):
+     * Fuerza el recálculo y la reconciliación total de saldos del turno en curso.
+     */
+    public function forzarResincronizacion(Request $request, int $id): JsonResponse
+    {
+        try {
+            $user = auth('sanctum')->user() ?? $request->user();
+            if ($user && !in_array($user->rol, ['super_admin', 'admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Acceso denegado: Solo el Super Administrador puede forzar resincronización de turnos.',
+                ], 403);
+            }
+
+            $turno = Turno::with(['sucursal', 'barman', 'movimientos'])->find($id);
+            if (!$turno) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "El turno #{$id} no existe.",
+                ], 404);
+            }
+
+            // Recalcular métricas en base a movimientos reales
+            $totalTransformaciones = MovimientoInventario::where('turno_id', $turno->id)
+                ->where('tipo_movimiento', 'transformacion')
+                ->sum('cantidad');
+
+            $totalBajas = MovimientoInventario::where('turno_id', $turno->id)
+                ->where('tipo_movimiento', 'baja')
+                ->sum('cantidad');
+
+            $totalIngresos = MovimientoInventario::where('turno_id', $turno->id)
+                ->whereIn('tipo_movimiento', ['ingreso', 'traspaso_entrada'])
+                ->sum('cantidad');
+
+            // Actualizar turno
+            $turno->total_transformaciones_netas = (int) $totalTransformaciones;
+            $turno->total_comision_bruta = (float) $totalTransformaciones * 1.0;
+            $turno->save();
+
+            \Illuminate\Support\Facades\Log::info("[SuperAdmin] Resincronización técnica forzada para Turno #{$id}", [
+                'sucursal' => $turno->sucursal->nombre ?? 'N/A',
+                'ejecutado_por' => $user ? "{$user->nombre} ({$user->rol})" : 'SuperAdmin Console',
+                'transformaciones' => $totalTransformaciones,
+                'bajas' => $totalBajas,
+                'ingresos' => $totalIngresos,
+                'timestamp' => now()->toIso8601String(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Turno #{$id} ({$turno->sucursal->nombre}) resincronizado exitosamente.",
+                'data' => [
+                    'turno_id' => $turno->id,
+                    'sucursal' => $turno->sucursal->nombre ?? 'N/A',
+                    'total_transformaciones_netas' => $turno->total_transformaciones_netas,
+                    'total_comision_bruta' => (float) $turno->total_comision_bruta,
+                    'total_bajas' => (float) $totalBajas,
+                    'total_ingresos' => (float) $totalIngresos,
+                    'resincronizado_at' => now()->toIso8601String(),
+                ],
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
 

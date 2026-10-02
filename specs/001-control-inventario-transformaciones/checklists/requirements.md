@@ -17,16 +17,16 @@
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Conteo Apertura, US24 Rol Cajera, US25 Conteo Resiliente y US26 Reconteo con Memoria)
+- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Conteo Apertura, US24 Rol Cajera, US25 Conteo Resiliente, US26 Reconteo con Memoria, US27 Web Tiempo Real 1min, US28 Planillas vs Vouchers Gemini, US29 Caja Chica y US30 Taxis/Rotación)
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness
 
-- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-057)
+- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-065)
 - [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-015)
+- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-020)
 - [x] No implementation details leak into specification
 
 ## Notes
@@ -40,4 +40,8 @@
 - Especificado rol Cajera con suplencia operativa de conteo apertura/cierre, auditoría visual en tiempo real y confirmación de comisiones con foto (US24 / FR-045 a FR-049 / SC-013).
 - Especificado conteo resiliente en APK: buscador reactivo, refresco sin pérdida de avance de conteo y contabilización provisional de productos nuevos con alerta al Admin (US25 / FR-050 a FR-053 / SC-014).
 - Especificado desbloqueo de reconteo de inventario autorizado por Administrador desde su APK con memoria de conteo previo precargada y corrección selectiva (US26 / FR-054 a FR-057 / SC-015).
+- Especificada Plataforma Web en tiempo real 1 min y Consola Super Usuario Daniel (US27 / SC-016).
+- Especificada auditoría con Gemini Vision de Planillas Físicas vs Vouchers bancarios en Grupo de Recaudaciones (US28 / SC-017, SC-018).
+- Especificada auditoría híbrida de Caja Chica y reposiciones con ventas de barra (US29 / SC-019).
+- Especificado control inteligente de taxis, comisiones y rotación de chicas con IA (US30 / SC-020).
 - Spec ready for technical planning (`/speckit-plan`).

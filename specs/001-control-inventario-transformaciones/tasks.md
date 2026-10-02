@@ -521,6 +521,70 @@
 
 ---
 
+## Phase 32: User Story 27 - Plataforma Web en Tiempo Real (Sync 1 min) y Consola de Control Super Usuario (Priority: P1)
+
+**Goal**: Implementar la plataforma web de control para Super Usuario (Daniel) y Dueño en `frontend_web/` (Vue 3 / Vite), con autenticación JWT, sondeo reactivo cada 60 segundos del estado de todas las sucursales (Casa22, Coron, Madan), visor de logs en tiempo real y consola para forzar resincronización de turnos.  
+**Independent Test**: Iniciar sesión en la web como Super Usuario; verificar que el dashboard cargue métricas en vivo de todas las casas; simular una venta/corte y verificar actualización automática del reloj y contadores a los 60s sin refrescar; presionar "Forzar Resincronización" y constatar respuesta de API y log en pantalla.
+
+- [X] T190 [P] [US27] Crear migración para agregar roles web (`super_admin`, `dueno`, `contadora`, `auxiliar_contable`) y campos de usuario (`email`, `password_hash`) en `usuarios` en backend/database/migrations/2026_10_02_000001_add_web_auth_roles_to_usuarios_table.php
+- [X] T191 [P] [US27] Implementar `LoginWebUseCase` y endpoint `POST /auth/web/login` con emisión de JWT / Sanctum token y discriminación de permisos en backend/app/Infrastructure/Http/Controllers/Api/AuthController.php
+- [X] T192 [US27] Implementar endpoint `GET /dashboard/metricas-tiempo-real` que consolide estado de turnos activos, ventas en efectivo/QR, stock en barra y alertas rojas de las 3 sucursales en backend/app/Infrastructure/Http/Controllers/Api/DashboardController.php
+- [X] T193 [US27] Implementar endpoint `POST /turnos/{id}/forzar-resincronizacion` y `GET /sistema/logs-en-vivo` exclusivo para Super Admin en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T194 [P] [US27] En `frontend_web/`, configurar cliente Axios/Fetch con interceptores JWT, manejo de token en localStorage y redirección a login en frontend_web/src/plugins/axios.js
+- [X] T195 [US27] Crear pantalla de Login Web con validación de credenciales y enrutamiento por rol en frontend_web/src/pages/login.vue
+- [X] T196 [US27] Crear vista `DashboardSuperAdmin.vue` con tarjetas de las 3 sucursales, reloj dinámico con timer de polling de 60 segundos y tabla de turnos en servicio en frontend_web/src/pages/dashboard/super-admin.vue
+- [X] T197 [US27] Crear componente `ConsolaHerramientasTecnicas.vue` para Daniel con visor de logs de API en vivo y botón "Forzar Resincronización de Turno" en frontend_web/src/views/dashboard/ConsolaHerramientasTecnicas.vue
+- [X] T198 [US27] Validar el flujo de login web, actualización en vivo a los 60s y ejecución de resincronización técnica según Scenario 24 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
+## Phase 33: User Story 28 - Auditoría con Gemini Vision de Planillas Físicas vs Vouchers de Depósito (Priority: P1)
+
+**Goal**: Implementar el motor de OCR y conciliación automática con Google Gemini 1.5 Flash Vision para procesar fotos de planillas físicas manuscritas y vouchers de depósito bancario subidos al Grupo de WhatsApp de Recaudaciones o a la web, detectando faltantes y alertando al grupo de recaudación.  
+**Independent Test**: Subir foto de planilla manuscrita (5,000 Bs - 300 Bs gastos = 4,700 Bs sobre) y foto de voucher de banco (4,200 Bs); constatar que Gemini extraiga los montos, calcule la brecha de 500 Bs y emita la alerta de discrepancia en el grupo de WhatsApp.
+
+- [X] T199 [P] [US28] Crear migración para tablas `planillas_caja`, `vouchers_deposito` y `recaudaciones_diarias` con estados de auditoría en backend/database/migrations/2026_10_02_000002_create_recaudaciones_and_vouchers_tables.php
+- [X] T200 [P] [US28] Crear servicio `GeminiVisionService.php` para conexión con Google Gemini API y prompts estructurados para lectura de vouchers bancarios y planillas manuscritas en backend/app/Infrastructure/AI/GeminiVisionService.php
+- [X] T201 [US28] Implementar `ConciliarRecaudacionUseCase` que compara el monto del sobre declarado contra el depósito bancario y calcula la discrepancia en backend/app/Application/UseCases/Auditoria/ConciliarRecaudacionUseCase.php
+- [X] T202 [US28] Implementar endpoints `POST /recaudaciones/procesar-planilla`, `POST /recaudaciones/procesar-voucher` y `GET /recaudaciones/diarias` en backend/app/Infrastructure/Http/Controllers/Api/RecaudacionController.php
+- [X] T203 [P] [US28] Implementar servicio de notificación a WhatsApp Bot para despachar alertas al Grupo Exclusivo de Recaudaciones en backend/app/Infrastructure/Services/WhatsAppNotificationService.php
+- [X] T204 [US28] Crear vista `AuditoriaRecaudaciones.vue` en la plataforma web con comparador visual lado a lado (Foto Planilla vs Foto Voucher vs Ventas de Sistema) en frontend_web/src/pages/auditoria/recaudaciones.vue
+- [X] T205 [US28] Añadir modal para carga manual de fotos de planillas y vouchers con previsualización inmediata en frontend_web/src/views/auditoria/ModalCargaRecaudacion.vue
+- [X] T206 [US28] Validar extracción OCR con Gemini Vision de voucher y planilla con cálculo de discrepancia según Scenario 25 en specs/001-control-inventario-transformaciones/quickstart.md
+- [X] T207 [US28] Validar emisión de alerta automática al grupo de WhatsApp de recaudaciones cuando existe faltante de efectivo
+
+---
+
+## Phase 34: User Story 29 - Auditoría Híbrida de Caja Chica y Reposiciones desde Ventas (Priority: P1)
+
+**Goal**: Implementar el control estricto de Caja Chica y gastos operativos deducidos de las ventas en efectivo, cruzando lo anotado en la planilla física contra las fotos de comprobantes/recibos enviadas al grupo de WhatsApp.  
+**Independent Test**: Declarar en planilla "Gasto hielo 80 Bs" y subir recibo; verificar que el sistema empareje el gasto y apruebe el descuento. Declarar "Gasto 50 Bs" sin foto; verificar que la web marque el gasto en naranja como `OBSERVADO_SIN_COMPROBANTE`.
+
+- [X] T208 [P] [US29] Crear migración para tabla `gastos_caja_chica` (`sucursal_id`, `turno_id`, `concepto`, `monto_bs`, `foto_comprobante_url`, `estado_comprobante`, `aprobado_por_id`) en backend/database/migrations/2026_10_02_000003_create_gastos_caja_chica_table.php
+- [X] T209 [US29] Implementar servicio de cruce OCR que empareja recibos fotográficos de WhatsApp con los ítems manuscritos de la planilla en backend/app/Infrastructure/AI/AuditoriaGastosService.php
+- [X] T210 [US29] Implementar endpoints `POST /gastos-caja-chica`, `POST /gastos-caja-chica/{id}/aprobar` y `GET /gastos-caja-chica/pendientes` en backend/app/Infrastructure/Http/Controllers/Api/GastoCajaChicaController.php
+- [X] T211 [US29] Crear vista `ControlCajaChica.vue` en la web con listado de gastos del día, semáforo de respaldo fotográfico y botón de aprobación para Daniel/Contadora en frontend_web/src/pages/caja-chica/index.vue
+- [X] T212 [US29] Validar el cruce automático de recibos contra planilla física según Scenario 26 en specs/001-control-inventario-transformaciones/quickstart.md
+- [X] T213 [US29] Validar retención de deducciones para gastos sin comprobante fotográfico en el arqueo diario
+- [X] T214 [US29] Validar flujo de aprobación manual por Daniel o Contadora desde la web
+
+---
+
+## Phase 35: User Story 30 - Control Inteligente de Taxis, Rotación de Chicas y Comisiones con IA (Priority: P2)
+
+**Goal**: Implementar la supervisión con IA de los mensajes del grupo de WhatsApp de rotación de chicas y comisiones de taxis, verificando montos cobrados contra tabla de tarifas estándar entre sucursales y alertando sobre traslados compartidos cobrados doble o sobreprecios.  
+**Independent Test**: Enviar mensaje de taxi con tarifa normal (15 Bs entre Casa22 y Madan); verificar registro conforme. Enviar mensaje con tarifa inflada (40 Bs); verificar que la IA lo marque en amarillo en el consolidado diario.
+
+- [X] T215 [P] [US30] Crear migración para `tarifas_rutas_taxis` y `registros_traslados_taxis` en backend/database/migrations/2026_10_02_000004_create_taxis_and_rotaciones_tables.php
+- [X] T216 [US30] Implementar servicio con Gemini NLP para parsear mensajes de texto de traslados (`{origen, destino, personal, monto_bs}`) en backend/app/Infrastructure/AI/TaxiParserService.php
+- [X] T217 [US30] Implementar `ValidarTarifaTaxiUseCase` que contrasta el monto contra el rango de la ruta y verifica duplicidad horaria de traslados en backend/app/Application/UseCases/Auditoria/ValidarTarifaTaxiUseCase.php
+- [X] T218 [US30] Implementar endpoints `POST /taxis/procesar-mensaje` y `GET /taxis/reporte-diario` en backend/app/Infrastructure/Http/Controllers/Api/TaxiController.php
+- [X] T219 [US30] Crear vista `ReporteTaxisRotacion.vue` en la plataforma web con gráfico de gasto diario de movilidad por casa y alertas de sobreprecio en frontend_web/src/pages/movilidad/taxis.vue
+- [X] T220 [US30] Configurar tabla paramétrica de tarifas base entre sucursales (Casa22 ↔ Coron, Casa22 ↔ Madan, Coron ↔ Madan) en base de datos
+- [X] T221 [US30] Validar detección de tarifas infladas y cobros duplicados según Scenario 27 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

@@ -34,3 +34,13 @@ frontend/puntofrio_app/.pub-cache/
 # Local uploads
 backend/public/storage/comprobantes/*
 backend/public/storage/firmas/*
+
+# Frontend Web
+frontend_web/node_modules/
+frontend_web/dist/
+frontend_web/.env
+frontend_web/.env.local
+
+# Archives
+*.zip
+template_reference/

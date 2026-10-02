@@ -16,8 +16,10 @@ class Usuario extends Authenticatable
     protected $fillable = [
         'nombre',
         'apellido',
+        'email',
         'rol',
         'pin_hash',
+        'password_hash',
         'modalidad_cobro',
         'sueldo_base_semanal',
         'sucursal_actual_id',
@@ -27,7 +29,13 @@ class Usuario extends Authenticatable
 
     protected $hidden = [
         'pin_hash',
+        'password_hash',
     ];
+
+    public function getAuthPassword()
+    {
+        return $this->password_hash;
+    }
 
     protected $casts = [
         'sueldo_base_semanal' => 'decimal:2',
