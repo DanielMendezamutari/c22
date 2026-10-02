@@ -41,31 +41,24 @@ const authV2LoginIllustration = useGenerateImageVariant(
   true,
 )
 
-const setDemoCredentials = (email, password) => {
-  activeTab.value = 'email'
-  form.value.email = email
-  form.value.password = password
-}
-
-const onPinSubmit = async (pinOverride) => {
-  const pinToUse = pinOverride || pin.value
+const onPinSubmit = async () => {
   errorMessage.value = ''
 
-  if (!pinToUse || String(pinToUse).trim().length !== 4) {
-    errorMessage.value = 'Por favor ingresa tu PIN de 4 dígitos (ej: 9999).'
+  if (!pin.value || String(pin.value).trim().length !== 4) {
+    errorMessage.value = 'Por favor ingresa un PIN de 4 dígitos numéricos.'
     return
   }
 
   isSubmitting.value = true
   try {
-    const result = await authStore.loginPin(pinToUse)
+    const result = await authStore.loginPin(pin.value)
     if (result.success) {
       router.push(result.redirect_to || '/dashboard/super-admin')
     } else {
-      errorMessage.value = result.error || 'PIN no reconocido o usuario inactivo'
+      errorMessage.value = result.error || 'PIN no reconocido o usuario inactivo.'
     }
   } catch (err) {
-    errorMessage.value = err.message || 'Error al conectar con la API'
+    errorMessage.value = err.message || 'Error al conectar con el servidor.'
   } finally {
     isSubmitting.value = false
   }
@@ -84,10 +77,10 @@ const onEmailSubmit = async () => {
     if (result.success) {
       router.push(result.redirect_to || '/dashboard/super-admin')
     } else {
-      errorMessage.value = result.error || 'Credenciales inválidas'
+      errorMessage.value = result.error || 'Credenciales inválidas.'
     }
   } catch (err) {
-    errorMessage.value = err.message || 'Error inesperado al conectar con el servidor'
+    errorMessage.value = err.message || 'Error inesperado al conectar con el servidor.'
   } finally {
     isSubmitting.value = false
   }
@@ -154,12 +147,12 @@ const onEmailSubmit = async () => {
               <h4 class="text-h4 mb-0">
                 Punto Frío C22
               </h4>
-              <span class="text-caption text-medium-emphasis">Consola de Control en Tiempo Real</span>
+              <span class="text-caption text-medium-emphasis">Consola de Control y Auditoría</span>
             </div>
           </div>
 
           <p class="text-body-2 mb-4">
-            Acceso unificado para Super Usuario, Administrador, Dueño y Contabilidad.
+            Ingreso al sistema para personal administrativo y operativo autorizado.
           </p>
 
           <VAlert
@@ -201,26 +194,27 @@ const onEmailSubmit = async () => {
 
         <VCardText>
           <VWindow v-model="activeTab">
-            <!-- 1. MODO PIN (Mismo método que en la APK) -->
+            <!-- 1. MODO PIN (Mismo método seguro que en la APK) -->
             <VWindowItem value="pin">
-              <VForm @submit.prevent="onPinSubmit()">
+              <VForm @submit.prevent="onPinSubmit">
                 <VRow>
                   <VCol cols="12">
                     <p class="text-caption text-medium-emphasis mb-2">
-                      Ingresa tu PIN de 4 dígitos tal como accedes desde la aplicación móvil:
+                      Ingresa tu PIN de 4 dígitos de forma segura:
                     </p>
                     <VTextField
                       v-model="pin"
                       autofocus
                       label="PIN de 4 dígitos"
-                      placeholder="9999"
+                      placeholder="••••"
                       maxlength="4"
                       :type="isPinVisible ? 'text' : 'password'"
                       prepend-inner-icon="ri-lock-password-line"
                       :append-inner-icon="isPinVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
-                      class="mb-3"
+                      class="mb-4"
+                      autocomplete="off"
                       @click:append-inner="isPinVisible = !isPinVisible"
-                      @input="() => { if (pin.length === 4) onPinSubmit() }"
+                      @input="() => { if (pin && pin.length === 4) onPinSubmit() }"
                     />
                   </VCol>
 
@@ -231,30 +225,13 @@ const onEmailSubmit = async () => {
                       size="large"
                       color="primary"
                       :loading="isSubmitting"
-                      class="mb-3"
+                      class="mb-2"
                     >
                       <VIcon
                         start
                         icon="ri-login-box-line"
                       />
-                      Ingresar con PIN
-                    </VBtn>
-
-                    <!-- Acceso rápido directo para Daniel (Admin 9999) -->
-                    <VBtn
-                      block
-                      variant="tonal"
-                      color="success"
-                      size="default"
-                      class="text-none mb-3"
-                      :loading="isSubmitting"
-                      @click="onPinSubmit('9999')"
-                    >
-                      <VIcon
-                        start
-                        icon="ri-shield-check-line"
-                      />
-                      Entrar como Daniel / Admin (9999)
+                      Ingresar
                     </VBtn>
                   </VCol>
                 </VRow>
@@ -270,21 +247,23 @@ const onEmailSubmit = async () => {
                       v-model="form.email"
                       label="Correo Electrónico"
                       type="email"
-                      placeholder="daniel@puntofrio.com"
+                      placeholder="usuario@puntofrio.com"
                       prepend-inner-icon="ri-mail-line"
                       required
+                      autocomplete="email"
                     />
                   </VCol>
 
                   <VCol cols="12">
                     <VTextField
                       v-model="form.password"
-                      label="Contraseña o PIN"
-                      placeholder="············"
+                      label="Contraseña"
+                      placeholder="••••••••••••"
                       :type="isPasswordVisible ? 'text' : 'password'"
                       prepend-inner-icon="ri-lock-password-line"
                       :append-inner-icon="isPasswordVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
                       required
+                      autocomplete="current-password"
                       @click:append-inner="isPasswordVisible = !isPasswordVisible"
                     />
 
@@ -294,7 +273,6 @@ const onEmailSubmit = async () => {
                         label="Recordar sesión"
                         density="compact"
                       />
-                      <span class="text-caption text-primary">Sincronización 1 min</span>
                     </div>
 
                     <VBtn
@@ -303,7 +281,7 @@ const onEmailSubmit = async () => {
                       size="large"
                       color="primary"
                       :loading="isSubmitting"
-                      class="mb-4"
+                      class="mb-2"
                     >
                       <VIcon
                         start
@@ -311,60 +289,6 @@ const onEmailSubmit = async () => {
                       />
                       Iniciar Sesión
                     </VBtn>
-                  </VCol>
-
-                  <!-- Accesos rápidos -->
-                  <VCol cols="12">
-                    <VDivider class="my-2">
-                      <span class="text-caption text-disabled px-2">Acceso Rápido por Rol</span>
-                    </VDivider>
-
-                    <div class="d-flex flex-wrap gap-2 justify-center mt-2">
-                      <VChip
-                        color="primary"
-                        variant="tonal"
-                        size="small"
-                        class="cursor-pointer"
-                        @click="setDemoCredentials('daniel@puntofrio.com', '9999')"
-                      >
-                        <VIcon
-                          start
-                          icon="ri-code-s-slash-line"
-                          size="14"
-                        />
-                        Admin (Daniel)
-                      </VChip>
-
-                      <VChip
-                        color="success"
-                        variant="tonal"
-                        size="small"
-                        class="cursor-pointer"
-                        @click="setDemoCredentials('dueno@puntofrio.com', '123456')"
-                      >
-                        <VIcon
-                          start
-                          icon="ri-user-star-line"
-                          size="14"
-                        />
-                        Dueño Ejecutivo
-                      </VChip>
-
-                      <VChip
-                        color="info"
-                        variant="tonal"
-                        size="small"
-                        class="cursor-pointer"
-                        @click="setDemoCredentials('contadora@puntofrio.com', '123456')"
-                      >
-                        <VIcon
-                          start
-                          icon="ri-calculator-line"
-                          size="14"
-                        />
-                        Contabilidad
-                      </VChip>
-                    </div>
                   </VCol>
                 </VRow>
               </VForm>
@@ -378,12 +302,4 @@ const onEmailSubmit = async () => {
 
 <style lang="scss">
 @use "@core/scss/template/pages/page-auth.scss";
-
-.cursor-pointer {
-  cursor: pointer;
-  transition: transform 0.15s ease;
-  &:hover {
-    transform: translateY(-2px);
-  }
-}
 </style>

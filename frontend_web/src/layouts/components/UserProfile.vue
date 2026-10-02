@@ -1,46 +1,40 @@
 <script setup>
-import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import avatar1 from '@images/avatars/avatar-1.png'
 
-const userProfileList = [
-  { type: 'divider' },
-  {
-    type: 'navItem',
-    icon: 'ri-user-line',
-    title: 'Profile',
-    href: '#',
-  },
-  {
-    type: 'navItem',
-    icon: 'ri-settings-4-line',
-    title: 'Settings',
-    href: '#',
-  },
-  {
-    type: 'navItem',
-    icon: 'ri-file-text-line',
-    title: 'Billing Plan',
-    href: '#',
-    chipsProps: {
-      color: 'error',
-      text: '4',
-      size: 'small',
-    },
-  },
-  { type: 'divider' },
-  {
-    type: 'navItem',
-    icon: 'ri-money-dollar-circle-line',
-    title: 'Pricing',
-    href: '#',
-  },
-  {
-    type: 'navItem',
-    icon: 'ri-question-line',
-    title: 'FAQ',
-    href: '#',
-  },
-]
+const router = useRouter()
+const authStore = useAuthStore()
+
+const userName = computed(() => {
+  if (authStore.user?.nombre) {
+    return `${authStore.user.nombre} ${authStore.user.apellido || ''}`.trim()
+  }
+  return 'Usuario Autorizado'
+})
+
+const userRole = computed(() => {
+  const rol = authStore.user?.rol
+  switch (rol) {
+    case 'super_admin':
+    case 'admin':
+      return 'Super Administrador'
+    case 'dueno':
+      return 'Dueño Ejecutivo'
+    case 'contadora':
+      return 'Contabilidad Central'
+    case 'auxiliar_contable':
+      return 'Auxiliar Contable'
+    default:
+      return 'Usuario Operativo'
+  }
+})
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -59,82 +53,80 @@ const userProfileList = [
     >
       <VImg :src="avatar1" />
 
-      <!-- SECTION Menu -->
+      <!-- Menú Desplegable de Perfil -->
       <VMenu
         activator="parent"
-        width="230"
+        width="240"
         location="bottom end"
         offset="15px"
       >
         <VList>
-          <VListItem class="px-4">
-            <div class="d-flex gap-x-2 align-center">
-              <VAvatar>
+          <!-- Encabezado con datos reales del usuario -->
+          <VListItem class="px-4 py-2">
+            <div class="d-flex gap-x-3 align-center">
+              <VAvatar size="40">
                 <VImg :src="avatar1" />
               </VAvatar>
 
-              <div>
-                <div class="text-body-2 font-weight-medium text-high-emphasis">
-                  John Doe
+              <div class="overflow-hidden">
+                <div class="text-subtitle-2 font-weight-bold text-high-emphasis text-truncate">
+                  {{ userName }}
                 </div>
-                <div class="text-capitalize text-caption text-disabled">
-                  Admin
+                <div class="text-caption text-primary font-weight-medium">
+                  {{ userRole }}
                 </div>
               </div>
             </div>
           </VListItem>
 
-          <PerfectScrollbar :options="{ wheelPropagation: false }">
-            <template
-              v-for="item in userProfileList"
-              :key="item.title"
-            >
-              <VListItem
-                v-if="item.type === 'navItem'"
-                :href="item.href"
-                class="px-4"
-              >
-                <template #prepend>
-                  <VIcon
-                    :icon="item.icon"
-                    size="22"
-                  />
-                </template>
+          <VDivider class="my-1" />
 
-                <VListItemTitle>{{ item.title }}</VListItemTitle>
-
-                <template
-                  v-if="item.chipsProps"
-                  #append
-                >
-                  <VChip
-                    v-bind="item.chipsProps"
-                    variant="elevated"
-                  />
-                </template>
-              </VListItem>
-
-              <VDivider
-                v-else
-                class="my-1"
+          <!-- Opciones limpias y corporativas -->
+          <VListItem
+            to="/dashboard/super-admin"
+            class="px-4"
+          >
+            <template #prepend>
+              <VIcon
+                icon="ri-dashboard-line"
+                size="20"
+                class="me-2"
               />
             </template>
+            <VListItemTitle>Consola de Control</VListItemTitle>
+          </VListItem>
 
-            <VListItem class="px-4">
-              <VBtn
-                block
-                color="error"
-                size="small"
-                append-icon="ri-logout-box-r-line"
-                :to="{ name: 'login' }"
-              >
-                Logout
-              </VBtn>
-            </VListItem>
-          </PerfectScrollbar>
+          <VListItem
+            to="/auditoria/recaudaciones"
+            class="px-4"
+          >
+            <template #prepend>
+              <VIcon
+                icon="ri-file-shield-line"
+                size="20"
+                class="me-2"
+              />
+            </template>
+            <VListItemTitle>Auditoría de Planillas</VListItemTitle>
+          </VListItem>
+
+          <VDivider class="my-2" />
+
+          <!-- Botón de Cerrar Sesión -->
+          <VListItem class="px-4">
+            <VBtn
+              block
+              color="error"
+              variant="tonal"
+              size="small"
+              prepend-icon="ri-logout-box-r-line"
+              @click="handleLogout"
+            >
+              Cerrar Sesión
+            </VBtn>
+          </VListItem>
         </VList>
       </VMenu>
-      <!-- !SECTION -->
     </VAvatar>
   </VBadge>
 </template>
