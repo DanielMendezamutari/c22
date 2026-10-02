@@ -17,6 +17,11 @@ definePage({ meta: { layout: 'blank' } })
 const router = useRouter()
 const authStore = useAuthStore()
 
+// Modo de autenticación: 'pin' (Mismo que en la APK) | 'email'
+const activeTab = ref('pin')
+const pin = ref('')
+const isPinVisible = ref(false)
+
 const form = ref({
   email: '',
   password: '',
@@ -37,11 +42,36 @@ const authV2LoginIllustration = useGenerateImageVariant(
 )
 
 const setDemoCredentials = (email, password) => {
+  activeTab.value = 'email'
   form.value.email = email
   form.value.password = password
 }
 
-const onSubmit = async () => {
+const onPinSubmit = async (pinOverride) => {
+  const pinToUse = pinOverride || pin.value
+  errorMessage.value = ''
+
+  if (!pinToUse || String(pinToUse).trim().length !== 4) {
+    errorMessage.value = 'Por favor ingresa tu PIN de 4 dígitos (ej: 9999).'
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    const result = await authStore.loginPin(pinToUse)
+    if (result.success) {
+      router.push(result.redirect_to || '/dashboard/super-admin')
+    } else {
+      errorMessage.value = result.error || 'PIN no reconocido o usuario inactivo'
+    }
+  } catch (err) {
+    errorMessage.value = err.message || 'Error al conectar con la API'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+const onEmailSubmit = async () => {
   errorMessage.value = ''
   if (!form.value.email || !form.value.password) {
     errorMessage.value = 'Por favor ingresa tu correo y contraseña.'
@@ -129,7 +159,7 @@ const onSubmit = async () => {
           </div>
 
           <p class="text-body-2 mb-4">
-            Ingresa con tus credenciales autorizadas de Super Usuario, Dueño o Contabilidad.
+            Acceso unificado para Super Usuario, Administrador, Dueño y Contabilidad.
           </p>
 
           <VAlert
@@ -142,118 +172,204 @@ const onSubmit = async () => {
           >
             {{ errorMessage }}
           </VAlert>
+
+          <!-- Pestañas de Selección: PIN (APK) vs Correo -->
+          <VTabs
+            v-model="activeTab"
+            grow
+            density="compact"
+            color="primary"
+            class="mb-5 rounded"
+            style="border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));"
+          >
+            <VTab value="pin">
+              <VIcon
+                start
+                icon="ri-key-2-line"
+              />
+              PIN (APK)
+            </VTab>
+            <VTab value="email">
+              <VIcon
+                start
+                icon="ri-mail-line"
+              />
+              Correo
+            </VTab>
+          </VTabs>
         </VCardText>
 
         <VCardText>
-          <VForm @submit.prevent="onSubmit">
-            <VRow>
-              <!-- email -->
-              <VCol cols="12">
-                <VTextField
-                  v-model="form.email"
-                  autofocus
-                  label="Correo Electrónico"
-                  type="email"
-                  placeholder="daniel@puntofrio.com"
-                  prepend-inner-icon="ri-mail-line"
-                  required
-                />
-              </VCol>
-
-              <!-- password -->
-              <VCol cols="12">
-                <VTextField
-                  v-model="form.password"
-                  label="Contraseña"
-                  placeholder="············"
-                  :type="isPasswordVisible ? 'text' : 'password'"
-                  prepend-inner-icon="ri-lock-password-line"
-                  :append-inner-icon="isPasswordVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
-                  required
-                  @click:append-inner="isPasswordVisible = !isPasswordVisible"
-                />
-
-                <div class="d-flex align-center justify-space-between flex-wrap my-4 gap-x-2">
-                  <VCheckbox
-                    v-model="form.remember"
-                    label="Recordar sesión"
-                    density="compact"
-                  />
-                  <span class="text-caption text-primary">Sincronización 1 min</span>
-                </div>
-
-                <!-- login button -->
-                <VBtn
-                  block
-                  type="submit"
-                  size="large"
-                  color="primary"
-                  :loading="isSubmitting"
-                  class="mb-4"
-                >
-                  <VIcon
-                    start
-                    icon="ri-login-box-line"
-                  />
-                  Iniciar Sesión
-                </VBtn>
-              </VCol>
-
-              <!-- Accesos rápidos de desarrollo/prueba -->
-              <VCol cols="12">
-                <VDivider class="my-2">
-                  <span class="text-caption text-disabled px-2">Acceso Rápido por Rol</span>
-                </VDivider>
-
-                <div class="d-flex flex-wrap gap-2 justify-center mt-2">
-                  <VChip
-                    color="primary"
-                    variant="tonal"
-                    size="small"
-                    class="cursor-pointer"
-                    @click="setDemoCredentials('daniel@puntofrio.com', '123456')"
-                  >
-                    <VIcon
-                      start
-                      icon="ri-code-s-slash-line"
-                      size="14"
+          <VWindow v-model="activeTab">
+            <!-- 1. MODO PIN (Mismo método que en la APK) -->
+            <VWindowItem value="pin">
+              <VForm @submit.prevent="onPinSubmit()">
+                <VRow>
+                  <VCol cols="12">
+                    <p class="text-caption text-medium-emphasis mb-2">
+                      Ingresa tu PIN de 4 dígitos tal como accedes desde la aplicación móvil:
+                    </p>
+                    <VTextField
+                      v-model="pin"
+                      autofocus
+                      label="PIN de 4 dígitos"
+                      placeholder="9999"
+                      maxlength="4"
+                      :type="isPinVisible ? 'text' : 'password'"
+                      prepend-inner-icon="ri-lock-password-line"
+                      :append-inner-icon="isPinVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
+                      class="mb-3"
+                      @click:append-inner="isPinVisible = !isPinVisible"
+                      @input="() => { if (pin.length === 4) onPinSubmit() }"
                     />
-                    Super Admin (Daniel)
-                  </VChip>
+                  </VCol>
 
-                  <VChip
-                    color="success"
-                    variant="tonal"
-                    size="small"
-                    class="cursor-pointer"
-                    @click="setDemoCredentials('dueno@puntofrio.com', '123456')"
-                  >
-                    <VIcon
-                      start
-                      icon="ri-user-star-line"
-                      size="14"
-                    />
-                    Dueño Ejecutivo
-                  </VChip>
+                  <VCol cols="12">
+                    <VBtn
+                      block
+                      type="submit"
+                      size="large"
+                      color="primary"
+                      :loading="isSubmitting"
+                      class="mb-3"
+                    >
+                      <VIcon
+                        start
+                        icon="ri-login-box-line"
+                      />
+                      Ingresar con PIN
+                    </VBtn>
 
-                  <VChip
-                    color="info"
-                    variant="tonal"
-                    size="small"
-                    class="cursor-pointer"
-                    @click="setDemoCredentials('contadora@puntofrio.com', '123456')"
-                  >
-                    <VIcon
-                      start
-                      icon="ri-calculator-line"
-                      size="14"
+                    <!-- Acceso rápido directo para Daniel (Admin 9999) -->
+                    <VBtn
+                      block
+                      variant="tonal"
+                      color="success"
+                      size="default"
+                      class="text-none mb-3"
+                      :loading="isSubmitting"
+                      @click="onPinSubmit('9999')"
+                    >
+                      <VIcon
+                        start
+                        icon="ri-shield-check-line"
+                      />
+                      Entrar como Daniel / Admin (9999)
+                    </VBtn>
+                  </VCol>
+                </VRow>
+              </VForm>
+            </VWindowItem>
+
+            <!-- 2. MODO CORREO Y CONTRASEÑA -->
+            <VWindowItem value="email">
+              <VForm @submit.prevent="onEmailSubmit">
+                <VRow>
+                  <VCol cols="12">
+                    <VTextField
+                      v-model="form.email"
+                      label="Correo Electrónico"
+                      type="email"
+                      placeholder="daniel@puntofrio.com"
+                      prepend-inner-icon="ri-mail-line"
+                      required
                     />
-                    Contabilidad
-                  </VChip>
-                </div>
-              </VCol>
-            </VRow>
-          </VForm>
+                  </VCol>
+
+                  <VCol cols="12">
+                    <VTextField
+                      v-model="form.password"
+                      label="Contraseña o PIN"
+                      placeholder="············"
+                      :type="isPasswordVisible ? 'text' : 'password'"
+                      prepend-inner-icon="ri-lock-password-line"
+                      :append-inner-icon="isPasswordVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
+                      required
+                      @click:append-inner="isPasswordVisible = !isPasswordVisible"
+                    />
+
+                    <div class="d-flex align-center justify-space-between flex-wrap my-4 gap-x-2">
+                      <VCheckbox
+                        v-model="form.remember"
+                        label="Recordar sesión"
+                        density="compact"
+                      />
+                      <span class="text-caption text-primary">Sincronización 1 min</span>
+                    </div>
+
+                    <VBtn
+                      block
+                      type="submit"
+                      size="large"
+                      color="primary"
+                      :loading="isSubmitting"
+                      class="mb-4"
+                    >
+                      <VIcon
+                        start
+                        icon="ri-login-box-line"
+                      />
+                      Iniciar Sesión
+                    </VBtn>
+                  </VCol>
+
+                  <!-- Accesos rápidos -->
+                  <VCol cols="12">
+                    <VDivider class="my-2">
+                      <span class="text-caption text-disabled px-2">Acceso Rápido por Rol</span>
+                    </VDivider>
+
+                    <div class="d-flex flex-wrap gap-2 justify-center mt-2">
+                      <VChip
+                        color="primary"
+                        variant="tonal"
+                        size="small"
+                        class="cursor-pointer"
+                        @click="setDemoCredentials('daniel@puntofrio.com', '9999')"
+                      >
+                        <VIcon
+                          start
+                          icon="ri-code-s-slash-line"
+                          size="14"
+                        />
+                        Admin (Daniel)
+                      </VChip>
+
+                      <VChip
+                        color="success"
+                        variant="tonal"
+                        size="small"
+                        class="cursor-pointer"
+                        @click="setDemoCredentials('dueno@puntofrio.com', '123456')"
+                      >
+                        <VIcon
+                          start
+                          icon="ri-user-star-line"
+                          size="14"
+                        />
+                        Dueño Ejecutivo
+                      </VChip>
+
+                      <VChip
+                        color="info"
+                        variant="tonal"
+                        size="small"
+                        class="cursor-pointer"
+                        @click="setDemoCredentials('contadora@puntofrio.com', '123456')"
+                      >
+                        <VIcon
+                          start
+                          icon="ri-calculator-line"
+                          size="14"
+                        />
+                        Contabilidad
+                      </VChip>
+                    </div>
+                  </VCol>
+                </VRow>
+              </VForm>
+            </VWindowItem>
+          </VWindow>
         </VCardText>
       </VCard>
     </VCol>

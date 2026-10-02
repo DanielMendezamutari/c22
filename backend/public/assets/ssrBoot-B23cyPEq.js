@@ -1,0 +1,1 @@
+import{aE as t,D as e,a6 as s,bu as n}from"./index-BEIN_x8g.js";function u(){const o=t(!1);return e(()=>{window.requestAnimationFrame(()=>{o.value=!0})}),{ssrBootStyles:s(()=>o.value?void 0:{transition:"none !important"}),isBooted:n(o)}}export{u};

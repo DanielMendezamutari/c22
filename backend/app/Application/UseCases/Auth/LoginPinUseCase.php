@@ -56,19 +56,31 @@ class LoginPinUseCase
             }
         }
 
-        // Si es administrador, tiene alcance global y no requiere sucursal fija
-        if ($usuario->rol === 'admin') {
+        // Si es administrador o super_admin, tiene alcance global y acceso tanto a APK como a la plataforma Web
+        if ($usuario->rol === 'admin' || $usuario->rol === 'super_admin') {
             $token = $usuario->createToken('pin-auth-token')->plainTextToken;
             return [
                 'token' => $token,
+                'token_type' => 'Bearer',
                 'usuario' => [
                     'id' => $usuario->id,
                     'nombre' => $usuario->nombre,
                     'apellido' => $usuario->apellido,
+                    'email' => $usuario->email ?? 'daniel@puntofrio.com',
                     'rol' => $usuario->rol,
                     'modalidad_cobro' => $usuario->modalidad_cobro,
                     'saldo_deudor' => (float) $usuario->saldo_deudor_acumulado,
                 ],
+                'permisos' => [
+                    'es_super_admin' => true,
+                    'es_dueno' => true,
+                    'es_contabilidad' => true,
+                    'puede_forzar_resincronizacion' => true,
+                    'puede_ver_logs_en_vivo' => true,
+                    'puede_auditar_recaudacion' => true,
+                    'puede_aprobar_caja_chica' => true,
+                ],
+                'redirect_to' => '/dashboard/super-admin',
                 'sucursal' => [
                     'id' => 0,
                     'nombre' => 'Todas las Sucursales (Global)',

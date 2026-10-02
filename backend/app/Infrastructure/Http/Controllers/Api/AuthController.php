@@ -24,15 +24,34 @@ class AuthController extends Controller
 
     public function loginWeb(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|string',
-            'password' => 'required|string',
-        ]);
+        // 1. Soporte de ingreso directo con PIN (Mismo PIN de la APK, ej: 9999 para Admin)
+        $pin = $request->input('pin');
+        if (!empty($pin)) {
+            $request->merge(['pin' => (string) $pin]);
+            return $this->loginPin($request);
+        }
+
+        $email = $request->input('email');
+        $password = $request->input('password');
+
+        // Si en el campo email se introdujo un PIN de 4 dígitos (ej: 9999)
+        if (!empty($email) && strlen(trim($email)) === 4 && ctype_digit(trim($email))) {
+            $request->merge(['pin' => trim($email)]);
+            return $this->loginPin($request);
+        }
+
+        // Si no se proporcionaron credenciales
+        if (empty($email) || empty($password)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Por favor ingresa tu PIN de 4 dígitos o tu correo y contraseña.',
+            ], 422);
+        }
 
         try {
             $resultado = $this->loginWebUseCase->ejecutar(
-                $validated['email'],
-                $validated['password']
+                (string) $email,
+                (string) $password
             );
 
             return response()->json([

@@ -53,6 +53,50 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async loginPin(pin) {
+      this.isLoading = true
+      this.errorMessage = null
+
+      try {
+        const response = await axiosIns.post('/auth/login-pin', {
+          pin: String(pin).trim(),
+        })
+
+        if (response.data && response.data.success) {
+          const data = response.data.data
+          const token = data.token
+          const usuario = data.usuario
+          const permisos = data.permisos || {
+            es_super_admin: usuario.rol === 'admin' || usuario.rol === 'super_admin',
+            es_dueno: ['admin', 'super_admin', 'dueno'].includes(usuario.rol),
+            es_contabilidad: ['admin', 'super_admin', 'contadora', 'auxiliar_contable'].includes(usuario.rol),
+            puede_forzar_resincronizacion: true,
+            puede_ver_logs_en_vivo: true,
+            puede_auditar_recaudacion: true,
+            puede_aprobar_caja_chica: true,
+          }
+
+          this.token = token
+          this.user = usuario
+          this.permissions = permisos
+
+          localStorage.setItem('c22_token', token)
+          localStorage.setItem('c22_user', JSON.stringify(usuario))
+          localStorage.setItem('c22_permissions', JSON.stringify(permisos))
+
+          return { success: true, redirect_to: data.redirect_to || '/dashboard/super-admin' }
+        } else {
+          throw new Error(response.data?.error || 'PIN incorrecto o usuario inactivo')
+        }
+      } catch (err) {
+        const msg = err.response?.data?.error || err.message || 'Error al autenticar PIN'
+        this.errorMessage = msg
+        return { success: false, error: msg }
+      } finally {
+        this.isLoading = false
+      }
+    },
+
     logout() {
       this.token = null
       this.user = null
