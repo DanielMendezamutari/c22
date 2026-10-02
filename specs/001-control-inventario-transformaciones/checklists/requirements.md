@@ -17,16 +17,16 @@
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Fiel Reflejo Conteo Apertura, US24 Rol Cajera y US25 Conteo Resiliente)
+- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Conteo Apertura, US24 Rol Cajera, US25 Conteo Resiliente y US26 Reconteo con Memoria)
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness
 
-- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-053)
+- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-057)
 - [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-014)
+- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-015)
 - [x] No implementation details leak into specification
 
 ## Notes
@@ -39,4 +39,5 @@
 - Especificado fiel reflejo del conteo físico inicial de apertura en PDF y persistencia inmutable (US23 / FR-044).
 - Especificado rol Cajera con suplencia operativa de conteo apertura/cierre, auditoría visual en tiempo real y confirmación de comisiones con foto (US24 / FR-045 a FR-049 / SC-013).
 - Especificado conteo resiliente en APK: buscador reactivo, refresco sin pérdida de avance de conteo y contabilización provisional de productos nuevos con alerta al Admin (US25 / FR-050 a FR-053 / SC-014).
+- Especificado desbloqueo de reconteo de inventario autorizado por Administrador desde su APK con memoria de conteo previo precargada y corrección selectiva (US26 / FR-054 a FR-057 / SC-015).
 - Spec ready for technical planning (`/speckit-plan`).

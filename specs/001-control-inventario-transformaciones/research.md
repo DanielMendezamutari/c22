@@ -145,3 +145,18 @@
 - **Alternatives considered**:
   - *Bloquear la apertura hasta que el Admin cree el producto*: Rechazado por paralizar la operación comercial del local si el Administrador no está disponible al momento del cambio de turno.
 
+---
+
+## 16. Desbloqueo de Reconteo de Inventario Autorizado por Administrador con Memoria de Conteo Previo (US26)
+
+- **Decision**:
+  1. **Permiso Efímero Controlado por Admin**: El Administrador habilita temporalmente el reconteo (`POST /turnos/{id}/autorizar-reconteo`) especificando tipo (`apertura` o `cierre`) y motivo. La bandera `permite_reconteo = true` se desactiva de forma inmediata y automática (`permite_reconteo = false`) tan pronto como el empleado aplica la corrección.
+  2. **Memoria de Conteo Previo (Zero-Friction UX)**: Al ingresar a la pantalla de corte en modo reconteo, la aplicación consulta `GET /turnos/{id}/corte-inicial` (o corte de cierre) y precarga el 100% de los valores digitados con anterioridad en `_cantidadesDigitadas`. El empleado no tiene que volver a contar decenas de productos; únicamente localiza el ítem donde se equivocó (ej. anota 24 en lugar de 2), ajusta la cantidad y confirma.
+  3. **Trazabilidad Inmutable en Base de Datos**: En el backend, la aplicación del reconteo (`POST /turnos/{id}/aplicar-reconteo`) se ejecuta dentro de un bloque transaccional atómico `DB::transaction()`. Compara los valores previos contra los nuevos, inserta un registro en `auditorias_reconteo` con el JSON de diferencias (`detalles_json`), actualiza `cortes_inventario`, recalcula el stock del turno y auto-consume el permiso de reconteo.
+  4. **Emisión de Acta Corregida**: Toda reimpresión o generación de PDF posterior incorpora un rótulo distintivo indicando "Versión Corregida con Autorización del Administrador [Nombre]" junto con la fecha y hora de la enmienda.
+- **Rationale**: Errores humanos de digitación rápida ocurren con frecuencia en barra. Sin este mecanismo, un turno quedaba bloqueado con datos erróneos de apertura o cierre, corrompiendo la auditoría de ventas y obligando a manipulaciones directas en la base de datos. Exigir autorización del Administrador previene fraudes, mientras que la precarga de memoria evita el agotamiento y resistencia del personal operativo.
+- **Alternatives considered**:
+  - *Permitir edición libre sin autorización previa*: Rechazado tajantemente porque permitiría a barmen inescrupulosos alterar conteos pasados para encubrir faltantes o hurtos.
+  - *Reiniciar el conteo desde cero (pantalla vacía)*: Rechazado por ineficiencia operativa extrema; un barman que contó 80 productos no debe verse forzado a recontar 79 ítems correctos por un solo error.
+
+

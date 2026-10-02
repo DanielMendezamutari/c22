@@ -959,4 +959,91 @@ Permite al Administrador asociar el ítem provisional a un producto preexistente
 }
 ```
 
+---
+
+## 13. Endpoints para Desbloqueo y Aplicación de Reconteo (US26)
+
+### `POST /turnos/{id}/autorizar-reconteo`
+Permite al Administrador conceder permiso efímero de corrección de conteo para un turno sellado.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "tipo_corte": "apertura",
+  "motivo": "Garzón se equivocó digitando 2 Coronas en vez de 24"
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Reconteo autorizado exitosamente para corte de apertura",
+  "data": {
+    "turno_id": 15,
+    "permite_reconteo": true,
+    "reconteo_tipo": "apertura",
+    "reconteo_autorizado_por": "Administrador General",
+    "reconteo_autorizado_at": "2026-10-01 22:15:00",
+    "reconteo_motivo": "Garzón se equivocó digitando 2 Coronas en vez de 24"
+  }
+}
+```
+- **Response 403 Forbidden**:
+```json
+{
+  "success": false,
+  "error": "Solo un usuario con rol de Administrador puede autorizar reconteos"
+}
+```
+
+---
+
+### `POST /turnos/{id}/aplicar-reconteo`
+Permite al barman o cajera enviar las cantidades corregidas (conservando la memoria precargada del conteo previo). Se ejecuta bajo `DB::transaction()`, registra la auditoría de diferencias y auto-consume el permiso.
+
+- **Headers**: `Authorization: Bearer <token>`
+- **Request**:
+```json
+{
+  "tipo_corte": "apertura",
+  "corte_corregido": [
+    { "producto_id": 1, "cantidad": 48.00 },
+    { "producto_id": 2, "cantidad": 24.00 },
+    { "producto_id": 3, "cantidad": 3.75 }
+  ]
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Reconteo aplicado exitosamente. El turno ha sido re-sellado y el inventario recalculado.",
+  "data": {
+    "turno_id": 15,
+    "tipo_corte": "apertura",
+    "permite_reconteo": false,
+    "auditoria_id": 3,
+    "cambios_realizados": [
+      {
+        "producto_id": 2,
+        "nombre_producto": "Corona Botella 330ml",
+        "valor_anterior": 2.00,
+        "valor_nuevo": 24.00,
+        "diferencia": 22.00
+      }
+    ],
+    "fecha_reconteo": "2026-10-01 22:18:30"
+  }
+}
+```
+- **Response 400 Bad Request**:
+```json
+{
+  "success": false,
+  "error": "El turno no tiene autorización activa para reconteo o el permiso ya expiró"
+}
+```
+
+
 

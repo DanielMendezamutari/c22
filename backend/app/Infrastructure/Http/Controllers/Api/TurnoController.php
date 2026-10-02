@@ -7,12 +7,17 @@ use App\Application\UseCases\Turnos\CerrarTurnoUseCase;
 use App\Application\UseCases\Turnos\SolicitarCobroCajeraUseCase;
 use App\Infrastructure\Http\Requests\CorteInventarioRequest;
 use App\Infrastructure\Persistence\Eloquent\Models\Producto;
+use App\Infrastructure\Persistence\Eloquent\Models\Turno;
+use App\Infrastructure\Persistence\Eloquent\Models\CorteInventario;
+use App\Infrastructure\Persistence\Eloquent\Models\AuditoriaReconteo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class TurnoController extends Controller
+
 {
     private SolicitarCobroCajeraUseCase $cobroUseCase;
     private AbrirTurnoUseCase $abrirUseCase;
@@ -224,7 +229,7 @@ class TurnoController extends Controller
     public function corteInicial(int $id): JsonResponse
     {
         try {
-            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario', 'realizadoPor', 'cerradoPor'])->find($id);
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'usuario', 'realizadoPor', 'cerradoPor', 'reconteoAutorizadoPor'])->find($id);
             if (!$turno) {
                 return response()->json([
                     'success' => false,
@@ -331,12 +336,18 @@ class TurnoController extends Controller
                     'tipo_turno' => $turno->tipo_turno ?? 'noche',
                     'estado' => $turno->estado,
                     'es_suplencia' => (bool) ($turno->es_suplencia ?? false),
+                    'permite_reconteo' => (bool) ($turno->permite_reconteo ?? false),
+                    'reconteo_tipo' => $turno->reconteo_tipo,
+                    'reconteo_motivo' => $turno->reconteo_motivo,
+                    'reconteo_autorizado_por' => $turno->reconteoAutorizadoPor ? ($turno->reconteoAutorizadoPor->nombre . ' ' . $turno->reconteoAutorizadoPor->apellido) : null,
+                    'reconteo_autorizado_at' => $turno->reconteo_autorizado_at ? $turno->reconteo_autorizado_at->toIso8601String() : null,
                     'realizado_por' => $turno->realizadoPor ? ($turno->realizadoPor->nombre . ' ' . $turno->realizadoPor->apellido) : null,
                     'cerrado_por' => $turno->cerradoPor ? ($turno->cerradoPor->nombre . ' ' . $turno->cerradoPor->apellido) : null,
                     'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : now()->toIso8601String(),
                     'items' => $todosLosItems,
                 ],
             ]);
+
         } catch (Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -417,6 +428,9 @@ class TurnoController extends Controller
                     'fecha_apertura' => $t->fecha_apertura ? $t->fecha_apertura->toDateTimeString() : null,
                     'fecha_cierre' => $t->fecha_cierre ? $t->fecha_cierre->toDateTimeString() : null,
                     'total_comision_bruta' => (float) $t->total_comision_bruta,
+                    'permite_reconteo' => (bool) ($t->permite_reconteo ?? false),
+                    'reconteo_tipo' => $t->reconteo_tipo,
+                    'reconteo_motivo' => $t->reconteo_motivo,
                 ];
             });
 
@@ -474,6 +488,9 @@ class TurnoController extends Controller
                     'fecha_apertura' => $turno->fecha_apertura ? $turno->fecha_apertura->toIso8601String() : null,
                     'total_transformaciones_netas' => (int) $turno->total_transformaciones_netas,
                     'total_comision_bruta' => (float) $turno->total_comision_bruta,
+                    'permite_reconteo' => (bool) ($turno->permite_reconteo ?? false),
+                    'reconteo_tipo' => $turno->reconteo_tipo,
+                    'reconteo_motivo' => $turno->reconteo_motivo,
                 ] : null,
             ]);
         } catch (Throwable $e) {
@@ -483,4 +500,180 @@ class TurnoController extends Controller
             ], 400);
         }
     }
+
+    public function autorizarReconteo(Request $request, int $id): JsonResponse
+    {
+        try {
+            $user = auth('sanctum')->user() ?? $request->user();
+            if ($user && $user->rol !== 'admin') {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Solo un usuario con rol de Administrador puede autorizar reconteos.',
+                ], 403);
+            }
+
+            $request->validate([
+                'tipo_corte' => 'required|in:apertura,cierre',
+                'motivo' => 'required|string|max:255',
+            ]);
+
+            $turno = Turno::with(['sucursal', 'usuario'])->find($id);
+            if (!$turno) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "El turno #{$id} no existe.",
+                ], 404);
+            }
+
+            $tipoCorte = $request->input('tipo_corte');
+            $motivo = $request->input('motivo');
+
+            $turno->update([
+                'permite_reconteo' => true,
+                'reconteo_tipo' => $tipoCorte,
+                'reconteo_autorizado_por_id' => $user?->id ?? 1,
+                'reconteo_autorizado_at' => now(),
+                'reconteo_motivo' => $motivo,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Reconteo autorizado exitosamente para corte de {$tipoCorte}",
+                'data' => [
+                    'turno_id' => $turno->id,
+                    'permite_reconteo' => true,
+                    'reconteo_tipo' => $tipoCorte,
+                    'reconteo_autorizado_por' => ($user->nombre ?? 'Admin') . ' ' . ($user->apellido ?? ''),
+                    'reconteo_autorizado_at' => now()->toIso8601String(),
+                    'reconteo_motivo' => $motivo,
+                ],
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function aplicarReconteo(Request $request, int $id): JsonResponse
+    {
+        try {
+            $user = auth('sanctum')->user() ?? $request->user();
+            $turno = Turno::with(['sucursal', 'usuario', 'reconteoAutorizadoPor'])->find($id);
+            if (!$turno) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "El turno #{$id} no existe.",
+                ], 404);
+            }
+
+            if (!$turno->permite_reconteo) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'El turno no tiene autorización activa para reconteo o el permiso ya expiró.',
+                ], 400);
+            }
+
+            $request->validate([
+                'tipo_corte' => 'required|in:apertura,cierre',
+                'corte_corregido' => 'required|array|min:1',
+            ]);
+
+            $tipoCorte = $request->input('tipo_corte');
+            $corteCorregido = $request->input('corte_corregido');
+
+            $cambiosRealizados = [];
+
+            DB::transaction(function () use ($turno, $tipoCorte, $corteCorregido, $user, &$cambiosRealizados) {
+                $dbTipos = ($tipoCorte === 'apertura') ? ['inicial', 'apertura'] : ['final', 'cierre'];
+
+                // Cortes previos del turno para este tipo
+                $cortesPrevios = CorteInventario::with('producto')
+                    ->where('turno_id', $turno->id)
+                    ->whereIn('tipo_corte', $dbTipos)
+                    ->get();
+
+                $cortesPorProducto = $cortesPrevios->keyBy('producto_id');
+
+                foreach ($corteCorregido as $item) {
+                    $pid = isset($item['producto_id']) && $item['producto_id'] !== null ? (int) $item['producto_id'] : null;
+                    $cantNueva = (float) ($item['cantidad'] ?? 0.0);
+                    $esProv = (bool) ($item['es_provisional'] ?? false);
+                    $nombreProv = $item['nombre_provisional'] ?? ($item['nombre'] ?? null);
+
+                    $corteExistente = null;
+                    if ($pid) {
+                        $corteExistente = $cortesPorProducto->get($pid);
+                    } elseif ($esProv && $nombreProv) {
+                        $corteExistente = $cortesPrevios->where('es_provisional', true)->where('nombre_provisional', $nombreProv)->first();
+                    }
+
+                    $cantAnterior = $corteExistente ? (float) $corteExistente->cantidad : 0.0;
+                    $nombreProd = $corteExistente?->producto?->nombre ?? ($nombreProv ?? "Producto #{$pid}");
+
+                    if (abs($cantNueva - $cantAnterior) > 0.001) {
+                        $diff = round($cantNueva - $cantAnterior, 2);
+                        $cambiosRealizados[] = [
+                            'producto_id' => $pid,
+                            'nombre_producto' => $nombreProd,
+                            'valor_anterior' => $cantAnterior,
+                            'valor_nuevo' => $cantNueva,
+                            'diferencia' => $diff,
+                        ];
+
+                        if ($corteExistente) {
+                            $corteExistente->update(['cantidad' => $cantNueva]);
+                        } else {
+                            CorteInventario::create([
+                                'turno_id' => $turno->id,
+                                'producto_id' => $pid,
+                                'es_provisional' => $esProv,
+                                'nombre_provisional' => $nombreProv,
+                                'tipo_corte' => ($tipoCorte === 'apertura') ? 'inicial' : 'final',
+                                'cantidad' => $cantNueva,
+                            ]);
+                        }
+                    }
+                }
+
+                // Registrar log de auditoría
+                $adminId = $turno->reconteo_autorizado_por_id ?? ($user?->rol === 'admin' ? $user->id : 1);
+                $usuarioId = $user?->id ?? $turno->barman_id;
+
+                AuditoriaReconteo::create([
+                    'turno_id' => $turno->id,
+                    'usuario_id' => $usuarioId,
+                    'admin_id' => $adminId,
+                    'tipo_corte' => $tipoCorte,
+                    'motivo' => $turno->reconteo_motivo ?? 'Corrección de error de conteo',
+                    'detalles_json' => $cambiosRealizados,
+                ]);
+
+                // Auto-consumir permiso de reconteo (Inmutabilidad re-sellada)
+                $turno->update([
+                    'permite_reconteo' => false,
+                    'reconteo_tipo' => null,
+                ]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reconteo aplicado exitosamente. El turno ha sido re-sellado y el inventario recalculado.',
+                'data' => [
+                    'turno_id' => $turno->id,
+                    'tipo_corte' => $tipoCorte,
+                    'permite_reconteo' => false,
+                    'cambios_realizados' => $cambiosRealizados,
+                    'fecha_reconteo' => now()->toIso8601String(),
+                ],
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }
+

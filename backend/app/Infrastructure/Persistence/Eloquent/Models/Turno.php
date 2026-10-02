@@ -28,13 +28,20 @@ class Turno extends Model
         'codigo_recibo_cobro',
         'foto_comprobante_cobro',
         'fecha_cobro',
+        'permite_reconteo',
+        'reconteo_tipo',
+        'reconteo_autorizado_por_id',
+        'reconteo_autorizado_at',
+        'reconteo_motivo',
     ];
 
     protected $casts = [
         'fecha_apertura' => 'datetime',
         'fecha_cierre' => 'datetime',
         'fecha_cobro' => 'datetime',
+        'reconteo_autorizado_at' => 'datetime',
         'es_suplencia' => 'boolean',
+        'permite_reconteo' => 'boolean',
         'total_transformaciones_netas' => 'integer',
         'total_comision_bruta' => 'decimal:2',
         'total_sancion_descontada' => 'decimal:2',
@@ -61,6 +68,11 @@ class Turno extends Model
         return $this->belongsTo(Usuario::class, 'cerrado_por_usuario_id');
     }
 
+    public function reconteoAutorizadoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'reconteo_autorizado_por_id');
+    }
+
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'barman_id');
@@ -80,4 +92,10 @@ class Turno extends Model
     {
         return $this->hasOne(AuditoriaVenta::class, 'turno_id');
     }
+
+    public function auditoriasReconteo(): HasMany
+    {
+        return $this->hasMany(AuditoriaReconteo::class, 'turno_id');
+    }
 }
+

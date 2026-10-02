@@ -11,11 +11,78 @@ import '../traspasos/enviar_traspaso_screen.dart';
 import '../traspasos/recibir_traspaso_screen.dart';
 import '../../providers/auth_provider.dart';
 
-class DashboardBarmanScreen extends ConsumerWidget {
+class DashboardBarmanScreen extends ConsumerStatefulWidget {
   const DashboardBarmanScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardBarmanScreen> createState() => _DashboardBarmanScreenState();
+}
+
+class _DashboardBarmanScreenState extends ConsumerState<DashboardBarmanScreen> {
+  bool _permiteReconteo = false;
+  String _reconteoTipo = 'apertura';
+  String? _reconteoMotivo;
+  int? _turnoActivoId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consultarEstadoTurno();
+    });
+  }
+
+  Future<void> _consultarEstadoTurno() async {
+    final auth = ref.read(authProvider);
+    try {
+      final client = ref.read(apiClientProvider);
+      final res = await client.get('/turnos/activo', queryParameters: {
+        'barman_id': auth.usuarioId,
+        'sucursal_id': auth.sucursalId,
+      });
+
+      if (res.statusCode == 200 && res.data['success'] == true && res.data['data'] != null) {
+        final d = res.data['data'];
+        final id = d['id'] as int;
+        ref.read(authProvider.notifier).actualizarTurnoActivo(id);
+        if (mounted) {
+          setState(() {
+            _turnoActivoId = id;
+            _permiteReconteo = d['permite_reconteo'] == true || d['permite_reconteo'] == 1;
+            _reconteoTipo = (d['reconteo_tipo'] ?? 'apertura').toString();
+            _reconteoMotivo = d['reconteo_motivo']?.toString();
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _permiteReconteo = false;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _abrirPantallaReconteo(BuildContext context) async {
+    final tipo = _reconteoTipo == 'cierre' ? TipoOperacionCorte.cierre : TipoOperacionCorte.apertura;
+    final res = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CorteInventarioScreen(
+          tipoOperacion: tipo,
+          turnoId: _turnoActivoId,
+          esModoReconteo: true,
+          reconteoTipo: _reconteoTipo,
+        ),
+      ),
+    );
+
+    if (res == true) {
+      _consultarEstadoTurno();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
 
     return Scaffold(
@@ -50,14 +117,91 @@ class DashboardBarmanScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 0.95,
-          children: [
+      body: RefreshIndicator(
+        onRefresh: _consultarEstadoTurno,
+        color: Colors.amberAccent,
+        backgroundColor: const Color(0xFF1B2332),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              if (_permiteReconteo) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFB7950B), Color(0xFFD4AC0D)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.withOpacity(0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const CircleAvatar(
+                        backgroundColor: Colors.white24,
+                        radius: 22,
+                        child: Icon(Icons.restart_alt, color: Colors.white, size: 28),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '¡RECONTEO AUTORIZADO (${_reconteoTipo.toUpperCase()})!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _reconteoMotivo ?? 'El administrador autorizó corregir el conteo previo.',
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1B2332),
+                          foregroundColor: Colors.amberAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        onPressed: () => _abrirPantallaReconteo(context),
+                        child: const Text(
+                          'CORREGIR',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 0.95,
+                children: [
             _buildActionCard(
               context: context,
               title: 'REGISTRAR RELLENO',
@@ -131,6 +275,33 @@ class DashboardBarmanScreen extends ConsumerWidget {
                           style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 16),
+
+                        if (_permiteReconteo) ...[
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.amberAccent, width: 1.5),
+                            ),
+                            child: ListTile(
+                              leading: const Icon(Icons.restart_alt, color: Colors.amberAccent, size: 30),
+                              title: Text(
+                                '🔄 CORREGIR RECONTEO (${_reconteoTipo.toUpperCase()})',
+                                style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                'Autorizado por Admin: ${_reconteoMotivo ?? "Corregir conteo"}. Valores previos precargados.',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                              onTap: () {
+                                Navigator.of(ctx).pop();
+                                _abrirPantallaReconteo(context);
+                              },
+                            ),
+                          ),
+                          const Divider(color: Colors.white24),
+                        ],
 
                         // Si hay turno activo: Botón para Ver/Re-imprimir Conteo Inicial las veces que quiera
                         if (updatedAuth.turnoActivoId != null) ...[
@@ -269,9 +440,12 @@ class DashboardBarmanScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  ),
+),
+);
+}
 
   Widget _buildActionCard({
     required BuildContext context,
@@ -512,6 +686,7 @@ class DashboardBarmanScreen extends ConsumerWidget {
 
   Future<int?> _asegurarTurnoActivo(BuildContext context, WidgetRef ref, AuthState auth) async {
     if (auth.turnoActivoId != null) {
+      _turnoActivoId ??= auth.turnoActivoId;
       return auth.turnoActivoId;
     }
 
@@ -523,8 +698,17 @@ class DashboardBarmanScreen extends ConsumerWidget {
       });
 
       if (res.statusCode == 200 && res.data['success'] == true && res.data['data'] != null) {
-        final id = res.data['data']['id'] as int;
+        final d = res.data['data'];
+        final id = d['id'] as int;
         ref.read(authProvider.notifier).actualizarTurnoActivo(id);
+        if (mounted) {
+          setState(() {
+            _turnoActivoId = id;
+            _permiteReconteo = d['permite_reconteo'] == true || d['permite_reconteo'] == 1;
+            _reconteoTipo = (d['reconteo_tipo'] ?? 'apertura').toString();
+            _reconteoMotivo = d['reconteo_motivo']?.toString();
+          });
+        }
         return id;
       }
     } catch (_) {}

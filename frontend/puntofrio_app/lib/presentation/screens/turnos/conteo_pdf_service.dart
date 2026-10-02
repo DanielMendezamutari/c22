@@ -89,7 +89,28 @@ class ConteoPdfService {
               ],
             ),
           ),
-          pw.SizedBox(height: 16),
+          pw.SizedBox(height: 10),
+
+          if (turnoData?['es_reconteo'] == true || ((turnoData?['reconteo_version'] as num?) ?? 0) > 0) ...[
+            pw.Container(
+              margin: const pw.EdgeInsets.only(bottom: 10),
+              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.amber100,
+                borderRadius: pw.BorderRadius.circular(4),
+                border: pw.Border.all(color: PdfColors.amber800, width: 1),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.center,
+                children: [
+                  pw.Text(
+                    '⚠️ ACTA CORREGIDA POR RECONTEO AUTORIZADO POR ADMINISTRACIÓN',
+                    style: pw.TextStyle(color: PdfColors.amber900, fontWeight: pw.FontWeight.bold, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           // 2. Ficha de Información del Turno
           pw.Container(

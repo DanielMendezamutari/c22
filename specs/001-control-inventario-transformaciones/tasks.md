@@ -503,21 +503,37 @@
 
 ---
 
+## Phase 31: User Story 26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador con Memoria de Conteo Previo y Corrección Selectiva (Priority: P1)
+
+**Goal**: Permitir al Administrador desbloquear temporalmente el corte de un turno sellado para que el barman/garzón corrija errores de conteo en la app móvil, precargando el 100% de los valores previamente contados (memoria) para modificar únicamente el ítem erróneo, auto-consumiendo el permiso, auditando las diferencias y regenerando el acta oficial.  
+**Independent Test**: Autorizar reconteo de apertura desde el teléfono del Admin con motivo justificado; verificar que en el teléfono del barman aparezca el aviso dorado; abrir la pantalla de conteo y constatar que todos los valores previamente digitados aparezcan intactos; cambiar solo 1 producto (ej. 2 a 24); confirmar la corrección; validar que el servidor registre el diff en `auditorias_reconteo`, recalcule el inventario, revoque el permiso y el PDF oficial refleje la leyenda de corrección.
+
+- [X] T180 [P] [US26] Crear migración para campos de reconteo en `turnos` (`permite_reconteo`, `reconteo_tipo`, `reconteo_autorizado_por_id`, `reconteo_autorizado_at`, `reconteo_motivo`) y tabla `auditorias_reconteo` (`turno_id`, `usuario_id`, `admin_id`, `tipo_corte`, `motivo`, `detalles_json`) en backend/database/migrations/2026_10_01_000003_add_reconteo_fields_and_table.php
+- [X] T181 [P] [US26] Crear modelo Eloquent `AuditoriaReconteo` con casts a JSON y relaciones con `Turno` y `Usuario` en backend/app/Infrastructure/Persistence/Eloquent/Models/AuditoriaReconteo.php
+- [X] T182 [US26] Implementar endpoint `POST /turnos/{id}/autorizar-reconteo` en `TurnoController.php` validando rol admin, guardando `permite_reconteo = true`, `reconteo_tipo` y `reconteo_motivo` en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T183 [US26] Implementar endpoint `POST /turnos/{id}/aplicar-reconteo` con `DB::transaction()`, comparación de conteo anterior vs nuevo, inserción en `auditorias_reconteo`, actualización en `cortes_inventario`, recálculo de stock y auto-consumo `permite_reconteo = false` en backend/app/Infrastructure/Http/Controllers/Api/TurnoController.php
+- [X] T184 [P] [US26] Registrar rutas de reconteo (`/turnos/{id}/autorizar-reconteo` y `/turnos/{id}/aplicar-reconteo`) en backend/routes/api.php
+- [X] T185 [US26] En `dashboard_admin_screen.dart`, añadir botón `[ 🔓 Habilitar Reconteo ]` en la tarjeta de turno y modal de diálogo con selector de tipo de corte ('apertura'/'cierre') y campo motivo en frontend/puntofrio_app/lib/presentation/screens/dashboard/dashboard_admin_screen.dart
+- [X] T186 [US26] En `dashboard_barman_screen.dart`, evaluar `turno.permite_reconteo == true` y renderizar Card destacada dorada/amarilla de aviso que redirija directamente a la corrección del corte en frontend/puntofrio_app/lib/presentation/screens/dashboard/dashboard_barman_screen.dart
+- [X] T187 [US26] En `corte_inventario_screen.dart`, implementar modo reconteo con precarga automática del 100% de los valores anteriores desde `GET /turnos/{id}/corte-inicial` en `_cantidadesDigitadas`, edición selectiva y envío a `POST /turnos/{id}/aplicar-reconteo` en frontend/puntofrio_app/lib/presentation/screens/turnos/corte_inventario_screen.dart
+- [X] T188 [US26] En `conteo_pdf_service.dart` y `cierre_turno_pdf_service.dart`, incorporar rótulo oficial "Versión Corregida con Autorización del Administrador [Nombre] - Motivo: [Motivo]" en frontend/puntofrio_app/lib/presentation/screens/turnos/conteo_pdf_service.dart y frontend/puntofrio_app/lib/presentation/screens/turnos/cierre_turno_pdf_service.dart
+- [X] T189 [US26] Validar el flujo operativo completo de reconteo con autorización, memoria previa y re-sellado según Scenario 23 en specs/001-control-inventario-transformaciones/quickstart.md
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
 - **Phases 1 a 28**: Completadas y verificadas [X].
-- **Phase 29 (US24 - Rol Cajera y Suplencia en Barra)**:
-  - T164 y T165 sientan las bases de modelo y permisos [P].
-  - T166 y T167 implementan la lógica de negocio y endpoints en Laravel.
-  - T168 y T169 construyen la interfaz en Flutter.
-  - T170 adapta los servicios de PDF de conteo y cierre.
-  - T171 valida el escenario end-to-end (Scenario 21).
-- **Phase 30 (US25 - Conteo Resiliente, Búsqueda, Refresco y Producto Provisional)**:
-  - T172 y T174 preparan migraciones y endpoints de resolución de alertas en Laravel [P].
-  - T173 implementa la recepción de ítems provisionales y emisión de alertas en backend.
-  - T175, T176, T177 y T178 modernizan `corte_inventario_screen.dart` en Flutter (buscador, refresco sin pérdida, borrador en SharedPreferences y modal provisional).
-  - T179 valida el escenario end-to-end (Scenario 22).
+- **Phase 29 (US24 - Rol Cajera y Suplencia en Barra)**: Completada y verificada [X].
+- **Phase 30 (US25 - Conteo Resiliente, Búsqueda, Refresco y Producto Provisional)**: Completada y verificada [X].
+- **Phase 31 (US26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador)**:
+  - T180, T181 y T184 preparan la base de datos, modelo y enrutamiento en Laravel [P].
+  - T182 y T183 implementan la lógica de autorización y aplicación atómica de reconteo en `TurnoController.php`.
+  - T185 dota al Administrador de la capacidad de desbloqueo remoto en su APK.
+  - T186 y T187 implementan en el barman la detección del permiso, la precarga de memoria (100% de valores anteriores) y la confirmación selectiva en `corte_inventario_screen.dart`.
+  - T188 estampa la leyenda de versión corregida en los PDFs oficiales.
+  - T189 valida el escenario end-to-end (Scenario 23).
 
 ---
 
@@ -525,15 +541,14 @@
 
 ```bash
 # Tareas Backend y Base de Datos Paralelas:
-Task T164: "Rol cajera en RolUsuario.php y LoginPinUseCase.php"
-Task T165: "Migración de suplencia en turnos"
-Task T172: "Migración de campos provisionales en cortes_inventario"
-Task T174: "Endpoints aprobar y unificar producto en AlertaController.php"
+Task T180: "Migración de reconteo en turnos y tabla auditorias_reconteo"
+Task T181: "Modelo Eloquent AuditoriaReconteo"
+Task T184: "Rutas de reconteo en api.php"
 
 # Tareas Frontend Paralelas:
-Task T168: "DashboardCajeraScreen en Flutter"
-Task T175: "Buscador reactivo en corte_inventario_screen.dart"
-Task T177: "Persistencia de borrador SharedPreferences en corte_inventario_screen.dart"
+Task T185: "Botón y modal de habilitación de reconteo en dashboard_admin_screen.dart"
+Task T186: "Aviso de reconteo autorizado en dashboard_barman_screen.dart"
+Task T188: "Rótulo de versión corregida en conteo_pdf_service.dart y cierre_turno_pdf_service.dart"
 ```
 
 ---
@@ -541,7 +556,3 @@ Task T177: "Persistencia de borrador SharedPreferences en corte_inventario_scree
 ## Notes
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
-
-
-
-

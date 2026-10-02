@@ -331,3 +331,34 @@ flutter run
    - El producto aparece en la lista con distintivo *"Provisional"*.
    - Confirmar el corte: el Administrador recibe inmediatamente una Alerta de Auditoría en su panel para aprobar o unificar el producto.
 
+---
+
+### Scenario 23: Desbloqueo de Reconteo de Inventario Autorizado por Administrador con Memoria de Conteo Previo (US26)
+
+1. **Detección del Error en Barra y Contacto con el Admin**:
+   - El barman o garzón abrió turno o realizó el cierre, pero se equivocó digitando `2.00` en lugar de `24.00` para "Corona Botella 330ml".
+   - El turno ya quedó sellado e inmutable. El empleado se comunica con el Administrador explicando la equivocación.
+2. **Autorización Remota desde la APK del Administrador**:
+   - El Administrador ingresa a su Dashboard en su teléfono Android.
+   - En la tarjeta del turno respectivo, presiona el botón `[ 🔓 Habilitar Reconteo ]`.
+   - Se abre un modal de autorización donde selecciona el corte a enmendar (`Apertura` o `Cierre`) e introduce el motivo (ej. "Garzón anotó 2 en vez de 24 cajas de Corona").
+   - Presiona "CONFIRMAR AUTORIZACIÓN". El sistema ejecuta `POST /turnos/{id}/autorizar-reconteo` y notifica éxito.
+3. **Detección Reactiva y Memoria Precargada en el Teléfono del Barman**:
+   - En el teléfono del barman, aparece de forma destacada una Card de aviso dorada: *"⚠️ Reconteo Autorizado por Administración. Toca aquí para corregir tu conteo"*.
+   - Al tocar el aviso o ingresar a "Corte de Inventario", la pantalla detecta el modo reconteo activo.
+   - La aplicación precarga automáticamente el 100% de los valores previamente contados consultando `GET /turnos/{id}/corte-inicial` (o cierre).
+   - El barman ve todos sus productos con las cantidades que ya había ingresado intactas.
+4. **Corrección Quirúrgica y Confirmación Atómica**:
+   - El barman no tiene que volver a contar toda la barra; simplemente ubica "Corona Botella 330ml" y cambia el `2.00` por `24.00`.
+   - Presiona el botón "CONFIRMAR CORRECCIÓN DE CONTEO".
+   - La aplicación envía `POST /turnos/{id}/aplicar-reconteo`.
+   - El servidor, dentro de `DB::transaction()`:
+     - Registra la auditoría en `auditorias_reconteo` con el valor anterior (`2.00`), nuevo (`24.00`) y diferencia (`+22.00`).
+     - Actualiza `cortes_inventario` y recalcula el balance de stock en barra.
+     - Auto-consume el permiso revocando `permite_reconteo = false`.
+5. **Acta Oficial Corregida y Re-Sellado**:
+   - El diálogo de confirmación presenta el botón para ver o compartir el PDF.
+   - El documento generado incorpora la leyenda oficial: *"Versión Corregida con Autorización de: [Nombre Administrador] - Motivo: Garzón anotó 2 en vez de 24"*.
+   - El turno queda nuevamente sellado y protegido contra cualquier edición no autorizada.
+
+

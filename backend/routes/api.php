@@ -108,6 +108,11 @@ Route::prefix('v1')->group(function () {
 
     // Monitoreo Operativo e Informe de Sucursal en Vivo/Histórico - User Story 20
     Route::get('/auditoria/sucursal/{sucursal_id}/informe-turno', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'informeTurnoSucursal']);
+
+    // Desbloqueo y Aplicación de Reconteo de Inventario - User Story 26
+    Route::post('/turnos/{id}/autorizar-reconteo', [TurnoController::class, 'autorizarReconteo']);
+    Route::post('/turnos/{id}/aplicar-reconteo', [TurnoController::class, 'aplicarReconteo']);
 });
+
 
 

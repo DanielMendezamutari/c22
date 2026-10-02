@@ -121,6 +121,12 @@ Jornada de 12 horas asignada a un barman en una sucursal específica con auditor
 - `codigo_recibo_cobro`: VARCHAR(20) NULLABLE UNIQUE (Código alfanumérico único para la pantalla a cajera)
 - `foto_comprobante_cobro`: VARCHAR(255) NULLABLE (Ruta de la fotografía obligatoria del dinero en efectivo o comprobante de transferencia bancaria capturada al cobrar)
 - `fecha_cobro`: DATETIME NULLABLE
+- `permite_reconteo`: BOOLEAN NOT NULL DEFAULT FALSE (Verdadero si el Administrador autorizó la reapertura temporal del conteo)
+- `reconteo_tipo`: ENUM('apertura', 'cierre') NULLABLE (Corte específico autorizado para ser corregido)
+- `reconteo_autorizado_por_id`: BIGINT UNSIGNED NULLABLE (ID del Administrador que concedió el desbloqueo)
+  - *FK*: `reconteo_autorizado_por_id` REFERENCES `usuarios(id)`
+- `reconteo_autorizado_at`: DATETIME NULLABLE
+- `reconteo_motivo`: VARCHAR(255) NULLABLE (Motivo declarado por el Administrador para justificar la corrección)
 - `created_at`, `updated_at`: TIMESTAMP
 
 ---
@@ -294,3 +300,20 @@ Catálogo comercial de distribuidores, cervecerías y proveedores de insumos.
 - `direccion`: VARCHAR(255) NULLABLE
 - `activo`: BOOLEAN NOT NULL DEFAULT TRUE
 - `created_at`, `updated_at`: TIMESTAMP
+
+---
+
+### 2.15 `auditorias_reconteo` (Trazabilidad de Correcciones de Conteo)
+Registro inmutable de auditoría para cada corrección autorizada y aplicada a un corte de apertura o cierre.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `turno_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE CASCADE
+- `usuario_id`: BIGINT UNSIGNED NOT NULL (El empleado que ejecutó la corrección física)
+  - *FK*: `usuario_id` REFERENCES `usuarios(id)`
+- `admin_id`: BIGINT UNSIGNED NOT NULL (El administrador que otorgó el permiso)
+  - *FK*: `admin_id` REFERENCES `usuarios(id)`
+- `tipo_corte`: ENUM('apertura', 'cierre') NOT NULL
+- `motivo`: VARCHAR(255) NOT NULL (Causa declarada por el administrador/empleado)
+- `detalles_json`: JSON NOT NULL (Array de objetos con `producto_id`, `nombre_producto`, `valor_anterior`, `valor_nuevo`, `diferencia`)
+- `created_at`, `updated_at`: TIMESTAMP
+

@@ -60,7 +60,11 @@
 - Q: ¿Cómo debe proceder el barman si llega un producto físico nuevo a barra que no existe en el catálogo del sistema? → A: Registro Provisional con Alerta de Auditoría al Administrador: El barman dispone de la opción "+ Contabilizar Producto no Listado", donde digita el nombre visible y la cantidad física. El sistema lo incorpora al corte del turno bajo estado 'provisional' y dispara inmediatamente una Alerta de Auditoría al Administrador para su validación, aprobación y categorización formal, impidiendo la proliferación de productos no autorizados.
 - Q: Cuando el barman o cajera registra un "+ Producto no listado" de forma provisional, ¿qué datos debe solicitar el formulario rápido en pantalla? → A: Opción A (Nombre + Cantidad + Switch "Es Licor/Botella Fraccionable"): El usuario escribe el nombre comercial, digita la cantidad física y activa opcionalmente el switch de si es licor fraccionable (habilitando cuartos 0.25, 0.50, 0.75) o unidad entera, permitiendo un registro ágil de barra con precisión de auditoría.
 - Q: ¿Dónde debe guardarse el borrador del conteo en progreso para garantizar que las cantidades no se pierdan? → A: Opción A (Almacenamiento Local Persistente con SharedPreferences): El avance del conteo se persiste automáticamente de forma local en el dispositivo indexado por sucursal y tipo de corte. Si la app se cierra, se reinicia o el celular se apaga por batería, al reingresar se restaura el 100% de las cantidades digitadas, eliminándose automáticamente solo cuando el corte es confirmado exitosamente en el servidor (o mediante botón explícito 'Reiniciar Conteo').
-- Q: Cuando el Administrador recibe la alerta de un producto provisional registrado en barra, ¿qué acciones debe poder ejecutar para resolver la alerta en el sistema? → A: Opción A (Aprobar como Nuevo o Unificar con Existente): El Administrador dispone de dos acciones en el panel de auditoría: 1) 'Aprobar como Oficial' (asigna categoría/receta e ingresa formalmente al catálogo maestro), o 2) 'Unificar con Producto Existente' (si el barman cometió un error tipográfico o usó un apodo coloquial, transfiriendo de inmediato las cantidades contadas al producto oficial).
+- Q: ¿Qué sistema de ventas y motor de base de datos tienen instalado en las computadoras de caja de cada sucursal? → A: Opción A (Base de Datos Local con Sync cada 1 minuto): Agente ligero local (Windows Service) conectado a la base de datos local que empuja tickets y ventas vía HTTPS hacia c22 Cloud cada 60 segundos para una experiencia en tiempo real sin abrir puertos de red.
+- Q: ¿Qué tecnología se utilizará para el Bot de WhatsApp silencioso que escuchará las fotos en el grupo? → A: Opción A (Evolution API / Baileys autoalojado + Gemini 1.5 Flash Vision API): Vinculado por código QR como WhatsApp Web sin costo por mensaje, opera en modo 100% silencioso e invisible (no responde en el grupo) y procesa los comprobantes bancarios y QRs extrayendo monto, banco, referencia y fecha en JSON estructurado.
+- Q: ¿Cómo deben iniciar sesión y qué nivel de acceso tendrán los usuarios de la Plataforma Web? → A: Opción A (Correo + Contraseña con JWT y 4 Roles Web): Super Admin / Desarrollador (Ing. Daniel con control técnico absoluto, logs, parámetros y métricas globales), Dueño (visión ejecutiva global y KPIs financieros consolidados), Contadora (control total de conciliación bancaria, comprobantes y arqueos) y Ayudante Contable (revisión y verificación operativa de comprobantes sin permiso de cierre final).
+- Q: ¿Cómo debe funcionar el algoritmo de conciliación entre ventas POS y comprobantes QR? → A: Conciliación Inteligente con Agente IA + Servidor MCP: La IA (Gemini) resuelve emparejamientos complejos (pagos divididos, transferencias diferidas, glosas de clientes vs comprobantes) entregando a la contadora y dueño un porcentaje de certeza y explicación justificada, complementado con un Copiloto IA conversacional en la web conectado por MCP.
+- Q: ¿Qué sistema operativo tienen las computadoras de caja en las sucursales donde se instalará el Agente Local? → A: Opción A (Windows 10/11 con ejecutable como Servicio de Windows): Instalador .exe liviano que arranca automáticamente con la computadora de caja en segundo plano, invisible para el cajero, monitoreando la BD local y transmitiendo ventas cada minuto.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -543,6 +547,26 @@ Como Barman o Garzón en turno de barra (y Cajera en suplencia), quiero disponer
 
 ---
 
+### User Story 26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador con Memoria de Conteo Previo (Priority: P1)
+
+Como Barman o Garzón de turno (o Cajera en suplencia), cuando detecto una equivocación en mi conteo físico inicial o de cierre ya enviado (ej. anoté 2 botellas en vez de 24 en una caja), quiero solicitar autorización a mi Administrador y que, al habilitármela desde su APK, mi pantalla de conteo se vuelva a abrir con todos los valores que ya había digitado previamente precargados en memoria, para corregir únicamente el producto en el que me equivoqué sin tener que recontar toda la barra desde cero.
+
+Como Administrador / Encargado, quiero disponer en mi APK móvil de la opción "Autorizar Reconteo" sobre cualquier turno activo o cerrado de la jornada, indicando qué corte se habilita (Apertura o Cierre) y registrando el motivo, con auto-consumo del permiso una vez guardada la corrección y registro inmutable de auditoría (valores anteriores vs. valores corregidos y versión actualizada del Acta PDF), para resolver contingencias humanas en barra manteniendo estricto control antifraude.
+
+**Independent Test**:
+1. Apertura con Error Inicial: El barman digita su conteo de apertura poniendo 2 Coronas por distracción y confirma el corte; el turno inicia con 2 Coronas en stock.
+2. Solicitud y Desbloqueo por Admin: El barman avisa al Administrador. El Administrador abre su APK, localiza el turno en vivo y pulsa "🔓 Habilitar Reconteo" seleccionando "Corte de Apertura".
+3. Memoria Precargada en Barman: En el celular del barman aparece el cintillo dorado "⚠️ Corrección de Conteo Autorizada". Al pulsar "Corregir Conteo", la pantalla se abre con las cantidades ya guardadas intactas (las 2 Coronas y los demás ítems con sus números exactos).
+4. Corrección Selectiva: El barman modifica únicamente las Coronas cambiando el valor a 24 y pulsa "Confirmar Corrección".
+5. Sello y Cierre de Permiso: El stock inicial del turno se actualiza a 24, el permiso de reconteo se cierra automáticamente impidiendo nuevas ediciones no autorizadas, el log de auditoría guarda `[Producto: Corona | Antes: 2.00 | Ahora: 24.00 | Autorizado por: Admin]`, y el PDF del Acta de Conteo se regenera con el rótulo "Versión 2 (Corregida con Autorización)".
+
+**Acceptance Scenarios**:
+1. **Given** un turno con corte ya confirmado, **When** el Administrador activa la opción de reconteo desde su panel móvil, **Then** la API marca `permite_reconteo = true`, registra `reconteo_tipo` ('apertura' o 'cierre') y el ID del Administrador autorizador.
+2. **Given** un turno con `permite_reconteo == true`, **When** el barman ingresa al módulo de corte, **Then** la app recupera los ítems del corte previo y los precarga reactivamente en los campos de cantidad, permitiendo editar únicamente los ítems erróneos.
+3. **Given** la confirmación del nuevo conteo por parte del barman, **When** se envía el corte corregido a la API, **Then** el backend actualiza los registros de `cortes_inventario`, sincroniza el stock disponible del turno, auto-consume el permiso (`permite_reconteo = false`), guarda el histórico de diferencias y habilita la descarga del PDF actualizado.
+
+---
+
 ### Key Entities *(include if feature involves data)*
 
 - **Sucursal**: Identificador de la casa (Casa22, Casa Coron, Madan, etc.), configuración local y umbrales de tolerancia de merma.
@@ -579,6 +603,7 @@ Como Barman o Garzón en turno de barra (y Cajera en suplencia), quiero disponer
 - **SC-012**: 100% de los despachos de traspasos inter-sucursales validados estrictamente contra el stock físico disponible en origen, imposibilitando traspasos con saldos negativos.
 - **SC-013**: Las cajeras pueden completar la auditoría visual de inventario, la suplencia de corte o la confirmación de pago de comisiones en menos de 45 segundos desde su aplicación móvil.
 - **SC-014**: Cero pérdidas de datos de conteo en progreso ante refrescos de catálogo o salidas momentáneas de pantalla, reduciendo en un 100% el retrabajo operativo de re-conteo en barra.
+- **SC-015**: Capacidad de corregir un error de conteo físico en menos de 30 segundos tras la autorización remota del Administrador, gracias a la precarga íntegra de la memoria del conteo previo sin alterar los productos correctos.
 
 ## Assumptions
 

@@ -266,6 +266,22 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
     );
   }
 
+  Future<void> _mostrarModalHabilitarReconteo() async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF18202C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return _ModalReconteoSelector(onAuthorized: () {
+          _cargarDiscrepancias();
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
@@ -562,6 +578,14 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
                     );
                   },
                 ),
+                _buildAdminCard(
+                  context: context,
+                  title: 'DESBLOQUEAR RECONTEO',
+                  subtitle: 'Autorizar corrección de conteo a garzón',
+                  icon: Icons.lock_open_rounded,
+                  gradient: const [Color(0xFFD97706), Color(0xFFF59E0B)],
+                  onTap: _mostrarModalHabilitarReconteo,
+                ),
               ],
             ),
           ],
@@ -633,3 +657,306 @@ class _DashboardAdminScreenState extends ConsumerState<DashboardAdminScreen> {
     );
   }
 }
+
+class _ModalReconteoSelector extends ConsumerStatefulWidget {
+  final VoidCallback onAuthorized;
+  const _ModalReconteoSelector({required this.onAuthorized});
+
+  @override
+  ConsumerState<_ModalReconteoSelector> createState() => _ModalReconteoSelectorState();
+}
+
+class _ModalReconteoSelectorState extends ConsumerState<_ModalReconteoSelector> {
+  bool _isLoading = true;
+  bool _isSaving = false;
+  List<Map<String, dynamic>> _turnos = [];
+  Map<String, dynamic>? _selectedTurno;
+  String _tipoCorte = 'apertura';
+  final TextEditingController _motivoCtrl = TextEditingController(
+    text: 'Garzón cometió error al digitar cantidades físicas en el corte',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarTurnos();
+  }
+
+  @override
+  void dispose() {
+    _motivoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cargarTurnos() async {
+    setState(() => _isLoading = true);
+    try {
+      final client = ref.read(apiClientProvider);
+      final res = await client.get('/turnos/historial-cortes');
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        final List list = res.data['data'] ?? [];
+        setState(() {
+          _turnos = List<Map<String, dynamic>>.from(list);
+          if (_turnos.isNotEmpty) {
+            _selectedTurno = _turnos.first;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cargando turnos: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _autorizar() async {
+    if (_selectedTurno == null) return;
+    final motivo = _motivoCtrl.text.trim();
+    if (motivo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor ingrese el motivo del reconteo'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final client = ref.read(apiClientProvider);
+      final turnoId = _selectedTurno!['id'];
+      final res = await client.post('/turnos/$turnoId/autorizar-reconteo', data: {
+        'tipo_corte': _tipoCorte,
+        'motivo': motivo,
+      });
+
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        if (mounted) {
+          Navigator.of(context).pop();
+          widget.onAuthorized();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🔓 Reconteo autorizado para Turno #$turnoId ($_tipoCorte). El garzón ya puede corregir.'),
+              backgroundColor: const Color(0xFF16A34A),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error autorizando reconteo: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.lock_open_rounded, color: Colors.amberAccent, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AUTORIZAR RECONTEO',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    Text(
+                      'Desbloqueo temporal de corte para corrección',
+                      style: TextStyle(color: Colors.white60, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 30),
+                child: CircularProgressIndicator(color: Colors.amberAccent),
+              ),
+            )
+          else if (_turnos.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('No hay turnos registrados para autorizar reconteo.', style: TextStyle(color: Colors.white60)),
+              ),
+            )
+          else ...[
+            const Text('1. Seleccione el Turno a Desbloquear:', style: TextStyle(color: Colors.cyanAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F141C),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  isExpanded: true,
+                  value: _selectedTurno?['id'] as int?,
+                  dropdownColor: const Color(0xFF1E293B),
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  items: _turnos.map((t) {
+                    final int id = t['id'];
+                    final String suc = t['sucursal_nombre'] ?? 'Sucursal';
+                    final String barman = t['barman_nombre'] ?? 'Barman';
+                    final String estado = (t['estado'] ?? '').toString().toUpperCase();
+                    final bool tienePermiso = t['permite_reconteo'] == true;
+                    return DropdownMenuItem<int>(
+                      value: id,
+                      child: Text(
+                        '#$id | $suc | $barman [$estado] ${tienePermiso ? "🔓 (Activo)" : ""}',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: tienePermiso ? Colors.amberAccent : Colors.white,
+                          fontWeight: tienePermiso ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (newId) {
+                    if (newId != null) {
+                      setState(() {
+                        _selectedTurno = _turnos.firstWhere((t) => t['id'] == newId);
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('2. Corte que se Corregirá:', style: TextStyle(color: Colors.cyanAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _tipoCorte = 'apertura'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _tipoCorte == 'apertura' ? const Color(0xFFD97706) : const Color(0xFF0F141C),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _tipoCorte == 'apertura' ? Colors.amberAccent : Colors.white24,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '🌅 Corte Apertura',
+                        style: TextStyle(
+                          color: _tipoCorte == 'apertura' ? Colors.white : Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _tipoCorte = 'cierre'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _tipoCorte == 'cierre' ? const Color(0xFFD97706) : const Color(0xFF0F141C),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _tipoCorte == 'cierre' ? Colors.amberAccent : Colors.white24,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '🌙 Corte Cierre',
+                        style: TextStyle(
+                          color: _tipoCorte == 'cierre' ? Colors.white : Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('3. Motivo de la Autorización:', style: TextStyle(color: Colors.cyanAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _motivoCtrl,
+              maxLines: 2,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFF0F141C),
+                hintText: 'Ej. Garzón contó 2 Coronas en lugar de 24...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.white24)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.amberAccent)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD97706),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: _isSaving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.lock_open, color: Colors.white),
+                label: Text(
+                  _isSaving ? 'AUTORIZANDO...' : 'CONFIRMAR DESBLOQUEO DE CONTEO',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                onPressed: _isSaving ? null : _autorizar,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+

@@ -16,6 +16,8 @@ class CorteInventarioScreen extends ConsumerStatefulWidget {
   final int? turnoId;
   final bool esSuplencia;
   final int? barmanSuplidoId;
+  final bool esModoReconteo;
+  final String? reconteoTipo;
 
   const CorteInventarioScreen({
     super.key,
@@ -24,6 +26,8 @@ class CorteInventarioScreen extends ConsumerStatefulWidget {
     this.turnoId,
     this.esSuplencia = false,
     this.barmanSuplidoId,
+    this.esModoReconteo = false,
+    this.reconteoTipo,
   }) : tipoOperacion = tipoOperacion ?? (esCierre ? TipoOperacionCorte.cierre : TipoOperacionCorte.apertura);
 
   @override
@@ -169,8 +173,9 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
 
       List<Map<String, dynamic>> nuevosItems = [];
 
-      // Si es Cierre de Turno, cargar el corte inicial y movimientos acumulados del turno
-      if (widget.tipoOperacion == TipoOperacionCorte.cierre && turnoId != null) {
+      // Si es Modo Reconteo o Cierre de Turno, cargar el corte inicial/acumulado del turno
+      final bool esReconteo = widget.esModoReconteo;
+      if ((widget.tipoOperacion == TipoOperacionCorte.cierre || esReconteo) && turnoId != null) {
         final resTurno = await apiClient.get('/turnos/$turnoId/corte-inicial');
         if (resTurno.statusCode == 200 && resTurno.data['data'] != null && resTurno.data['data']['items'] != null) {
           final List list = resTurno.data['data']['items'];
@@ -190,7 +195,17 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
             final cantIni = (p['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
             final keyPid = pid != null ? 'p_$pid' : null;
 
-            double cantPreservada = 0.0;
+            // En reconteo de apertura tomamos cantidad_inicial/cantidad; en reconteo de cierre tomamos cantidad_final/cantidad
+            double cantBase = 0.0;
+            if (esReconteo) {
+              if (widget.reconteoTipo == 'cierre' || widget.tipoOperacion == TipoOperacionCorte.cierre) {
+                cantBase = (p['cantidad_final'] as num?)?.toDouble() ?? (p['cantidad'] as num?)?.toDouble() ?? cantIni;
+              } else {
+                cantBase = (p['cantidad_inicial'] as num?)?.toDouble() ?? (p['cantidad'] as num?)?.toDouble() ?? 0.0;
+              }
+            }
+
+            double cantPreservada = cantBase;
             if (preservarCantidades && keyPid != null && cantidadesRespaldo != null && cantidadesRespaldo.containsKey(keyPid)) {
               cantPreservada = cantidadesRespaldo[keyPid]!;
             }
@@ -207,7 +222,7 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
               'ingresos': (p['ingresos'] as num?)?.toDouble() ?? 0.0,
               'rellenos': (p['rellenos'] as num?)?.toDouble() ?? 0.0,
               'bajas': (p['bajas'] as num?)?.toDouble() ?? 0.0,
-              'total_disponible': (p['total_disponible'] as num?)?.toDouble() ?? 0.0,
+              'total_disponible': (p['total_disponible'] as num?)?.toDouble() ?? (cantIni + ((p['ingresos'] as num?)?.toDouble() ?? 0.0)),
             });
           }
         }
@@ -523,7 +538,137 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     try {
       final apiClient = ref.read(apiClientProvider);
 
-      if (widget.tipoOperacion == TipoOperacionCorte.apertura) {
+      if (widget.esModoReconteo) {
+        final turnoId = widget.turnoId ?? auth.turnoActivoId;
+        if (turnoId == null) {
+          throw Exception('No se encontró el turno activo para aplicar el reconteo.');
+        }
+
+        final reconTipo = widget.reconteoTipo ?? (widget.tipoOperacion == TipoOperacionCorte.cierre ? 'cierre' : 'apertura');
+        final payload = {
+          'tipo': reconTipo,
+          'corte_corregido': cortesArray,
+        };
+
+        final res = await apiClient.post('/turnos/$turnoId/aplicar-reconteo', data: payload);
+        if (res.statusCode == 200) {
+          await _purgarBorrador();
+
+          for (var it in _items) {
+            final c = (it['cantidad'] as num?)?.toDouble() ?? 0.0;
+            if (reconTipo == 'apertura') {
+              it['cantidad_inicial'] = c;
+              final ing = (it['ingresos'] as num?)?.toDouble() ?? 0.0;
+              it['total_disponible'] = c + ing;
+            } else {
+              it['cantidad_final'] = c;
+            }
+          }
+
+          if (mounted) {
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1B2332),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: const [
+                    Icon(Icons.check_circle, color: Colors.amberAccent, size: 28),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '¡Reconteo Sellado!',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Se ha aplicado y re-sellado la corrección de ${reconTipo.toUpperCase()} para el Turno #$turnoId.',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amberAccent.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.lock_outline, color: Colors.amberAccent, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'El inventario fue recalculado y se registró en la auditoría del turno.',
+                              style: TextStyle(color: Colors.amberAccent, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf, color: Colors.amberAccent),
+                    label: const Text('Ver Acta Corregida', style: TextStyle(color: Colors.amberAccent)),
+                    onPressed: () {
+                      final turnoPdfData = {
+                        'id': turnoId,
+                        'turno_id': turnoId,
+                        'sucursal': sucursalNombre,
+                        'barman': barmanNombre,
+                        'tipo_turno': _tipoTurnoSeleccionado,
+                        'fecha_apertura': DateTime.now().toIso8601String(),
+                        'fecha_cierre': DateTime.now().toIso8601String(),
+                        'es_reconteo': true,
+                      };
+                      if (reconTipo == 'cierre') {
+                        CierreTurnoPdfService.previsualizarOImprimir(
+                          context: context,
+                          turnoId: turnoId,
+                          sucursal: sucursalNombre,
+                          barman: barmanNombre,
+                          tipoTurno: _tipoTurnoSeleccionado,
+                          items: _items,
+                          turnoData: turnoPdfData,
+                        );
+                      } else {
+                        ConteoPdfService.previsualizarOImprimir(
+                          context: context,
+                          turnoId: turnoId,
+                          sucursal: sucursalNombre,
+                          barman: barmanNombre,
+                          tipoTurno: _tipoTurnoSeleccionado,
+                          items: _items,
+                          turnoData: turnoPdfData,
+                        );
+                      }
+                    },
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2980B9),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Continuar', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+
+            if (mounted) Navigator.of(context).pop(true);
+          }
+        }
+      } else if (widget.tipoOperacion == TipoOperacionCorte.apertura) {
         final payload = {
           'sucursal_id': sucursalId,
           'barman_id': widget.barmanSuplidoId ?? auth.usuarioId,
@@ -977,11 +1122,13 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF121620),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1B2332),
+        backgroundColor: widget.esModoReconteo ? const Color(0xFF452B0E) : const Color(0xFF1B2332),
         title: Text(
-          esApertura
-              ? (widget.esSuplencia ? 'Apertura (Suplencia Cajera)' : 'Corte de Apertura')
-              : (widget.esSuplencia ? 'Cierre (Suplencia Cajera)' : 'Corte de Cierre'),
+          widget.esModoReconteo
+              ? '🔄 Reconteo Autorizado (${(widget.reconteoTipo ?? (esApertura ? "apertura" : "cierre")).toUpperCase()})'
+              : (esApertura
+                  ? (widget.esSuplencia ? 'Apertura (Suplencia Cajera)' : 'Corte de Apertura')
+                  : (widget.esSuplencia ? 'Cierre (Suplencia Cajera)' : 'Corte de Cierre')),
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -1000,22 +1147,34 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                 // Banner superior de instrucción
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  color: esApertura
-                      ? const Color(0xFF2980B9).withOpacity(0.2)
-                      : const Color(0xFFC0392B).withOpacity(0.2),
+                  color: widget.esModoReconteo
+                      ? Colors.amber.shade900.withOpacity(0.3)
+                      : (esApertura
+                          ? const Color(0xFF2980B9).withOpacity(0.2)
+                          : const Color(0xFFC0392B).withOpacity(0.2)),
                   child: Row(
                     children: [
                       Icon(
-                        esApertura ? Icons.login : Icons.lock_clock,
-                        color: esApertura ? const Color(0xFF5DADE2) : const Color(0xFFE74C3C),
+                        widget.esModoReconteo
+                            ? Icons.history_edu
+                            : (esApertura ? Icons.login : Icons.lock_clock),
+                        color: widget.esModoReconteo
+                            ? Colors.amberAccent
+                            : (esApertura ? const Color(0xFF5DADE2) : const Color(0xFFE74C3C)),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          esApertura
-                              ? 'Ingrese el conteo inicial físico al recibir la barra.'
-                              : 'Conteo final al entregar el turno. Medición en múltiplos de 1/4.',
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          widget.esModoReconteo
+                              ? '¡Cantidades previas precargadas en memoria! Modifique solo los productos que requieran corrección y confirme para re-sellar.'
+                              : (esApertura
+                                  ? 'Ingrese el conteo inicial físico al recibir la barra.'
+                                  : 'Conteo final al entregar el turno. Medición en múltiplos de 1/4.'),
+                          style: TextStyle(
+                            color: widget.esModoReconteo ? Colors.amberAccent : Colors.white70,
+                            fontSize: 12,
+                            fontWeight: widget.esModoReconteo ? FontWeight.bold : FontWeight.normal,
+                          ),
                         ),
                       ),
                     ],
@@ -1181,16 +1340,20 @@ class _CorteInventarioScreenState extends ConsumerState<CorteInventarioScreen> {
                     child: ElevatedButton(
                       onPressed: _isSubmitting ? null : _confirmarOperacion,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: esApertura ? const Color(0xFF2980B9) : const Color(0xFFC0392B),
+                        backgroundColor: widget.esModoReconteo
+                            ? const Color(0xFFD35400)
+                            : (esApertura ? const Color(0xFF2980B9) : const Color(0xFFC0392B)),
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       child: _isSubmitting
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
-                              esApertura
-                                  ? (widget.esSuplencia ? 'CONFIRMAR APERTURA POR SUPLENCIA' : 'CONFIRMAR Y ABRIR TURNO')
-                                  : (widget.esSuplencia ? 'CONFIRMAR CIERRE POR SUPLENCIA' : 'CONFIRMAR Y CERRAR TURNO'),
+                              widget.esModoReconteo
+                                  ? 'CONFIRMAR Y RE-SELLAR RECONTEO'
+                                  : (esApertura
+                                      ? (widget.esSuplencia ? 'CONFIRMAR APERTURA POR SUPLENCIA' : 'CONFIRMAR Y ABRIR TURNO')
+                                      : (widget.esSuplencia ? 'CONFIRMAR CIERRE POR SUPLENCIA' : 'CONFIRMAR Y CERRAR TURNO')),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 15,

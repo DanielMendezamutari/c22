@@ -49,7 +49,9 @@ El sistema consta de dos componentes principales:
 | **III. Responsabilidad Estricta por Turno (12h)** | **PASS** | `AbrirTurnoUseCase` y `CerrarTurnoUseCase` exigen cortes inicial y final inmutables, soportando fracciones exactas (`0.25`, `0.50`, `0.75`). |
 | **IV. Desacoplamiento del POS** | **PASS** | El módulo de auditoría es autónomo: `CalcularAuditoriaUseCase` cruza el balance físico contra el Ticket Z de caja ingresado por el administrador sin conexión al software de caja. |
 | **V. Auditoría Centralizada Multi-Sucursal** | **PASS** | Multi-tenant lógico (`sucursal_id`), trazabilidad de traspasos en tránsito con endpoint `POST /traspasos/{id}/recibir` y registro de mermas en traslado. |
+| **Inmutabilidad y Reconteo Auditado (US26)** | **PASS** | El reconteo solo es desbloqueable por el Administrador, es efímero (`permite_reconteo` auto-consumible), audita diferencias en `auditorias_reconteo` y re-sella el turno de inmediato. |
 | **Ecuación de Balance de Masa** | **PASS** | Implementada estrictamente: `(Stock Inicial + Ingresos + Traspasos - Materia Prima + Prod. Terminado) - Bajas - Stock Final = Ventas Reales + Faltantes/Sobrantes`. |
+
 
 ---
 
@@ -246,6 +248,28 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
   - Endpoints en `AlertaController`:
     - `POST /alertas/{id}/aprobar-producto`: Permite al Admin transformar el ítem provisional en producto oficial del catálogo.
     - `POST /alertas/{id}/unificar-producto`: Permite al Admin asociarlo a un producto oficial ya existente (`producto_id_oficial`), transfiriendo las cantidades de forma transparente.
+
+### FASE 14: Desbloqueo de Reconteo de Inventario Autorizado por Administrador con Memoria de Conteo Previo (US26)
+- **Ticket 14.1 (Backend: Migración de Turnos, Auditoría de Diferencias y Endpoints Atómicos)**:
+  - Migración en `turnos`: agregar `permite_reconteo` (boolean default false), `reconteo_tipo` (enum: 'apertura', 'cierre', nullable), `reconteo_autorizado_por_id` (foreignId nullable), `reconteo_autorizado_at` (timestamp nullable), `reconteo_motivo` (string nullable).
+  - Tabla `auditorias_reconteo`: `id`, `turno_id`, `usuario_id`, `admin_id`, `tipo_corte`, `motivo`, `detalles_json` (producto_id, valor_anterior, valor_nuevo), `timestamps`.
+  - En `TurnoController.php`:
+    - `POST /turnos/{id}/autorizar-reconteo`: Valida rol admin, asienta `permite_reconteo = true`, registra `reconteo_tipo` y `motivo`.
+    - `POST /turnos/{id}/aplicar-reconteo`:
+      - Valida que `permite_reconteo === true`.
+      - Dentro de `DB::transaction()`: Compara cantidades anteriores vs. nuevas, guarda el log en `auditorias_reconteo`, actualiza `cortes_inventario`, recalcula stock de turno y auto-consume el permiso (`permite_reconteo = false`).
+- **Ticket 14.2 (Frontend Admin APK: Diálogo y Acción de Autorización)**:
+  - En `dashboard_admin_screen.dart` (y detalle de turnos en vivo):
+    - Botón `[ 🔓 Habilitar Reconteo ]` en la tarjeta de turno.
+    - Modal interactivo con selección de tipo de corte ('Apertura' o 'Cierre') y campo de texto para motivo.
+    - Invoca `POST /turnos/{id}/autorizar-reconteo` y notifica éxito con SnackBar.
+- **Ticket 14.3 (Frontend Barman APK: Banner de Alerta, Memoria Precargada y Re-Sellado)**:
+  - En `dashboard_barman_screen.dart`:
+    - Evaluar `turno.permite_reconteo == true` y desplegar Card dorada en AppBar/Body: *"⚠️ Reconteo Autorizado por Administración. Toca para corregir"*.
+  - En `corte_inventario_screen.dart`:
+    - Al abrir en modo reconteo, consultar automáticamente `GET /turnos/{id}/corte-inicial` (o cierre) y precargar el mapa de cantidades (`_cantidadesDigitadas`) con el 100% de los valores anteriores.
+    - El barman visualiza sus cantidades previas intactas, edita únicamente el ítem erróneo y presiona `Confirmar Corrección de Conteo`.
+    - Envía a `POST /turnos/{id}/aplicar-reconteo`. Al completar, regenera el PDF con rótulo de "Versión Corregida con Autorización" y regresa al Dashboard con el turno re-sellado.
 
 ---
 
