@@ -505,4 +505,21 @@ class AuditoriaController extends Controller
             ], 500);
         }
     }
+
+    public function conciliacionTriangulada(int $turnoId, \App\Application\UseCases\Auditoria\AuditoriaConciliacionTrianguladaUseCase $useCase): JsonResponse
+    {
+        try {
+            $resultado = $useCase->execute($turnoId);
+            return response()->json([
+                'success' => true,
+                'data' => $resultado,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al ejecutar conciliación triangulada: ' . $e->getMessage(),
+            ], 400);
+        }
+    }
 }
+

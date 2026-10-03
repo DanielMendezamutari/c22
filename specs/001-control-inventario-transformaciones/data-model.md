@@ -317,3 +317,64 @@ Registro inmutable de auditoría para cada corrección autorizada y aplicada a u
 - `detalles_json`: JSON NOT NULL (Array de objetos con `producto_id`, `nombre_producto`, `valor_anterior`, `valor_nuevo`, `diferencia`)
 - `created_at`, `updated_at`: TIMESTAMP
 
+---
+
+### 2.16 `pos_producto_mapeo` (Homologación Catálogo POS vs C22)
+Tabla pivote que vincula los códigos y descripciones de RestoTech (`DetalleCuenta`) con los productos y combos maestros de c22.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
+- `pos_producto_id`: VARCHAR(50) NOT NULL (Identificador de producto en SQL Server)
+- `pos_nombre_producto`: VARCHAR(200) NOT NULL (Descripción textual en la comanda del POS)
+- `c22_producto_id`: BIGINT UNSIGNED NULLABLE (Producto simple de inventario en c22)
+  - *FK*: `c22_producto_id` REFERENCES `productos(id)` ON DELETE SET NULL
+- `c22_combo_id`: BIGINT UNSIGNED NULLABLE (Si corresponde a un combo/balde con receta desglosable)
+  - *FK*: `c22_combo_id` REFERENCES `recetas_combos(id)` ON DELETE SET NULL
+- `activo`: BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at`, `updated_at`: TIMESTAMP
+- *UNIQUE*: `(sucursal_id, pos_producto_id)`
+
+---
+
+### 2.17 `pos_transacciones` (Ventas Ingeridas desde SQL Server)
+Registro persistente de todas las ventas y pagos sincronizados desde el agente local de cada sucursal.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
+- `turno_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE SET NULL
+- `pos_detalle_id`: VARCHAR(50) NOT NULL (ID de `DetalleCuenta` en RestoTech)
+- `pos_cuenta_id`: VARCHAR(50) NOT NULL (ID de `Cuentas` en RestoTech)
+- `fecha_hora`: DATETIME NOT NULL
+- `pos_producto_id`: VARCHAR(50) NOT NULL
+- `pos_nombre_producto`: VARCHAR(200) NOT NULL
+- `cantidad`: DECIMAL(8,2) NOT NULL
+- `precio_unitario`: DECIMAL(10,2) NOT NULL
+- `subtotal`: DECIMAL(10,2) NOT NULL
+- `metodo_pago`: ENUM('efectivo', 'qr', 'tarjeta', 'mixto', 'otro') NOT NULL DEFAULT 'efectivo'
+- `estado_mapeo`: ENUM('mapeado', 'pendiente_mapeo') NOT NULL DEFAULT 'pendiente_mapeo'
+- `created_at`, `updated_at`: TIMESTAMP
+- *UNIQUE*: `(sucursal_id, pos_detalle_id)`
+
+---
+
+### 2.18 `auditorias_conciliacion_triangulada` (Matriz Unificada de 3 Vértices)
+Registro auditable que cruza: [1. POS SQL Server] vs [2. Planilla de Caja] vs [3. Conteo de Barra].
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `turno_id`: BIGINT UNSIGNED NOT NULL UNIQUE
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE CASCADE
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)`
+- `total_pos_ventas_bs`: DECIMAL(12,2) NOT NULL DEFAULT 0.00 (Ventas brutas según SQL Server)
+- `total_planilla_efectivo_bs`: DECIMAL(12,2) NOT NULL DEFAULT 0.00 (Efectivo declarado en papel vía OCR)
+- `total_voucher_deposito_bs`: DECIMAL(12,2) NOT NULL DEFAULT 0.00 (Efectivo depositado en banco vía OCR)
+- `diferencia_caja_bs`: DECIMAL(12,2) NOT NULL DEFAULT 0.00 (Ventas Efectivo POS - Efectivo Declarado)
+- `responsable_caja_usuario_id`: BIGINT UNSIGNED NULLABLE (Cajera o recaudador a quien se imputa)
+- `botellas_vendidas_pos`: DECIMAL(8,2) NOT NULL DEFAULT 0.00 (Consumo equivalente desglosado de ventas)
+- `botellas_consumidas_inventario`: DECIMAL(8,2) NOT NULL DEFAULT 0.00 (Salida física según conteo de barman)
+- `diferencia_botellas`: DECIMAL(8,2) NOT NULL DEFAULT 0.00 (Faltante o sobrante de botellas)
+- `responsable_barra_usuario_id`: BIGINT UNSIGNED NULLABLE (Barman titular a quien se imputa)
+- `estado_semaforo`: ENUM('verde_cuadrado', 'ambar_observado', 'rojo_discrepancia') NOT NULL DEFAULT 'verde_cuadrado'
+- `observaciones`: TEXT NULLABLE
+- `created_at`, `updated_at`: TIMESTAMP
+

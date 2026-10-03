@@ -598,6 +598,27 @@
 
 ---
 
+## Phase 37: User Story 32 - Sincronización POS RestoTech y Conciliación Triangulada Unificada (Priority: P1)
+
+**Goal**: Implementar la extracción automática de transacciones desde la computadora de caja de la sucursal (SQL Server `ControlConsumoCasa22`), la ingesta segura en Laravel mediante `X-Branch-Token`, el mapeo de productos/combos a recetas de c22 y la matriz de conciliación triangulada unificada en 3 columnas ([POS SQL Server] vs [Planilla Manual de Caja] vs [Conteo de Barra]).  
+**Independent Test**: Extraer transacciones desde la máquina de caja con el script local; verificar ingesta en `pos_transacciones`; asociar un combo a receta en la web; ejecutar `GET /api/v1/auditoria/conciliacion-triangulada/{turno_id}` y validar que los faltantes de efectivo se imputen a Cajera y los faltantes de botellas a Barman según Scenario 15 en `quickstart.md`.
+
+- [X] T227 [P] [US32] Crear migración para tablas `pos_producto_mapeo`, `pos_transacciones` y `auditorias_conciliacion_triangulada` en `backend/database/migrations/2026_10_02_000006_create_pos_integration_tables.php`
+- [X] T228 [P] [US32] Crear modelos Eloquent `PosProductoMapeo`, `PosTransaccion` y `AuditoriaConciliacionTriangulada` en `backend/app/Models/`
+- [X] T229 [P] [US32] Implementar middleware `VerifyBranchToken` en `backend/app/Infrastructure/Http/Middleware/VerifyBranchToken.php` para autenticar peticiones de sucursal mediante encabezado `X-Branch-Token`
+- [X] T230 [US32] Implementar `PosSyncController@ingestarTransacciones` para `POST /api/v1/sync/pos-transacciones` con inserción idempotente y auto-desglose de recetas en `backend/app/Infrastructure/Http/Controllers/Api/PosSyncController.php`
+- [X] T231 [US32] Implementar `PosMapeoController` para gestión de mapeo de productos POS `GET / POST /api/v1/pos/mapeo-productos` en `backend/app/Infrastructure/Http/Controllers/Api/PosMapeoController.php`
+- [X] T232 [US32] Implementar caso de uso `AuditoriaConciliacionTrianguladaUseCase` y endpoint `GET /api/v1/auditoria/conciliacion-triangulada/{turno_id}` en `backend/app/Application/UseCases/Auditoria/AuditoriaConciliacionTrianguladaUseCase.php`
+- [X] T233 [P] [US32] Desarrollar el Agente Local de Windows en `scripts/sync_agent/sync_casa22.ps1` y script en Python con buffer local offline en `scripts/sync_agent/agent.py`
+- [X] T234 [P] [US32] Crear instalador por lotes `scripts/sync_agent/instalar.bat` para registrar la tarea en el Programador de Tareas de Windows (arranque silencioso en segundo plano)
+- [X] T235 [US32] Registrar las nuevas rutas de sincronización POS y conciliación triangulada en `backend/routes/api.php`
+- [X] T236 [P] [US32] Crear la vista de Mapeo de Productos POS en la plataforma web en `frontend_web/src/pages/pos/mapeo.vue`
+- [X] T237 [US32] Crear la vista de Matriz de Conciliación Triangulada en 3 Columnas ([POS] vs [Planilla Manual OCR] vs [Barra]) en `frontend_web/src/pages/auditoria/conciliacion-triangulada.vue`
+- [X] T238 [US32] Validar el flujo de sincronización y cruce triangulado según Scenario 15 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

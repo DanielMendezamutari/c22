@@ -136,6 +136,12 @@ Route::prefix('v1')->group(function () {
     Route::post('/taxis/procesar-mensaje', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'procesarMensaje']);
     Route::get('/taxis/reporte-diario', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'reporteDiario']);
     Route::get('/taxis/tarifas', [\App\Infrastructure\Http\Controllers\Api\TaxiController::class, 'listarTarifas']);
+
+    // Sincronización POS RestoTech y Conciliación Triangulada - User Story 32
+    Route::post('/sync/pos-transacciones', [\App\Infrastructure\Http\Controllers\Api\PosSyncController::class, 'ingestarTransacciones'])->middleware('branch.token');
+    Route::get('/pos/mapeo-productos', [\App\Infrastructure\Http\Controllers\Api\PosMapeoController::class, 'index']);
+    Route::post('/pos/mapeo-productos', [\App\Infrastructure\Http\Controllers\Api\PosMapeoController::class, 'guardarMapeo']);
+    Route::get('/auditoria/conciliacion-triangulada/{turno_id}', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'conciliacionTriangulada']);
 });
 
 

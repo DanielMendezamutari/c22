@@ -271,6 +271,32 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
     - El barman visualiza sus cantidades previas intactas, edita únicamente el ítem erróneo y presiona `Confirmar Corrección de Conteo`.
     - Envía a `POST /turnos/{id}/aplicar-reconteo`. Al completar, regenera el PDF con rótulo de "Versión Corregida con Autorización" y regresa al Dashboard con el turno re-sellado.
 
+### FASE 15: Integración POS RestoTech y Conciliación Triangulada Unificada (US05, US28, US29, US30)
+- **Ticket 15.1 (Backend: Migraciones y Modelos de Integración POS)**:
+  - Crear migraciones para:
+    - `pos_producto_mapeo`: `sucursal_id`, `pos_producto_id`, `pos_nombre_producto`, `c22_producto_id` (nullable), `c22_combo_id` (nullable), `activo`.
+    - `pos_transacciones`: `sucursal_id`, `pos_detalle_id`, `pos_cuenta_id`, `fecha_hora`, `pos_producto_id`, `pos_nombre_producto`, `cantidad`, `precio_unitario`, `subtotal`, `metodo_pago`, `estado_mapeo`, `turno_id`.
+    - `auditorias_conciliacion_triangulada`: `turno_id`, `sucursal_id`, `total_pos_ventas_bs`, `total_planilla_efectivo_bs`, `total_voucher_deposito_bs`, `diferencia_caja_bs`, `responsable_caja_usuario_id`, `botellas_vendidas_pos`, `botellas_consumidas_inventario`, `diferencia_botellas`, `responsable_barra_usuario_id`, `estado_semaforo`, `observaciones`.
+- **Ticket 15.2 (Backend: Ingesta con X-Branch-Token y Motor de Desglose de Recetas)**:
+  - Implementar middleware `VerifyBranchToken` que valide `X-Branch-Token` contra `sucursales.token_acceso`.
+  - Crear `PosSyncController@ingestarTransacciones` para `POST /api/v1/sync/pos-transacciones`:
+    - Inserta transacciones idempotentemente por `(sucursal_id, pos_detalle_id)`.
+    - Resuelve `pos_producto_mapeo`; si el producto no está mapeado, lo marca `pendiente_mapeo` sin bloquear.
+    - Si el producto mapeado es un combo, invoca el desglose de `recetas_combos` y calcula botellas equivalentes.
+  - Crear `PosMapeoController` para `GET / POST /api/v1/pos/mapeo-productos`.
+  - Crear `AuditoriaConciliacionTrianguladaUseCase` para `GET /api/v1/auditoria/conciliacion-triangulada/{turno_id}`:
+    - Cruza las ventas de SQL Server contra el OCR de la planilla manual (Gemini Vision) y el corte final del barman.
+- **Ticket 15.3 (Agente Local Windows: Extractor Liviano Push HTTPS)**:
+  - Desarrollar agente en Python (compilado a `casa22_agent.exe` o script PowerShell nativo) en `C:\Casa22_Sync\`:
+    - Conecta localmente a `localhost\SQLEXPRESS` con base de datos `ControlConsumoCasa22`, usuario `sa` y clave `toptech`.
+    - Ejecuta consultas incrementales sobre `DetalleCuenta` y `Pagos` cada 5 a 10 minutos.
+    - Si no hay internet, guarda en buffer local SQLite/JSON; al restaurarse la red, despacha el lote pendiente.
+    - Script `instalar.bat` para registrar la tarea en el Programador de Tareas de Windows (arranque silencioso con el sistema).
+- **Ticket 15.4 (Frontend Web: Matriz de Conciliación y Gestor de Mapeo)**:
+  - En `frontend_web/`:
+    - Módulo de Mapeo de Productos POS: Lista los ítems extraídos de RestoTech con badges *"Mapeado"* / *"Pendiente de Mapeo"*, permitiendo asociar recetas con 1 solo clic.
+    - Vista ejecutiva de Conciliación Triangulada: Tarjeta de semáforo con 3 columnas ([POS] vs [Planilla Manual] vs [Barra]), imputación explícita de faltantes (Cajera o Barman) y botón para exportar informe ejecutivo PDF.
+
 ---
 
 ## Complexity Tracking

@@ -1,0 +1,10 @@
+{
+  "api_url": "https://c22.ribersoft.com/api/v1/sync/pos-transacciones",
+  "branch_token": "C22-SANTA-CRUZ-SECRET-KEY-2026",
+  "sql_server": "localhost\\SQLEXPRESS",
+  "database": "ControlConsumoCasa22",
+  "db_user": "sa",
+  "db_password": "toptech",
+  "poll_interval_seconds": 300,
+  "batch_size": 200
+}

@@ -361,4 +361,30 @@ flutter run
    - El documento generado incorpora la leyenda oficial: *"Versión Corregida con Autorización de: [Nombre Administrador] - Motivo: Garzón anotó 2 en vez de 24"*.
    - El turno queda nuevamente sellado y protegido contra cualquier edición no autorizada.
 
+---
+
+## Escenario 15: Sincronización POS RestoTech y Conciliación Triangulada Unificada (US05, US28, US29, US30)
+
+### Objetivo
+Demostrar la ingesta automática de ventas desde la computadora de caja de la sucursal (SQL Server `ControlConsumoCasa22`), el mapeo de productos/combos hacia c22 y el cruce inteligente en 3 columnas comparativas ([POS] vs [Planilla Manual OCR] vs [Conteo de Barra]).
+
+### Pasos de Validación:
+1. **Extracción y Envío desde la Sucursal**:
+   - El agente local en `C:\Casa22_Sync\` lee de `localhost\SQLEXPRESS` las transacciones de `DetalleCuenta` y `Pagos`.
+   - Envía el lote a `POST /api/v1/sync/pos-transacciones` con encabezado `X-Branch-Token`.
+   - Resultado esperado: HTTP 200 con número de transacciones recibidas e insertadas.
+2. **Mapeo de Productos y Combos en la Web**:
+   - En la consola web de Super Usuario, Daniel ingresa a "Mapeo de Productos POS".
+   - Vincula "Balde Corona x6" al combo correspondiente de recetas de c22.
+   - El sistema guarda la asociación en `pos_producto_mapeo` y descompone las ventas a 6 botellas de Corona por balde.
+3. **Conciliación Triangulada Unificada**:
+   - Al cerrar el turno, el recaudador sube la foto de la planilla manual (procesada por Gemini OCR).
+   - El barman confirma su corte de cierre físico en la APK.
+   - La pantalla de "Conciliación Triangulada" (`GET /api/v1/auditoria/conciliacion-triangulada/{turno_id}`) presenta:
+     - Columna 1: Ventas SQL Server (Total Bs y botellas desglosadas).
+     - Columna 2: Planilla Manual de Caja (Efectivo y deducciones de caja chica).
+     - Columna 3: Salida de Inventario Físico en Barra.
+   - Si el efectivo de la planilla es menor a los pagos en efectivo del POS $\rightarrow$ Tarjeta en Rojo imputando faltante a la Cajera.
+   - Si las botellas contadas en barra son menores a las comandas vendidas $\rightarrow$ Tarjeta en Rojo imputando faltante al Barman.
+
 

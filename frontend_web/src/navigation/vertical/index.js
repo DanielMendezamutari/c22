@@ -15,6 +15,18 @@ export default [
     badgeClass: 'bg-primary',
   },
   {
+    title: 'Conciliación Triangulada',
+    to: { path: '/auditoria/conciliacion-triangulada' },
+    icon: { icon: 'ri-scales-3-line' },
+    badgeContent: 'POS',
+    badgeClass: 'bg-success',
+  },
+  {
+    title: 'Mapeo POS RestoTech',
+    to: { path: '/pos/mapeo' },
+    icon: { icon: 'ri-git-merge-line' },
+  },
+  {
     title: 'Control Caja Chica',
     to: { path: '/caja-chica' },
     icon: { icon: 'ri-wallet-3-line' },
@@ -25,3 +37,4 @@ export default [
     icon: { icon: 'ri-taxi-line' },
   },
 ]
+

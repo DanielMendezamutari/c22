@@ -1045,5 +1045,152 @@ Permite al barman o cajera enviar las cantidades corregidas (conservando la memo
 }
 ```
 
+---
+
+## 4.10. Sincronización POS RestoTech y Conciliación Triangulada
+
+### `POST /sync/pos-transacciones`
+Ingesta en lotes de transacciones de ventas y pagos enviadas por el Agente Local de Windows.
+- **Headers**:
+  - `X-Branch-Token: <token_secreto_sucursal>`
+  - `Content-Type: application/json`
+- **Request**:
+```json
+{
+  "sucursal_id": 1,
+  "fecha_envio": "2026-10-02 23:45:00",
+  "transacciones": [
+    {
+      "pos_detalle_id": "10492",
+      "pos_cuenta_id": "3021",
+      "fecha_hora": "2026-10-02 23:30:12",
+      "pos_producto_id": "COR-BOT",
+      "pos_nombre_producto": "Cerveza Corona 330ml",
+      "cantidad": 5.00,
+      "precio_unitario": 25.00,
+      "subtotal": 125.00,
+      "metodo_pago": "efectivo"
+    },
+    {
+      "pos_detalle_id": "10493",
+      "pos_cuenta_id": "3022",
+      "fecha_hora": "2026-10-02 23:35:40",
+      "pos_producto_id": "BALDE-COR-6",
+      "pos_nombre_producto": "Balde Corona x6",
+      "cantidad": 2.00,
+      "precio_unitario": 120.00,
+      "subtotal": 240.00,
+      "metodo_pago": "qr"
+    }
+  ]
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": {
+    "recibidas": 2,
+    "insertadas": 2,
+    "mapeadas": 1,
+    "pendientes_mapeo": 1,
+    "mensaje": "Sincronización procesada exitosamente."
+  }
+}
+```
+
+---
+
+### `GET /pos/mapeo-productos`
+Listado de productos del POS y su asociación en c22 para la consola web.
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Query Params**: `sucursal_id=1`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "pos_producto_id": "COR-BOT",
+      "pos_nombre_producto": "Cerveza Corona 330ml",
+      "c22_producto_id": 2,
+      "c22_producto_nombre": "Corona Botella 330ml",
+      "c22_combo_id": null,
+      "estado": "mapeado"
+    },
+    {
+      "id": 2,
+      "pos_producto_id": "BALDE-COR-6",
+      "pos_nombre_producto": "Balde Corona x6",
+      "c22_producto_id": null,
+      "c22_combo_id": 1,
+      "c22_combo_nombre": "Balde Corona 6 unidades",
+      "estado": "mapeado"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /pos/mapeo-productos`
+Crea o actualiza la vinculación entre un producto de RestoTech y un producto/combo de c22.
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "sucursal_id": 1,
+  "pos_producto_id": "BALDE-COR-6",
+  "pos_nombre_producto": "Balde Corona x6",
+  "c22_producto_id": null,
+  "c22_combo_id": 1
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Mapeo actualizado exitosamente. El inventario retroactivo ha sido recalculado."
+}
+```
+
+---
+
+### `GET /auditoria/conciliacion-triangulada/{turno_id}`
+Devuelve la matriz en 3 columnas comparativas para la pantalla de auditoría ejecutiva.
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": {
+    "turno_id": 15,
+    "sucursal": "Casa22 Central",
+    "fecha_turno": "2026-10-02",
+    "responsables": {
+      "caja": "Aracely Salas (Cajera)",
+      "barra": "Carlos Mendoza (Barman)"
+    },
+    "auditoria_financiera": {
+      "pos_ventas_brutas_bs": 8500.00,
+      "planilla_efectivo_declarado_bs": 8200.00,
+      "voucher_banco_depositado_bs": 8200.00,
+      "diferencia_caja_bs": -300.00,
+      "estado": "rojo_discrepancia",
+      "imputado_a": "Aracely Salas (Cajera)"
+    },
+    "auditoria_inventario": {
+      "botellas_vendidas_pos": 180.00,
+      "botellas_consumo_fisico_barra": 180.00,
+      "diferencia_botellas": 0.00,
+      "estado": "verde_cuadrado",
+      "imputado_a": null
+    },
+    "estado_general_semaforo": "rojo_discrepancia"
+  }
+}
+```
+
 
 
