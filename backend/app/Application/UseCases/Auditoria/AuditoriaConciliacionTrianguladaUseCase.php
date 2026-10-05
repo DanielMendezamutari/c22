@@ -16,13 +16,20 @@ class AuditoriaConciliacionTrianguladaUseCase
         $turno = Turno::with(['sucursal', 'usuario', 'cerradoPor'])->findOrFail($turnoId);
 
         // 1. Vértice 1: Transacciones POS (SQL Server)
-        $queryTrans = PosTransaccion::where('sucursal_id', $turno->sucursal_id);
-        if ($turno->fecha_cierre) {
-            $queryTrans->whereBetween('fecha_hora', [$turno->fecha_apertura, $turno->fecha_cierre]);
-        } else {
-            $queryTrans->where('fecha_hora', '>=', $turno->fecha_apertura);
-        }
-        $transacciones = $queryTrans->get();
+        $transacciones = PosTransaccion::where('sucursal_id', $turno->sucursal_id)
+            ->where(function ($q) use ($turno) {
+                $q->where('turno_id', $turno->id);
+                if ($turno->fecha_apertura) {
+                    $q->orWhere(function ($sub) use ($turno) {
+                        if ($turno->fecha_cierre) {
+                            $sub->whereBetween('fecha_hora', [$turno->fecha_apertura, $turno->fecha_cierre]);
+                        } else {
+                            $sub->where('fecha_hora', '>=', $turno->fecha_apertura);
+                        }
+                    });
+                }
+            })
+            ->get();
 
         $totalPosVentas = (float)$transacciones->sum('subtotal');
         $totalPosEfectivo = (float)$transacciones->where('metodo_pago', 'efectivo')->sum('subtotal');

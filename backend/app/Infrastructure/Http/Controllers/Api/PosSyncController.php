@@ -57,13 +57,14 @@ class PosSyncController extends Controller
         $sucursalId = (int)$validated['sucursal_id'];
         $transacciones = $validated['transacciones'];
 
-        // Buscar turno activo de la sucursal
-        $turnoActivo = Turno::where('sucursal_id', $sucursalId)
-            ->where('estado', 'abierto')
-            ->latest()
-            ->first();
+        // Buscar turnos recientes de la sucursal para asociar turno_id automáticamente por fecha o estado
+        $turnosRecientes = Turno::where('sucursal_id', $sucursalId)
+            ->orderByDesc('fecha_apertura')
+            ->take(15)
+            ->get();
 
-        $turnoId = $turnoActivo ? $turnoActivo->id : null;
+        $turnoActivo = $turnosRecientes->firstWhere('estado', 'abierto');
+        $defaultTurnoId = $turnoActivo ? $turnoActivo->id : null;
 
         $insertadas = 0;
         $mapeadas = 0;
@@ -74,6 +75,23 @@ class PosSyncController extends Controller
             foreach ($transacciones as $t) {
                 $posProdId = trim($t['pos_producto_id']);
                 $posProdNombre = trim($t['pos_nombre_producto']);
+
+                // Asociar al turno cuyo rango de fechas coincida, o al turno abierto
+                $itemTurnoId = null;
+                $tFecha = $t['fecha_hora'] ?? null;
+                if ($tFecha) {
+                    foreach ($turnosRecientes as $tr) {
+                        $inicio = $tr->fecha_apertura ? $tr->fecha_apertura->format('Y-m-d H:i:s') : null;
+                        $fin = $tr->fecha_cierre ? $tr->fecha_cierre->format('Y-m-d H:i:s') : null;
+                        if ($inicio && $tFecha >= $inicio && (!$fin || $tFecha <= $fin)) {
+                            $itemTurnoId = $tr->id;
+                            break;
+                        }
+                    }
+                }
+                if (!$itemTurnoId) {
+                    $itemTurnoId = $defaultTurnoId;
+                }
 
                 // 1. Resolver o registrar mapeo en pos_producto_mapeo
                 $mapeo = PosProductoMapeo::firstOrCreate(
@@ -114,7 +132,7 @@ class PosSyncController extends Controller
                         'pos_detalle_id' => (string)$t['pos_detalle_id'],
                     ],
                     [
-                        'turno_id' => $turnoId,
+                        'turno_id' => $itemTurnoId,
                         'pos_cuenta_id' => (string)$t['pos_cuenta_id'],
                         'fecha_hora' => $t['fecha_hora'],
                         'pos_producto_id' => $posProdId,

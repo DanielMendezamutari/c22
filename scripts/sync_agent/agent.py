@@ -125,27 +125,56 @@ def sync_cycle(config):
         conn = pyodbc.connect(conn_str, timeout=10)
         cursor = conn.cursor()
         
+        # Si last_id es 0, buscar punto de inicio de los últimos 7 días
+        if last_id == 0:
+            try:
+                cursor.execute("SELECT ISNULL(MIN(ID), 0) FROM DetalleCuenta WHERE Hora >= DATEADD(day, -7, GETDATE())")
+                row = cursor.fetchone()
+                if row and row[0] and row[0] > 0:
+                    last_id = row[0] - 1
+                    log(f"Primera sincronización: comenzando desde hace 7 días (ID {last_id})")
+                else:
+                    cursor.execute("SELECT ISNULL(MAX(ID) - 500, 0) FROM DetalleCuenta")
+                    row = cursor.fetchone()
+                    if row and row[0] and row[0] > 0:
+                        last_id = row[0]
+                        log(f"Primera sincronización: comenzando desde últimas 500 ventas (ID {last_id})")
+            except Exception as e:
+                log(f"Error determinando ID inicial: {e}", "WARN")
+
         query = f"""
         SELECT TOP ({config.get('batch_size', 200)})
-            d.DetalleCuentaID,
-            d.CuentaID,
-            d.ProductoID,
-            ISNULL(p.Nombre, ISNULL(p.Descripcion, 'Producto ' + CAST(d.ProductoID AS VARCHAR))),
-            d.Cantidad,
-            d.Precio,
-            d.Subtotal,
-            ISNULL(c.Fecha, GETDATE()),
-            ISNULL(c.Mozo, 'Caja'),
+            d.ID AS pos_transaccion_id,
+            ISNULL(d.VisitaID, 0) AS pos_cuenta_id,
+            ISNULL(d.ProductoID, 0) AS pos_producto_id,
+            ISNULL(p.Nombre, ISNULL(p.Descripcion, 'Producto ' + CAST(d.ProductoID AS VARCHAR))) AS nombre_producto_pos,
+            ISNULL(d.Cantidad, 1) AS cantidad,
+            ISNULL(d.PrecioUnit, ISNULL(d.Pago, 0)) AS precio_unitario,
+            ISNULL(d.Pago, ISNULL(d.Cantidad * d.PrecioUnit, 0)) AS subtotal,
+            ISNULL(d.Hora, ISNULL(v.Fecha, GETDATE())) AS fecha_hora,
+            ISNULL(m.Nombre, 'Caja') AS cajero_nombre,
             CASE 
-                WHEN EXISTS(SELECT 1 FROM Pagos pg WHERE pg.CuentaID = d.CuentaID AND LOWER(pg.TipoPago) LIKE '%qr%') THEN 'qr'
-                WHEN EXISTS(SELECT 1 FROM Pagos pg WHERE pg.CuentaID = d.CuentaID AND (LOWER(pg.TipoPago) LIKE '%tarjeta%' OR LOWER(pg.TipoPago) LIKE '%card%')) THEN 'tarjeta'
+                WHEN EXISTS(
+                    SELECT 1 FROM Pagos pg 
+                    INNER JOIN Cuentas ct ON pg.CuentaID = ct.CuentaID 
+                    WHERE pg.DetalleCuentaID = d.ID 
+                    AND (LOWER(ct.Nombre) LIKE '%qr%' OR ct.TengoQR = 1)
+                ) THEN 'qr'
+                WHEN EXISTS(
+                    SELECT 1 FROM Pagos pg 
+                    INNER JOIN Cuentas ct ON pg.CuentaID = ct.CuentaID 
+                    WHERE pg.DetalleCuentaID = d.ID 
+                    AND (LOWER(ct.Nombre) LIKE '%tarjeta%' OR LOWER(ct.Nombre) LIKE '%card%')
+                ) THEN 'tarjeta'
                 ELSE 'efectivo'
-            END
+            END AS metodo_pago
         FROM DetalleCuenta d
-        LEFT JOIN Cuentas c ON d.CuentaID = c.CuentaID
-        LEFT JOIN Productos p ON d.ProductoID = p.ProductoID
-        WHERE d.DetalleCuentaID > {last_id}
-        ORDER BY d.DetalleCuentaID ASC
+        LEFT JOIN Visitas v ON d.VisitaID = v.ID
+        LEFT JOIN Productos p ON d.ProductoID = p.ID
+        LEFT JOIN Meseros m ON d.MeseroID = m.MeseroID
+        WHERE d.ID > {last_id}
+          AND (d.Borrada = 0 OR d.Borrada IS NULL)
+        ORDER BY d.ID ASC
         """
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -155,9 +184,11 @@ def sync_cycle(config):
                 max_id = tid
             fecha = r[7].strftime("%Y-%m-%d %H:%M:%S") if hasattr(r[7], "strftime") else str(r[7])
             new_items.append({
+                "pos_detalle_id": str(tid),
                 "pos_transaccion_id": str(tid),
                 "pos_cuenta_id": str(r[1]),
                 "pos_producto_id": str(r[2]),
+                "pos_nombre_producto": str(r[3]),
                 "nombre_producto_pos": str(r[3]),
                 "cantidad": float(r[4]),
                 "precio_unitario": float(r[5]),
