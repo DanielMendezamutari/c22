@@ -246,6 +246,12 @@ class PosSyncController extends Controller
         $sucursales = \App\Infrastructure\Persistence\Eloquent\Models\Sucursal::where('activo', true)->get();
 
         $casas = $sucursales->map(function ($s) {
+            // Asegurar que la sucursal tenga token_acceso generado
+            if (!$s->token_acceso) {
+                $s->token_acceso = 'c22_' . \Illuminate\Support\Str::slug($s->codigo ?: $s->nombre, '_') . '_' . \Illuminate\Support\Str::random(16);
+                $s->save();
+            }
+
             $ultimaTransaccion = PosTransaccion::where('sucursal_id', $s->id)
                 ->latest('fecha_hora')
                 ->first();
@@ -264,6 +270,7 @@ class PosSyncController extends Controller
                 'sucursal_id' => $s->id,
                 'codigo' => $s->codigo,
                 'nombre' => $s->nombre,
+                'token_acceso' => $s->token_acceso,
                 'conectada' => $conectada,
                 'ultima_sincronizacion' => $ultimaTransaccion ? $ultimaTransaccion->fecha_hora : null,
                 'ultima_sincronizacion_formateada' => $ultimaTransaccion ? date('d/m/Y H:i', strtotime($ultimaTransaccion->fecha_hora)) : 'Nunca',
