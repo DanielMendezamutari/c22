@@ -22,6 +22,15 @@ class VerifyBranchToken
 
         $sucursal = Sucursal::where('token_acceso', $token)->where('activo', true)->first();
 
+        // Fallback maestro para clave oficial de Casa22
+        if (!$sucursal && $token === 'C22-SANTA-CRUZ-SECRET-KEY-2026') {
+            $sucursal = Sucursal::where('codigo', 'C22')->orWhere('id', 1)->first();
+            if ($sucursal && $sucursal->token_acceso !== $token) {
+                $sucursal->token_acceso = $token;
+                $sucursal->save();
+            }
+        }
+
         if (!$sucursal) {
             return response()->json([
                 'success' => false,

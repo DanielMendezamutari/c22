@@ -20,6 +20,25 @@ class PosSyncController extends Controller
      */
     public function ingestarTransacciones(Request $request): JsonResponse
     {
+        // Asegurar sucursal_id desde atributo inyectado por VerifyBranchToken si no vino en body
+        if (!$request->has('sucursal_id') && $request->attributes->has('sucursal')) {
+            $request->merge(['sucursal_id' => $request->attributes->get('sucursal')->id]);
+        }
+
+        // Normalizar claves si el agente envió nombres alternativos
+        $rawTransacciones = $request->input('transacciones', []);
+        if (is_array($rawTransacciones)) {
+            foreach ($rawTransacciones as &$t) {
+                if (isset($t['pos_transaccion_id']) && !isset($t['pos_detalle_id'])) {
+                    $t['pos_detalle_id'] = (string)$t['pos_transaccion_id'];
+                }
+                if (isset($t['nombre_producto_pos']) && !isset($t['pos_nombre_producto'])) {
+                    $t['pos_nombre_producto'] = (string)$t['nombre_producto_pos'];
+                }
+            }
+            $request->merge(['transacciones' => $rawTransacciones]);
+        }
+
         $validated = $request->validate([
             'sucursal_id' => 'required|integer|exists:sucursales,id',
             'fecha_envio' => 'nullable|date',
@@ -138,5 +157,44 @@ class PosSyncController extends Controller
                 'error' => 'Error al procesar la ingesta POS: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Consulta de ventas y comandas POS en vivo para monitoreo en línea.
+     * Endpoint: GET /api/v1/pos/transacciones-en-vivo
+     */
+    public function listarTransacciones(Request $request): JsonResponse
+    {
+        $sucursalId = $request->input('sucursal_id');
+        $fecha = $request->input('fecha');
+        $limite = (int)$request->input('limite', 150);
+
+        $query = PosTransaccion::query();
+
+        if ($sucursalId) {
+            $query->where('sucursal_id', $sucursalId);
+        }
+
+        if ($fecha) {
+            $query->whereDate('fecha_hora', $fecha);
+        }
+
+        $transacciones = $query->latest('fecha_hora')->take($limite)->get();
+
+        $totales = [
+            'total_bs' => round((float)$transacciones->sum('subtotal'), 2),
+            'efectivo_bs' => round((float)$transacciones->where('metodo_pago', 'efectivo')->sum('subtotal'), 2),
+            'qr_bs' => round((float)$transacciones->where('metodo_pago', 'qr')->sum('subtotal'), 2),
+            'tarjeta_bs' => round((float)$transacciones->where('metodo_pago', 'tarjeta')->sum('subtotal'), 2),
+            'conteo' => $transacciones->count(),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'totales' => $totales,
+                'transacciones' => $transacciones,
+            ],
+        ]);
     }
 }
