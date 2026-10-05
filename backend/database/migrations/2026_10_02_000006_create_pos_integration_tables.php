@@ -67,27 +67,28 @@ return new class extends Migration
         }
 
         // 4. Tabla auditorias_conciliacion_triangulada
-        if (!Schema::hasTable('auditorias_conciliacion_triangulada')) {
-            Schema::create('auditorias_conciliacion_triangulada', function (Blueprint $table) {
-                $table->id();
-                $table->foreignId('turno_id')->unique()->constrained('turnos')->cascadeOnDelete();
-                $table->foreignId('sucursal_id')->constrained('sucursales');
-                $table->decimal('total_pos_ventas_bs', 12, 2)->default(0.00);
-                $table->decimal('total_planilla_efectivo_bs', 12, 2)->default(0.00);
-                $table->decimal('total_voucher_deposito_bs', 12, 2)->default(0.00);
-                $table->decimal('diferencia_caja_bs', 12, 2)->default(0.00);
-                $table->foreignId('responsable_caja_usuario_id')->nullable()->constrained('usuarios')->nullOnDelete();
-                $table->decimal('botellas_vendidas_pos', 8, 2)->default(0.00);
-                $table->decimal('botellas_consumidas_inventario', 8, 2)->default(0.00);
-                $table->decimal('diferencia_botellas', 8, 2)->default(0.00);
-                $table->foreignId('responsable_barra_usuario_id')->nullable()->constrained('usuarios')->nullOnDelete();
-                $table->enum('estado_semaforo', ['verde_cuadrado', 'ambar_observado', 'rojo_discrepancia'])->default('verde_cuadrado');
-                $table->text('observaciones')->nullable();
-                $table->timestamps();
+        Schema::dropIfExists('auditorias_conciliacion_triangulada');
+        Schema::create('auditorias_conciliacion_triangulada', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('turno_id')->unique()->constrained('turnos')->cascadeOnDelete();
+            $table->foreignId('sucursal_id')->constrained('sucursales');
+            $table->decimal('total_pos_ventas_bs', 12, 2)->default(0.00);
+            $table->decimal('total_planilla_efectivo_bs', 12, 2)->default(0.00);
+            $table->decimal('total_voucher_deposito_bs', 12, 2)->default(0.00);
+            $table->decimal('diferencia_caja_bs', 12, 2)->default(0.00);
+            $table->foreignId('responsable_caja_usuario_id')->nullable();
+            $table->foreign('responsable_caja_usuario_id', 'fk_act_resp_caja')->references('id')->on('usuarios')->nullOnDelete();
+            $table->decimal('botellas_vendidas_pos', 8, 2)->default(0.00);
+            $table->decimal('botellas_consumidas_inventario', 8, 2)->default(0.00);
+            $table->decimal('diferencia_botellas', 8, 2)->default(0.00);
+            $table->foreignId('responsable_barra_usuario_id')->nullable();
+            $table->foreign('responsable_barra_usuario_id', 'fk_act_resp_barra')->references('id')->on('usuarios')->nullOnDelete();
+            $table->enum('estado_semaforo', ['verde_cuadrado', 'ambar_observado', 'rojo_discrepancia'])->default('verde_cuadrado');
+            $table->text('observaciones')->nullable();
+            $table->timestamps();
 
-                $table->index(['sucursal_id', 'estado_semaforo']);
-            });
-        }
+            $table->index(['sucursal_id', 'estado_semaforo'], 'idx_act_sucursal_semaforo');
+        });
     }
 
     public function down(): void

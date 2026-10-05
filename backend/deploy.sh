@@ -7,6 +7,7 @@
 set -e
 
 PHP_BIN="/opt/cpanel/ea-php82/root/usr/bin/php"
+trap '$PHP_BIN artisan up || true' EXIT
 
 echo "=========================================================="
 echo " [SDD] Iniciando Despliegue C22 en c22.ribersoft.com"
