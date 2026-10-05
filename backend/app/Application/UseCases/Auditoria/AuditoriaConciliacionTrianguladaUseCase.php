@@ -80,8 +80,8 @@ class AuditoriaConciliacionTrianguladaUseCase
         // Consumo físico según balance del turno
         $corteApertura = (float)$turno->cortes()->whereIn('tipo_corte', ['apertura', 'inicial'])->sum('cantidad');
         $corteCierre = (float)$turno->cortes()->whereIn('tipo_corte', ['cierre', 'final'])->sum('cantidad');
-        $ingresosMercaderia = (float)$turno->movimientos()->whereIn('tipo', ['ingreso', 'ingreso_compra'])->sum('cantidad');
-        $bajasBarra = (float)$turno->movimientos()->whereIn('tipo', ['baja', 'baja_rotura'])->sum('cantidad');
+        $ingresosMercaderia = (float)$turno->movimientos()->whereIn('tipo_movimiento', ['ingreso', 'ingreso_compra'])->sum('cantidad');
+        $bajasBarra = (float)$turno->movimientos()->whereIn('tipo_movimiento', ['baja', 'baja_rotura'])->sum('cantidad');
 
         $botellasConsumoBarra = ($corteApertura + $ingresosMercaderia - $bajasBarra) - $corteCierre;
         if ($botellasConsumoBarra < 0) {
