@@ -126,21 +126,27 @@ class AuditoriaController extends Controller
     {
         try {
             $query = \App\Infrastructure\Persistence\Eloquent\Models\Turno::with(['sucursal', 'barman'])
-                ->whereIn('estado', ['cerrado', 'cobrado'])
+                ->whereIn('estado', ['abierto', 'cerrado', 'cobrado'])
                 ->orderBy('id', 'desc');
 
             if ($request->filled('sucursal_id') && (int) $request->sucursal_id > 0) {
                 $query->where('sucursal_id', (int) $request->sucursal_id);
             }
 
-            $turnos = $query->limit(30)->get()->map(function ($t) {
+            $turnos = $query->limit(40)->get()->map(function ($t) {
                 $tieneAuditoria = \App\Infrastructure\Persistence\Eloquent\Models\AuditoriaVenta::where('turno_id', $t->id)->exists();
+                $sucNombre = $t->sucursal->nombre ?? 'Sucursal #' . $t->sucursal_id;
+                $barNombre = ($t->barman->nombre ?? '') . ' ' . ($t->barman->apellido ?? '');
+                $fecha = $t->fecha_apertura ? $t->fecha_apertura->format('d/m H:i') : $t->created_at->format('d/m H:i');
+                $estadoTexto = strtoupper($t->estado);
+
                 return [
+                    'id' => $t->id,
                     'turno_id' => $t->id,
                     'sucursal_id' => $t->sucursal_id,
-                    'sucursal_nombre' => $t->sucursal->nombre ?? 'N/A',
+                    'sucursal_nombre' => $sucNombre,
                     'barman_id' => $t->barman_id,
-                    'barman_nombre' => ($t->barman->nombre ?? '') . ' ' . ($t->barman->apellido ?? ''),
+                    'barman_nombre' => $barNombre ?: 'Barman',
                     'tipo_turno' => $t->tipo_turno,
                     'estado' => $t->estado,
                     'ya_auditado' => $tieneAuditoria,
@@ -149,6 +155,7 @@ class AuditoriaController extends Controller
                     'total_transformaciones_netas' => (int) $t->total_transformaciones_netas,
                     'total_comision_neta_pagada' => (float) $t->total_comision_neta_pagada,
                     'foto_comprobante_url' => $t->foto_comprobante_cobro ? asset('storage/' . $t->foto_comprobante_cobro) : null,
+                    'label' => "Turno #{$t->id} - {$sucNombre} ({$estadoTexto}) - {$fecha} [{$barNombre}]",
                 ];
             });
 

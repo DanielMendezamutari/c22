@@ -197,4 +197,46 @@ class PosSyncController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Estado de conectividad de cada sucursal con su POS local.
+     * Endpoint: GET /api/v1/pos/estado-casas
+     */
+    public function estadoCasas(): JsonResponse
+    {
+        $sucursales = \App\Infrastructure\Persistence\Eloquent\Models\Sucursal::where('activo', true)->get();
+
+        $casas = $sucursales->map(function ($s) {
+            $ultimaTransaccion = PosTransaccion::where('sucursal_id', $s->id)
+                ->latest('fecha_hora')
+                ->first();
+
+            $totalHoy = (float)PosTransaccion::where('sucursal_id', $s->id)
+                ->whereDate('fecha_hora', date('Y-m-d'))
+                ->sum('subtotal');
+
+            $transHoy = PosTransaccion::where('sucursal_id', $s->id)
+                ->whereDate('fecha_hora', date('Y-m-d'))
+                ->count();
+
+            $conectada = $ultimaTransaccion !== null;
+
+            return [
+                'sucursal_id' => $s->id,
+                'codigo' => $s->codigo,
+                'nombre' => $s->nombre,
+                'conectada' => $conectada,
+                'ultima_sincronizacion' => $ultimaTransaccion ? $ultimaTransaccion->fecha_hora : null,
+                'ultima_sincronizacion_formateada' => $ultimaTransaccion ? date('d/m/Y H:i', strtotime($ultimaTransaccion->fecha_hora)) : 'Nunca',
+                'ventas_hoy_bs' => round($totalHoy, 2),
+                'transacciones_hoy' => $transHoy,
+                'ultimo_producto' => $ultimaTransaccion ? $ultimaTransaccion->pos_nombre_producto : null,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $casas,
+        ]);
+    }
 }
