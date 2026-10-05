@@ -25,6 +25,26 @@ class PosSyncController extends Controller
             $request->merge(['sucursal_id' => $request->attributes->get('sucursal')->id]);
         }
 
+        // Si transacciones no fue parseado automáticamente (ej. Content-Type omitido por cliente HTTP)
+        if (!$request->has('transacciones')) {
+            $rawContent = $request->getContent();
+            if (!empty($rawContent)) {
+                $decoded = json_decode($rawContent, true);
+                if (is_array($decoded) && isset($decoded['transacciones'])) {
+                    $request->merge($decoded);
+                }
+            }
+        }
+
+        // Si transacciones vino como string JSON serializado
+        $transVal = $request->input('transacciones');
+        if (is_string($transVal)) {
+            $decodedTrans = json_decode($transVal, true);
+            if (is_array($decodedTrans)) {
+                $request->merge(['transacciones' => $decodedTrans]);
+            }
+        }
+
         // Normalizar claves si el agente envió nombres alternativos
         $rawTransacciones = $request->input('transacciones', []);
         if (is_array($rawTransacciones)) {

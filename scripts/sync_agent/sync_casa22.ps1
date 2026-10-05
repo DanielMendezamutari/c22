@@ -204,18 +204,18 @@ ORDER BY d.ID ASC
 
             Write-SyncLog "Enviando lote de $($loteParaEnviar.Count) transacciones al servidor cloud..." "INFO"
 
-            # Enviar a la API de Laravel
+            # Enviar a la API de Laravel con codificación UTF-8 explícita
             $headers = @{
                 "X-Branch-Token" = $BranchToken
-                "Content-Type"   = "application/json"
                 "Accept"         = "application/json"
             }
 
             $payloadObject = @{ transacciones = $loteParaEnviar }
             $jsonPayload = $payloadObject | ConvertTo-Json -Depth 5 -Compress
+            $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload)
 
             try {
-                $response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Headers $headers -Body $jsonPayload -TimeoutSec 30
+                $response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Headers $headers -ContentType "application/json; charset=utf-8" -Body $utf8Bytes -TimeoutSec 30
                 
                 if ($response.success) {
                     $insertadas = $response.data.insertadas
