@@ -40,7 +40,7 @@ class PosMapeoController extends Controller
                 'c22_producto_id' => $m->c22_producto_id,
                 'c22_producto_nombre' => $m->producto?->nombre,
                 'c22_combo_id' => $m->c22_combo_id,
-                'c22_combo_nombre' => $m->combo?->nombre,
+                'c22_combo_nombre' => $m->combo?->nombre_combo ?: $m->combo?->nombre,
                 'activo' => $m->activo,
                 'estado' => $esMapeado ? 'mapeado' : 'pendiente_mapeo',
                 'created_at' => $m->created_at?->format('Y-m-d H:i:s'),
@@ -53,11 +53,24 @@ class PosMapeoController extends Controller
             ->get(['id', 'nombre', 'unidad_medida']);
 
         $combosDisponibles = RecetaCombo::where('activo', true)
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'precio_venta']);
+            ->orderBy('nombre_combo')
+            ->get(['id', 'nombre_combo'])
+            ->map(function ($c) {
+                return [
+                    'id' => $c->id,
+                    'nombre' => $c->nombre_combo,
+                ];
+            });
 
         $sucursales = Sucursal::where('activo', true)
-            ->get(['id', 'nombre', 'codigo', 'token_acceso']);
+            ->get(['id', 'nombre', 'codigo', 'token_acceso'])
+            ->map(function ($s) {
+                if (!$s->token_acceso) {
+                    $s->token_acceso = 'c22_' . \Illuminate\Support\Str::slug($s->codigo ?: $s->nombre, '_') . '_' . \Illuminate\Support\Str::random(16);
+                    $s->save();
+                }
+                return $s;
+            });
 
         return response()->json([
             'success' => true,
