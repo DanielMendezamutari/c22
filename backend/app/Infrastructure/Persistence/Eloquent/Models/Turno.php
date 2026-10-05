@@ -97,5 +97,20 @@ class Turno extends Model
     {
         return $this->hasMany(AuditoriaReconteo::class, 'turno_id');
     }
+
+    public function cerradoPorUsuario(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'cerrado_por_usuario_id');
+    }
+
+    public function cortesInventario(): HasMany
+    {
+        return $this->hasMany(CorteInventario::class, 'turno_id');
+    }
+
+    public function movimientosInventario(): HasMany
+    {
+        return $this->hasMany(MovimientoInventario::class, 'turno_id');
+    }
 }
 

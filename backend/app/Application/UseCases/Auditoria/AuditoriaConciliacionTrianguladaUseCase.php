@@ -13,7 +13,7 @@ class AuditoriaConciliacionTrianguladaUseCase
 {
     public function execute(int $turnoId): array
     {
-        $turno = Turno::with(['sucursal', 'usuario', 'cerradoPorUsuario'])->findOrFail($turnoId);
+        $turno = Turno::with(['sucursal', 'usuario', 'cerradoPor'])->findOrFail($turnoId);
 
         // 1. Vértice 1: Transacciones POS (SQL Server)
         $queryTrans = PosTransaccion::where('sucursal_id', $turno->sucursal_id);
@@ -66,10 +66,10 @@ class AuditoriaConciliacionTrianguladaUseCase
 
         // 3. Vértice 3: Conteo Físico en Barra (Barman)
         // Consumo físico según balance del turno
-        $corteApertura = $turno->cortesInventario()->where('tipo_corte', 'apertura')->sum('cantidad');
-        $corteCierre = $turno->cortesInventario()->where('tipo_corte', 'cierre')->sum('cantidad');
-        $ingresosMercaderia = $turno->movimientosInventario()->where('tipo', 'ingreso_compra')->sum('cantidad');
-        $bajasBarra = $turno->movimientosInventario()->where('tipo', 'baja_rotura')->sum('cantidad');
+        $corteApertura = (float)$turno->cortes()->whereIn('tipo_corte', ['apertura', 'inicial'])->sum('cantidad');
+        $corteCierre = (float)$turno->cortes()->whereIn('tipo_corte', ['cierre', 'final'])->sum('cantidad');
+        $ingresosMercaderia = (float)$turno->movimientos()->whereIn('tipo', ['ingreso', 'ingreso_compra'])->sum('cantidad');
+        $bajasBarra = (float)$turno->movimientos()->whereIn('tipo', ['baja', 'baja_rotura'])->sum('cantidad');
 
         $botellasConsumoBarra = ($corteApertura + $ingresosMercaderia - $bajasBarra) - $corteCierre;
         if ($botellasConsumoBarra < 0) {
@@ -80,8 +80,8 @@ class AuditoriaConciliacionTrianguladaUseCase
         $diferenciaBotellas = $botellasVendidasPos - $botellasConsumoBarra;
 
         // 4. Semáforo y Responsabilidad
-        $responsableCajaId = $turno->cerrado_por_usuario_id ?: $turno->usuario_id;
-        $responsableBarraId = $turno->usuario_id;
+        $responsableCajaId = $turno->cerrado_por_usuario_id ?: $turno->barman_id;
+        $responsableBarraId = $turno->barman_id;
 
         $estadoSemaforo = 'verde_cuadrado';
         $imputadoCaja = null;
@@ -89,12 +89,12 @@ class AuditoriaConciliacionTrianguladaUseCase
 
         if (abs($diferenciaCajaBs) > 20) {
             $estadoSemaforo = ($diferenciaCajaBs < -50) ? 'rojo_discrepancia' : 'ambar_observado';
-            $imputadoCaja = $turno->cerradoPorUsuario?->nombre ?: 'Cajera de Turno';
+            $imputadoCaja = $turno->cerradoPor?->nombre ?: ($turno->usuario?->nombre ?: 'Cajera de Turno');
         }
 
         if (abs($diferenciaBotellas) > 2) {
             $estadoSemaforo = 'rojo_discrepancia';
-            $imputadoBarra = $turno->usuario?->nombre . ' ' . $turno->usuario?->apellido . ' (Barman)';
+            $imputadoBarra = $turno->usuario ? ($turno->usuario->nombre . ' ' . $turno->usuario->apellido . ' (Barman)') : 'Barman';
         }
 
         // 5. Guardar o actualizar registro en base de datos
@@ -126,7 +126,7 @@ class AuditoriaConciliacionTrianguladaUseCase
             'estado_turno' => $turno->estado,
             'responsables' => [
                 'barra' => $turno->usuario ? ($turno->usuario->nombre . ' ' . $turno->usuario->apellido) : 'Barman',
-                'caja' => $turno->cerradoPorUsuario ? ($turno->cerradoPorUsuario->nombre . ' ' . $turno->cerradoPorUsuario->apellido) : 'Cajera',
+                'caja' => $turno->cerradoPor ? ($turno->cerradoPor->nombre . ' ' . $turno->cerradoPor->apellido) : ($turno->usuario ? ($turno->usuario->nombre . ' ' . $turno->usuario->apellido) : 'Cajera'),
             ],
             'vertice_1_pos' => [
                 'ventas_brutas_bs' => $totalPosVentas,
