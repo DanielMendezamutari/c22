@@ -54,7 +54,19 @@ class AuditoriaConciliacionTrianguladaUseCase
 
         // 2. Vértice 2: Planilla Manual de Caja (OCR Gemini) y Vouchers
         $planilla = PlanillaCaja::where('turno_id', $turno->id)->first();
-        $voucher = VoucherDeposito::where('turno_id', $turno->id)->first();
+        $fechaTurno = $turno->fecha_apertura ? $turno->fecha_apertura->format('Y-m-d') : date('Y-m-d');
+        
+        $recaudacion = \App\Infrastructure\Persistence\Eloquent\Models\RecaudacionDiaria::with('voucher')
+            ->where(function ($q) use ($planilla, $turno, $fechaTurno) {
+                if ($planilla) {
+                    $q->where('planilla_id', $planilla->id);
+                } else {
+                    $q->where('sucursal_id', $turno->sucursal_id)->whereDate('fecha', $fechaTurno);
+                }
+            })
+            ->first();
+
+        $voucher = $recaudacion?->voucher;
 
         $totalPlanillaEfectivo = $planilla ? (float)$planilla->total_ventas_declaradas_bs : 0.0;
         $totalGastosPlanilla = $planilla ? (float)$planilla->total_gastos_declarados_bs : 0.0;
