@@ -85,6 +85,7 @@ class PosSyncController extends Controller
 
         $turnoActivo = $turnosRecientes->firstWhere('estado', 'abierto');
         $defaultTurnoId = $turnoActivo ? $turnoActivo->id : null;
+        $turnoId = $defaultTurnoId;
 
         $insertadas = 0;
         $mapeadas = 0;
@@ -179,7 +180,7 @@ class PosSyncController extends Controller
                     'insertadas' => $insertadas,
                     'mapeadas' => $mapeadas,
                     'pendientes_mapeo' => $pendientesMapeo,
-                    'turno_vinculado_id' => $turnoId,
+                    'turno_vinculado_id' => $defaultTurnoId,
                     'mensaje' => 'Transacciones POS sincronizadas exitosamente.',
                 ],
             ]);
