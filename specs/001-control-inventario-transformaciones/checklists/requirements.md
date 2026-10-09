@@ -25,8 +25,8 @@
 ## Feature Readiness
 
 - [x] All functional requirements have clear acceptance criteria (FR-001 a FR-065)
-- [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-020)
+- [x] User scenarios cover primary flows (US01 a US36)
+- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-023)
 - [x] No implementation details leak into specification
 
 ## Notes
@@ -44,4 +44,9 @@
 - Especificada auditoría con Gemini Vision de Planillas Físicas vs Vouchers bancarios en Grupo de Recaudaciones (US28 / SC-017, SC-018).
 - Especificada auditoría híbrida de Caja Chica y reposiciones con ventas de barra (US29 / SC-019).
 - Especificado control inteligente de taxis, comisiones y rotación de chicas con IA (US30 / SC-020).
-- Spec ready for technical planning (`/speckit-plan`).
+- Especificado Bot de WhatsApp autónomo (Node.js/Baileys a webhook Laravel) con catálogo dinámico `sucursal_whatsapp_grupos` y filtro Zero-Leakage para WhatsApp personal (US33 / FR-054, FR-055).
+- Especificada extracción autónoma con Gemini 1.5 Flash Vision y Vértice 2 `[PENDIENTE_PLANILLA]` en Conciliación Triangulada (US34 / FR-056 a FR-058).
+- Especificado módulo de conteo ultra-estable offline-first para Garzones con liquidación de jornal diario restando botellas faltantes al costo (US35 / FR-059 a FR-061).
+- Especificado Panel Web de Gestión, Vinculación QR y Mapeo Interactivo de Grupos de WhatsApp desacoplado de la terminal (US36 / FR-062 a FR-065 / SC-021 a SC-023).
+- Spec validated and ready for planning (`/speckit-plan`).
+

@@ -159,4 +159,51 @@
   - *Permitir edición libre sin autorización previa*: Rechazado tajantemente porque permitiría a barmen inescrupulosos alterar conteos pasados para encubrir faltantes o hurtos.
   - *Reiniciar el conteo desde cero (pantalla vacía)*: Rechazado por ineficiencia operativa extrema; un barman que contó 80 productos no debe verse forzado a recontar 79 ítems correctos por un solo error.
 
+---
+
+## 17. Microservicio Bot de WhatsApp (Baileys en Node.js) y Webhook Inbound en Laravel
+
+- **Decision**: Implementar un microservicio en Node.js (`scripts/whatsapp_bot/`) basado en la librería `@whiskeysockets/baileys` que se autentica vía código QR como cliente multi-dispositivo de WhatsApp Web. El bot opera en modo 100% silencioso (sin responder en los grupos), monitorea el grupo unificado de la empresa y retransmite cada mensaje entrante (imagen, texto o documento) vía HTTPS POST a `POST /api/v1/webhook/whatsapp` de Laravel utilizando la cabecera `X-Webhook-Secret`.
+- **Rationale**: Baileys es una solución autónoma y de costo cero por mensaje, sin depender de intermediarios cloud costosos ni de la API oficial de WhatsApp Business (Meta Cloud API), la cual impone restricciones severas en grupos informales de mensajería interna.
+- **Alternatives considered**:
+  - *Meta WhatsApp Cloud API oficial*: Rechazado por no permitir escucha pasiva de grupos informales y cobrar por cada sesión/conversación.
+  - *Evolution API / Z-API externo*: Rechazado por añadir dependencias de servidores externos cuando Baileys puede correr como servicio systemd o pm2 ligero en el mismo VPS/servidor.
+
+---
+
+## 18. Clasificación Visual 100% Autónoma con Gemini 1.5 Flash Vision
+
+- **Decision**: Emplear Google Gemini 1.5 Flash Vision a través de la API oficial (`gemini-1.5-flash`), enviando la imagen con un prompt multimodal estricto con `response_schema` JSON que clasifica de manera no instructiva entre:
+  1. `planilla_caja`: Extrae efectivo en caja, pagos digitales (tarjetas, QR), detalle de gastos operativos y total neto recaudado.
+  2. `voucher_deposito`: Extrae entidad bancaria, número de operación/comprobante, monto depositado y fecha/hora.
+  3. `recibo_gasto`: Extrae proveedor o concepto, importe cancelado y fecha.
+- **Rationale**: Cero fricción operativa para las encargadas. Exigirles escribir comandos o etiquetas específicas ("#planilla", "#voucher") falla en un 40% de los casos debido al cansancio o velocidad del cierre de jornada. Gemini 1.5 Flash tiene latencia baja (< 2s) y un coste por token extremadamente económico, siendo ideal para OCR manuscrito en español boliviano.
+- **Alternatives considered**:
+  - *Tesseract OCR tradicional*: Rechazado por incapacidad casi total para leer planillas manuscritas en lápiz/bolígrafo o vouchers con iluminación deficiente.
+  - *Extracción basada en texto escrito por el usuario*: Rechazado porque las encargadas a menudo solo envían la foto sin texto acompañante.
+
+---
+
+## 19. Algoritmo de Resolución Multi-Factor de Sucursal para Grupo Único
+
+- **Decision**: Debido a que todas las sucursales de la empresa envían sus comprobantes a un **único grupo compartido de WhatsApp**, se implementa un modelo de ponderación multi-señal:
+  $$\text{Score} = 0.40 \times \text{OCR\_Nombre\_Casa} + 0.35 \times \text{Match\_Telefono\_Encargada} + 0.25 \times \text{Ventana\_Turno\_POS}$$
+  - Si $\text{Score} \ge 0.85$: Se enlaza automáticamente a la sucursal y a su turno correspondiente.
+  - Si $\text{Score} < 0.85$: Se registra con bandera `[SUCURSAL_POR_CONFIRMAR]` en la base de datos y se muestra un selector de 1 clic en la web sugiriendo la opción más probable para que la contadora la valide sin fricción.
+- **Rationale**: Elimina la confusión que se generaría si dos casas envían sus planillas al mismo tiempo, aprovechando que el número remitente (`sender_phone`) y el encabezado manuscrito de la planilla aportan casi un 90% de certeza combinada.
+- **Alternatives considered**:
+  - *Obligar a crear 1 grupo de WhatsApp por sucursal*: Rechazado porque los dueños y encargadas prefieren monitorear un solo canal unificado corporativo.
+
+---
+
+## 20. Resiliencia de Conciliación [PENDIENTE_PLANILLA] y Conteo Offline-First de Garzones
+
+- **Decision**:
+  1. **Semáforo y Estado de Vértice 2**: Cuando el POS registra ventas y cierre pero la encargada aún no envió la foto de la planilla, Vértice 2 se evalúa como `[PENDIENTE_PLANILLA]` con estado ámbar interactivo, en lugar de asumir $0.00$ Bs y detonar una falsa alerta crítica de robo.
+  2. **Conteo en Barra para Garzones (Turno Día)**: En la app móvil Flutter, el conteo opera con memoria reactiva indexada y persistencia instantánea en `SharedPreferences`. Al confirmar el cierre, la app liquida inmediatamente su jornal diario descontando el costo de las botellas faltantes:
+     $$\text{Total Efectivo a Cobrar} = \text{Jornal Diario} - \sum (\text{Botellas Faltantes} \times \text{Costo})$$
+     Desplegando el comprobante sellado anti-fraude para presentar en caja.
+- **Rationale**: Protege la armonía laboral al evitar falsas acusaciones de robo mientras la planilla está en tránsito, y garantiza que los garzones de turno día cobren su jornal exacto y justo sin demoras ni lag en la barra.
+
+
 

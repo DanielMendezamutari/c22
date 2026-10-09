@@ -22,6 +22,13 @@ export default [
     badgeClass: 'bg-success',
   },
   {
+    title: 'Gestión WhatsApp',
+    to: { path: '/whatsapp/gestion' },
+    icon: { icon: 'ri-whatsapp-line' },
+    badgeContent: 'BOT',
+    badgeClass: 'bg-success',
+  },
+  {
     title: 'Mapeo POS RestoTech',
     to: { path: '/pos/mapeo' },
     icon: { icon: 'ri-git-merge-line' },
@@ -37,4 +44,5 @@ export default [
     icon: { icon: 'ri-taxi-line' },
   },
 ]
+
 

@@ -10,7 +10,9 @@ return new class extends Migration
     public function up(): void
     {
         // 1. Ampliar ENUM de roles para incluir roles web de gestión y auditoría
-        DB::statement("ALTER TABLE usuarios MODIFY COLUMN rol ENUM('barman', 'garzon', 'cajera', 'admin', 'super_admin', 'dueno', 'contadora', 'auxiliar_contable') NOT NULL DEFAULT 'barman'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE usuarios MODIFY COLUMN rol ENUM('barman', 'garzon', 'cajera', 'admin', 'super_admin', 'dueno', 'contadora', 'auxiliar_contable') NOT NULL DEFAULT 'barman'");
+        }
 
         // 2. Agregar campos para autenticación web (email y password_hash)
         Schema::table('usuarios', function (Blueprint $table) {
@@ -34,6 +36,8 @@ return new class extends Migration
             }
         });
 
-        DB::statement("ALTER TABLE usuarios MODIFY COLUMN rol ENUM('barman', 'garzon', 'cajera', 'admin') NOT NULL DEFAULT 'barman'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE usuarios MODIFY COLUMN rol ENUM('barman', 'garzon', 'cajera', 'admin') NOT NULL DEFAULT 'barman'");
+        }
     }
 };

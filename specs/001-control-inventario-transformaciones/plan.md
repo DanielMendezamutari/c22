@@ -297,7 +297,101 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
     - Módulo de Mapeo de Productos POS: Lista los ítems extraídos de RestoTech con badges *"Mapeado"* / *"Pendiente de Mapeo"*, permitiendo asociar recetas con 1 solo clic.
     - Vista ejecutiva de Conciliación Triangulada: Tarjeta de semáforo con 3 columnas ([POS] vs [Planilla Manual] vs [Barra]), imputación explícita de faltantes (Cajera o Barman) y botón para exportar informe ejecutivo PDF.
 
+
+### FASE 16: Microservicio Bot WhatsApp con Grupos de Cierre por Sucursal e Ingesta Webhook (US33)
+- **Ticket 16.1 (Microservicio Baileys Node.js y Conexión QR)**:
+  - Desarrollar servicio background en `scripts/whatsapp_bot/` con `@whiskeysockets/baileys` y `qrcode-terminal`:
+    - Conexión vía código QR como cliente multi-dispositivo sin coste por mensaje.
+    - Modo 100% silencioso (sin respuestas en los grupos).
+    - Comando de arranque que lista automáticamente todos los grupos con sus nombres y `remote_jid` (`[C22] Cierres -> 1203630283921@g.us`).
+    - Consulta periódicamente `GET /api/v1/whatsapp/grupos-auditables` para mantener en memoria la whitelist activa de JIDs de todas las sucursales (filtro Zero-Leakage).
+    - Monitorea los grupos autorizados de cada sucursal (`Cierres`, `Gastos`, `Taxis`).
+    - Al recibir imagen/documento/texto, descarga el buffer y retransmite a `POST /api/v1/webhook/whatsapp` de Laravel con `X-Webhook-Secret`.
+- **Ticket 16.2 (Backend: Ingesta Inbound, Modelo de Mensajes y Catálogo Dinámico de Grupos)**:
+  - Migración `create_sucursal_whatsapp_grupos_table`: `id`, `sucursal_id`, `remote_jid`, `nombre_grupo`, `tipo_auditoria`, `activo`, `timestamps`.
+  - Migración `create_whatsapp_mensajes_inbound_table`: `id`, `sucursal_id` (nullable), `remote_jid`, `sender_phone`, `sender_name`, `tipo_mensaje`, `media_path`, `raw_text`, `clasificacion_ia`, `score_confianza`, `metadata_ia` (JSON), `estado` ('pendiente_proceso', 'procesado', 'requiere_confirmacion', 'error'), `turno_id` (nullable), `timestamps`.
+  - Endpoint `GET /api/v1/whatsapp/grupos-auditables` para alimentar en caliente la whitelist del bot.
+  - Endpoint `POST /api/v1/webhook/whatsapp` protegido por middleware `VerifyWebhookSecret`.
+  - Resolución determinista al 100%: Si `remote_jid` existe en `sucursal_whatsapp_grupos`, asigna `sucursal_id` y `tipo_auditoria` de forma inmediata.
+  - Encola job asíncrono `ProcesarMensajeWhatsAppJob`.
+- **Ticket 16.3 (Clasificador Autónomo con Gemini 1.5 Flash Vision)**:
+  - Servicio `GeminiVisionAuditorService`:
+    - Prompt multimodal estructurado con `response_schema` JSON estricto.
+    - Clasificación autónoma sin fricción en 3 tipos:
+      1. `planilla_caja`: Extrae efectivo declarado, tarjetas, QR, gastos detallados y totales.
+      2. `voucher_deposito`: Extrae banco, monto depositado, nro operación/referencia, fecha/hora.
+      3. `recibo_gasto`: Extrae proveedor, concepto del gasto, monto cancelado.
+- **Ticket 16.4 (Fallback de Contingencia Multi-Factor para Mensajes No Mapeados)**:
+  - Para mensajes recibidos fuera de los grupos configurados o en caso de contingencia:
+    $$\text{Score} = 0.40 \times \text{OCR\_Nombre\_Casa} + 0.35 \times \text{Match\_Telefono\_Encargada} + 0.25 \times \text{Ventana\_Turno\_POS}$$
+  - Si $\text{Score} \ge 0.85$: Vinculación y conciliación automática con el turno correspondiente.
+  - Si $\text{Score} < 0.85$: Asignación provisional con badge `[SUCURSAL_POR_CONFIRMAR]`, habilitando confirmación rápida en 1 clic en la web.
+
+### FASE 17: Extracción Visual Autónoma con Gemini Vision y Vértice 2 [PENDIENTE_PLANILLA] (US34)
+- **Ticket 17.1 (Backend: Manejo de Estado de Vértice 2)**:
+  - Modificar `auditorias_conciliacion_triangulada` agregando `estado_planilla` ('pendiente', 'recibida', 'conciliada').
+  - En `AuditoriaConciliacionTrianguladaUseCase`: Si el turno POS cerró pero aún no hay planilla física procesada, Vértice 2 se evalúa como `[PENDIENTE_PLANILLA]` en lugar de $0.00$ Bs, evitando falsas alarmas críticas de robo o faltante.
+  - Cruce preliminar: POS vs Conteo de Barra mientras se espera la planilla.
+- **Ticket 17.2 (Frontend Web: Matriz Triangulada y Respaldo Manual)**:
+  - En el Dashboard Web de Conciliación Triangulada:
+    - Tarjeta de Vértice 2 con badge amarillo interactivo `[PENDIENTE_PLANILLA - Esperando foto de encargada]`.
+    - Botón de contingencia "Subir Planilla Manualmente" (arrastrar foto o PDF) para procesamiento inmediato por Gemini.
+    - Modal de resolución rápida para mensajes marcados como `[SUCURSAL_POR_CONFIRMAR]`.
+
+### FASE 18: Conteo Garzones Offline-First (Turno Día) y Liquidación Inmediata de Jornal Diario (US35)
+- **Ticket 18.1 (Frontend Flutter: Arquitectura Offline-First de Alta Estabilidad)**:
+  - En `corte_inventario_screen.dart` y nuevo provider `CorteGarzonNotifier`:
+    - Gestión de estado reactiva puramente en memoria con sincronización continua e instantánea en `SharedPreferences` (`corte_garzon_{sucursalId}`).
+    - Cero lag al presionar atajos por caja (`+12`, `+24`, `+6`, `-12`) o ingresar cifras en teclado numérico.
+    - Inmunidad total a fallos de señal Wi-Fi/4G en la barra.
+- **Ticket 18.2 (Liquidación Inmediata de Jornal Diario en Barra)**:
+  - Al completar el conteo de cierre del Turno Día, la app calcula en vivo:
+    $$\text{Liquidación} = \text{Jornal Base Diario} - \sum (\text{Botellas Faltantes} \times \text{Costo Unitario})$$
+  - Pantalla de comprobante visual sellado con segundero en vivo anti-fraude y cuenta regresiva de 60 segundos para cobro en caja.
+- **Ticket 18.3 (Backend: Registro y Auditoría de Jornales)**:
+  - Migración y modelo `jornales_garzones`: `id`, `turno_id`, `usuario_id`, `sucursal_id`, `fecha`, `jornal_base_bs`, `faltante_botellas_unidades`, `descuento_faltante_bs`, `total_neto_pagado_bs`, `estado`, `timestamps`.
+  - Endpoint `POST /api/v1/turnos/{id}/liquidar-garzon`.
+
+### FASE 19: Panel Web de Gestión, Vinculación QR y Mapeo Interactivo de Grupos WhatsApp (US36)
+- **Ticket 19.1 (Backend: Endpoints de Estado del Bot, Grupos Descubiertos y CRUD de Vinculaciones)**:
+  - Migración `create_whatsapp_grupos_descubiertos_table`: `id`, `remote_jid` (unique), `nombre_grupo`, `participantes_count`, `ultima_deteccion_at`, `timestamps`.
+  - Modelo `WhatsAppGrupoDescubierto` con auto-upsert por `remote_jid`.
+  - En `WhatsAppWebhookController`:
+    - `POST /api/v1/whatsapp/bot-status`: Almacena el estado ('esperando_qr', 'conectado', 'desconectado'), `qr_code_data_url` y teléfono emisor en `Cache` (TTL 5 min).
+    - `GET /api/v1/whatsapp/bot-status`: Retorna el estado en vivo y el QR en base64 para consumo del frontend web.
+    - `POST /api/v1/whatsapp/grupos-descubiertos`: Ingesta la lista de grupos enviada por Baileys y realiza `upsert` en `whatsapp_grupos_descubiertos`.
+    - `GET /api/v1/whatsapp/grupos-disponibles`: Retorna los grupos descubiertos con join/cruce a `sucursal_whatsapp_grupos` (`vinculado`, `sucursal_id`, `tipo_auditoria`, `activo`).
+    - `POST /api/v1/whatsapp/desconectar`: Señaliza desconexión en caché para reinicio de sesión.
+  - CRUD en `SucursalWhatsAppGrupoController` para `POST /api/v1/sucursal-whatsapp-grupos` y `PUT /api/v1/sucursal-whatsapp-grupos/{id}` (asociación a sucursal, tipo y estado activo).
+- **Ticket 19.2 (Microservicio Baileys Node.js: Emisión Reactiva de QR y Push de Grupos)**:
+  - En `scripts/whatsapp_bot/bot.js`:
+    - Incorporar librería `qrcode` (`toDataURL`) para transformar strings de QR en PNG Base64 Data URL.
+    - En listener `connection.update`:
+      - Si `qr`: Emitir `POST /api/v1/whatsapp/bot-status` con `{ estado: 'esperando_qr', qr_code_data_url: qrDataUrl }`.
+      - Si `connection === 'open'`:
+        - Extraer teléfono emisor (`sock.user.id.split(':')[0]`).
+        - Emitir `POST /api/v1/whatsapp/bot-status` con `{ estado: 'conectado', telefono }`.
+        - Ejecutar `sock.groupFetchAllParticipating()`, formatear lista y despachar a `POST /api/v1/whatsapp/grupos-descubiertos`.
+      - Si `connection === 'close'`: Emitir `POST /api/v1/whatsapp/bot-status` con `{ estado: 'desconectado' }`.
+    - Polling cada 15 segundos para consultar si el usuario solicitó desconexión desde la web (`GET /whatsapp/bot-status`).
+- **Ticket 19.3 (Frontend Web Vue 3 / Vuetify: Pantalla de Gestión de WhatsApp)**:
+  - Crear `frontend_web/src/pages/whatsapp/gestion.vue`:
+    - Card 1: Semáforo del Bot & Visor de QR en vivo:
+      - Si está esperando vinculación: Visualizador de código QR reactivo (polling cada 3s) con instrucciones de escaneo desde WhatsApp.
+      - Si está conectado: Card verde con badge *"Conectado (+591 XXXXXXXX)"*, fecha/hora de último ping y botón *"Desvincular Sesión"* con modal de confirmación.
+    - Card 2: Asignación Visual de Grupos:
+      - Tabla con buscador rápido y lista de grupos detectados.
+      - Selectores desplegables `v-select`:
+        - Sucursal: `[ Casa 22 | Madan | Coron ]`.
+        - Propósito: `[ Cierres/Planillas | Gastos/Caja Chica | Taxis/Rotación ]`.
+        - Interruptor: `v-switch` `[ Activo / Inactivo ]`.
+      - Botón "Guardar Vinculación" reactivo con feedback SnackBar.
+    - Card 3: Feed de Ingesta Inbound:
+      - Lista de últimos mensajes y fotos procesadas con miniatura y estado de OCR Gemini.
+  - Enlazar la ruta en el menú lateral de navegación (`frontend_web/src/router/` o sidebar).
+
 ---
+
 
 ## Complexity Tracking
 

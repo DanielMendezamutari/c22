@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'branch.token' => \App\Infrastructure\Http\Middleware\VerifyBranchToken::class,
+            'webhook.secret' => \App\Infrastructure\Http\Middleware\VerifyWebhookSecret::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

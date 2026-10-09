@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/login_screen.dart';
 import '../cobro/resumen_cajera_screen.dart';
+import '../cobro/liquidacion_jornal_garzon_screen.dart';
 import '../ingreso/ingreso_mercaderia_screen.dart';
 import '../transformacion/transformacion_screen.dart';
 import '../turnos/conteo_pdf_service.dart';
@@ -435,6 +436,29 @@ class _DashboardBarmanScreenState extends ConsumerState<DashboardBarmanScreen> {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const BajasRoturasScreen()),
+                );
+              },
+            ),
+            _buildActionCard(
+              context: context,
+              title: 'LIQUIDAR JORNAL',
+              subtitle: 'Cobro de turno día con descuento por faltante',
+              icon: Icons.payments_outlined,
+              gradient: const [Color(0xFF1E3C72), Color(0xFF2A5298)],
+              onTap: () async {
+                await _asegurarTurnoActivo(context, ref, auth);
+                if (!context.mounted) return;
+                final updatedAuth = ref.read(authProvider);
+
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => LiquidacionJornalGarzonScreen(
+                      turnoId: updatedAuth.turnoActivoId ?? 1,
+                      jornalBase: 120.0,
+                      faltanteBotellas: 0.0,
+                      costoBotella: 15.0,
+                    ),
+                  ),
                 );
               },
             ),

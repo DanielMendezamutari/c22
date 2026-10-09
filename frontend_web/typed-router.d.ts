@@ -28,5 +28,6 @@ declare module 'vue-router/auto-routes' {
     'movilidad-taxis': RouteRecordInfo<'movilidad-taxis', '/movilidad/taxis', Record<never, never>, Record<never, never>>,
     'pos-mapeo': RouteRecordInfo<'pos-mapeo', '/pos/mapeo', Record<never, never>, Record<never, never>>,
     'second-page': RouteRecordInfo<'second-page', '/second-page', Record<never, never>, Record<never, never>>,
+    'whatsapp-gestion': RouteRecordInfo<'whatsapp-gestion', '/whatsapp/gestion', Record<never, never>, Record<never, never>>,
   }
 }

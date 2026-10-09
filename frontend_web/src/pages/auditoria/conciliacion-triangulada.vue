@@ -27,6 +27,73 @@ const totalesPOS = ref({
   conteo: 0,
 })
 
+// Modal de Subida Manual de Planilla (Contingencia / Vértice 2)
+const dialogSubirPlanilla = ref(false)
+const subiendoPlanilla = ref(false)
+const archivoPlanilla = ref(null)
+const previewPlanilla = ref(null)
+const formPlanillaManual = ref({
+  total_ventas_declaradas_bs: '',
+  total_gastos_declarados_bs: '',
+  monto_sobre_efectivo_bs: '',
+  cajero_nombre: '',
+  observaciones: '',
+})
+
+const onFileSelected = (event) => {
+  const file = event.target.files?.[0] || event[0]
+  if (file) {
+    archivoPlanilla.value = file
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      previewPlanilla.value = e.target.result
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+const handleSubirPlanilla = async () => {
+  if (!turnoId.value) return
+  subiendoPlanilla.value = true
+  try {
+    const formData = new FormData()
+    formData.append('turno_id', turnoId.value)
+    if (archivoPlanilla.value) {
+      formData.append('foto', archivoPlanilla.value)
+    }
+    if (formPlanillaManual.value.total_ventas_declaradas_bs) {
+      formData.append('total_ventas_declaradas_bs', formPlanillaManual.value.total_ventas_declaradas_bs)
+    }
+    if (formPlanillaManual.value.total_gastos_declarados_bs) {
+      formData.append('total_gastos_declarados_bs', formPlanillaManual.value.total_gastos_declarados_bs)
+    }
+    if (formPlanillaManual.value.monto_sobre_efectivo_bs) {
+      formData.append('monto_sobre_efectivo_bs', formPlanillaManual.value.monto_sobre_efectivo_bs)
+    }
+    if (formPlanillaManual.value.cajero_nombre) {
+      formData.append('cajero_nombre', formPlanillaManual.value.cajero_nombre)
+    }
+    if (formPlanillaManual.value.observaciones) {
+      formData.append('observaciones', formPlanillaManual.value.observaciones)
+    }
+
+    const res = await axiosIns.post('/auditoria/subir-planilla-manual', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    if (res.data?.success) {
+      dialogSubirPlanilla.value = false
+      archivoPlanilla.value = null
+      previewPlanilla.value = null
+      await cargarConciliacion()
+    }
+  } catch (err) {
+    console.error('Error al subir planilla manual:', err)
+  } finally {
+    subiendoPlanilla.value = false
+  }
+}
+
 const fetchEstadoCasas = async () => {
   isLoadingCasas.value = true
   try {
@@ -381,52 +448,84 @@ onMounted(async () => {
                   <VIcon icon="ri-file-text-line" class="me-2" />
                   2. Planilla Manual (OCR)
                 </span>
-                <VChip size="small" color="amber-darken-3" variant="flat">Declaración Físca</VChip>
+                <VChip
+                  size="small"
+                  :color="auditoria.vertice_2_planilla?.estado === '[PENDIENTE_PLANILLA]' ? 'warning' : 'amber-darken-3'"
+                  variant="flat"
+                >
+                  {{ auditoria.vertice_2_planilla?.estado || 'Declaración Física' }}
+                </VChip>
               </div>
             </VCardItem>
             <VDivider />
             <VCardText class="pa-4">
-              <div class="mb-3">
-                <div class="text-caption text-medium-emphasis">Efectivo Anotado en Planilla</div>
-                <div class="text-h4 font-weight-bold text-amber-darken-4">
-                  Bs. {{ (auditoria.vertice_2_planilla?.efectivo_declarado_bs || 0).toFixed(2) }}
+              <!-- Estado PENDIENTE_PLANILLA -->
+              <div v-if="auditoria.vertice_2_planilla?.estado === '[PENDIENTE_PLANILLA]' || !auditoria.vertice_2_planilla?.tiene_foto_planilla" class="text-center py-2">
+                <div class="bg-amber-lighten-5 pa-4 rounded-xl border border-warning mb-3">
+                  <VIcon icon="ri-time-line" size="36" color="warning" class="mb-2" />
+                  <div class="text-subtitle-1 font-weight-bold text-amber-darken-4">
+                    [PENDIENTE_PLANILLA]
+                  </div>
+                  <div class="text-caption text-medium-emphasis mt-1 mb-3">
+                    Esperando foto de la planilla física enviada por la encargada al grupo de WhatsApp. Vértice 2 en pausa preventiva sin generar faltante ficticio de caja.
+                  </div>
+                  <VBtn
+                    color="warning"
+                    variant="elevated"
+                    size="small"
+                    prepend-icon="ri-upload-cloud-line"
+                    class="font-weight-bold"
+                    @click="dialogSubirPlanilla = true"
+                  >
+                    Subir Planilla Manualmente
+                  </VBtn>
                 </div>
               </div>
 
-              <VDivider class="my-3" />
+              <!-- Estado RECIBIDA / OCR Procesado -->
+              <div v-else>
+                <div class="mb-3">
+                  <div class="text-caption text-medium-emphasis">Efectivo Anotado en Planilla</div>
+                  <div class="text-h4 font-weight-bold text-amber-darken-4">
+                    Bs. {{ (auditoria.vertice_2_planilla?.efectivo_declarado_bs || 0).toFixed(2) }}
+                  </div>
+                </div>
 
-              <div class="d-flex justify-space-between py-1">
-                <span class="text-body-2">(-) Gastos Caja Chica:</span>
-                <span class="font-weight-medium text-error">Bs. {{ (auditoria.vertice_2_planilla?.gastos_caja_chica_bs || 0).toFixed(2) }}</span>
-              </div>
-              <div class="d-flex justify-space-between py-1">
-                <span class="text-body-2">(=) Monto en Sobre Efectivo:</span>
-                <span class="font-weight-bold">Bs. {{ (auditoria.vertice_2_planilla?.neto_sobre_declarado_bs || 0).toFixed(2) }}</span>
-              </div>
-              <div class="d-flex justify-space-between py-1">
-                <span class="text-body-2">Depósito Bancario (Voucher):</span>
-                <span class="font-weight-bold text-success">Bs. {{ (auditoria.vertice_2_planilla?.voucher_depositado_banco_bs || 0).toFixed(2) }}</span>
-              </div>
+                <VDivider class="my-3" />
 
-              <VDivider class="my-3" />
+                <div class="d-flex justify-space-between py-1">
+                  <span class="text-body-2">(-) Gastos Caja Chica:</span>
+                  <span class="font-weight-medium text-error">Bs. {{ (auditoria.vertice_2_planilla?.gastos_caja_chica_bs || 0).toFixed(2) }}</span>
+                </div>
+                <div class="d-flex justify-space-between py-1">
+                  <span class="text-body-2">(=) Monto en Sobre Efectivo:</span>
+                  <span class="font-weight-bold">Bs. {{ (auditoria.vertice_2_planilla?.neto_sobre_declarado_bs || 0).toFixed(2) }}</span>
+                </div>
+                <div class="d-flex justify-space-between py-1">
+                  <span class="text-body-2">Depósito Bancario (Voucher):</span>
+                  <span class="font-weight-bold text-success">Bs. {{ (auditoria.vertice_2_planilla?.voucher_depositado_banco_bs || 0).toFixed(2) }}</span>
+                </div>
 
-              <div class="d-flex justify-space-around py-2">
-                <VChip
-                  size="small"
-                  :color="auditoria.vertice_2_planilla?.tiene_foto_planilla ? 'success' : 'grey'"
-                  variant="tonal"
-                >
-                  <VIcon icon="ri-image-line" class="me-1" />
-                  {{ auditoria.vertice_2_planilla?.tiene_foto_planilla ? 'Foto Planilla OK' : 'Sin Foto Planilla' }}
-                </VChip>
-                <VChip
-                  size="small"
-                  :color="auditoria.vertice_2_planilla?.tiene_foto_voucher ? 'success' : 'grey'"
-                  variant="tonal"
-                >
-                  <VIcon icon="ri-bank-card-line" class="me-1" />
-                  {{ auditoria.vertice_2_planilla?.tiene_foto_voucher ? 'Voucher OK' : 'Sin Voucher' }}
-                </VChip>
+                <VDivider class="my-3" />
+
+                <div class="d-flex justify-space-around py-2">
+                  <VChip
+                    size="small"
+                    :color="auditoria.vertice_2_planilla?.tiene_foto_planilla ? 'success' : 'grey'"
+                    variant="tonal"
+                  >
+                    <VIcon icon="ri-image-line" class="me-1" />
+                    {{ auditoria.vertice_2_planilla?.tiene_foto_planilla ? 'Foto Planilla OK' : 'Sin Foto Planilla' }}
+                  </VChip>
+                  <VChip
+                    size="small"
+                    :color="auditoria.vertice_2_planilla?.tiene_foto_voucher ? 'success' : 'grey'"
+                    variant="tonal"
+                  >
+                    <VIcon icon="ri-bank-card-line" class="me-1" />
+                    {{ auditoria.vertice_2_planilla?.tiene_foto_voucher ? 'Voucher OK' : 'Sin Voucher' }}
+                  </VChip>
+                </div>
               </div>
             </VCardText>
           </VCard>
@@ -498,44 +597,74 @@ onMounted(async () => {
                 </span>
                 <VChip
                   size="small"
-                  :color="auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20 ? 'error' : (auditoria.auditoria_financiera?.diferencia_efectivo_bs > 20 ? 'info' : 'success')"
+                  :color="auditoria.auditoria_financiera?.estado === 'pendiente_planilla' ? 'warning' : (auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20 ? 'error' : (auditoria.auditoria_financiera?.diferencia_efectivo_bs > 20 ? 'info' : 'success'))"
                 >
-                  {{ auditoria.auditoria_financiera?.estado?.toUpperCase() }}
+                  {{ auditoria.auditoria_financiera?.estado === 'pendiente_planilla' ? 'PENDIENTE PLANILLA' : auditoria.auditoria_financiera?.estado?.toUpperCase() }}
                 </VChip>
               </div>
             </VCardItem>
             <VDivider />
             <VCardText class="pa-4">
-              <div class="d-flex align-center justify-space-between mb-4">
-                <div>
-                  <div class="text-caption text-medium-emphasis">Diferencia [Planilla] - [POS]:</div>
-                  <div
-                    class="text-h4 font-weight-bold"
-                    :class="auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20 ? 'text-error' : 'text-success'"
-                  >
-                    Bs. {{ (auditoria.auditoria_financiera?.diferencia_efectivo_bs || 0).toFixed(2) }}
+              <!-- Si está pendiente de planilla -->
+              <div v-if="auditoria.auditoria_financiera?.estado === 'pendiente_planilla'">
+                <div class="d-flex align-center justify-space-between mb-4">
+                  <div>
+                    <div class="text-caption text-medium-emphasis">Diferencia [Planilla] - [POS]:</div>
+                    <div class="text-h5 font-weight-bold text-amber-darken-3">
+                      Bs. -- (En Pausa)
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="text-caption text-medium-emphasis">Imputación Responsable:</div>
+                    <div class="text-subtitle-1 font-weight-bold text-medium-emphasis">
+                      Sin Imputación
+                    </div>
                   </div>
                 </div>
-                <div class="text-end">
-                  <div class="text-caption text-medium-emphasis">Imputación Responsable:</div>
-                  <div class="text-subtitle-1 font-weight-bold text-primary">
-                    {{ auditoria.auditoria_financiera?.imputado_a || 'Sin faltante de dinero' }}
-                  </div>
-                </div>
+                <VAlert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  color="warning"
+                  class="rounded-lg"
+                >
+                  <strong>Pausa Preventiva:</strong> No se calcula faltante ni se imputa responsabilidad a la cajera hasta recibir y procesar la fotografía de la planilla manuscrita.
+                </VAlert>
               </div>
 
-              <VAlert
-                v-if="auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20"
-                type="warning"
-                variant="tonal"
-                density="compact"
-                class="rounded-lg"
-              >
-                <strong>Regla de Imputación:</strong> El dinero faltante se imputa a la Cajera / Recaudador responsable del sobre y arqueo físico.
-              </VAlert>
-              <div v-else class="text-caption text-success d-flex align-center">
-                <VIcon icon="ri-check-line" class="me-1" />
-                El efectivo declarado coincide con los registros del sistema POS.
+              <!-- Si ya tiene planilla calculada -->
+              <div v-else>
+                <div class="d-flex align-center justify-space-between mb-4">
+                  <div>
+                    <div class="text-caption text-medium-emphasis">Diferencia [Planilla] - [POS]:</div>
+                    <div
+                      class="text-h4 font-weight-bold"
+                      :class="auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20 ? 'text-error' : 'text-success'"
+                    >
+                      Bs. {{ (auditoria.auditoria_financiera?.diferencia_efectivo_bs || 0).toFixed(2) }}
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="text-caption text-medium-emphasis">Imputación Responsable:</div>
+                    <div class="text-subtitle-1 font-weight-bold text-primary">
+                      {{ auditoria.auditoria_financiera?.imputado_a || 'Sin faltante de dinero' }}
+                    </div>
+                  </div>
+                </div>
+
+                <VAlert
+                  v-if="auditoria.auditoria_financiera?.diferencia_efectivo_bs < -20"
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="rounded-lg"
+                >
+                  <strong>Regla de Imputación:</strong> El dinero faltante se imputa a la Cajera / Recaudador responsable del sobre y arqueo físico.
+                </VAlert>
+                <div v-else class="text-caption text-success d-flex align-center">
+                  <VIcon icon="ri-check-line" class="me-1" />
+                  El efectivo declarado coincide con los registros del sistema POS.
+                </div>
               </div>
             </VCardText>
           </VCard>
@@ -694,6 +823,114 @@ onMounted(async () => {
         <VCardActions class="pa-3 justify-end">
           <VBtn color="secondary" variant="outlined" @click="dialogTransacciones = false">Cerrar</VBtn>
           <VBtn color="primary" prepend-icon="ri-refresh-line" :loading="loadingTransacciones" @click="abrirDialogoTransacciones">Refrescar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Modal de Subida Manual de Planilla (Contingencia Vértice 2) -->
+    <VDialog v-model="dialogSubirPlanilla" max-width="600" persistent>
+      <VCard class="rounded-xl">
+        <VCardItem class="bg-amber-lighten-5 py-4">
+          <div class="d-flex align-center justify-space-between">
+            <div class="d-flex align-center">
+              <VIcon icon="ri-upload-cloud-line" color="warning" size="26" class="me-2" />
+              <div>
+                <div class="text-subtitle-1 font-weight-bold text-amber-darken-4">
+                  Carga Manual de Planilla de Caja
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  Turno #{{ turnoId }} | Extracción con Gemini Vision OCR
+                </div>
+              </div>
+            </div>
+            <VBtn icon="ri-close-line" variant="text" size="small" @click="dialogSubirPlanilla = false" />
+          </div>
+        </VCardItem>
+        <VDivider />
+        <VCardText class="pa-4">
+          <!-- Zona de Subida / File Selector -->
+          <div class="mb-4">
+            <div class="text-subtitle-2 font-weight-bold mb-2">Fotografía de la Planilla Manuscrita:</div>
+            <VFileInput
+              label="Seleccionar o tomar fotografía..."
+              accept="image/*,application/pdf"
+              prepend-icon="ri-camera-line"
+              variant="outlined"
+              density="compact"
+              show-size
+              @change="onFileSelected"
+            />
+            <div v-if="previewPlanilla" class="mt-2 text-center">
+              <VImg :src="previewPlanilla" max-height="180" class="rounded-lg border mx-auto bg-grey-lighten-4" cover />
+            </div>
+          </div>
+
+          <VDivider class="my-3" />
+          <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
+            Valores Opcionales (Si dejas vacío, Gemini OCR los extraerá automáticamente):
+          </div>
+
+          <VRow density="compact">
+            <VCol cols="12" sm="6">
+              <VTextField
+                v-model="formPlanillaManual.total_ventas_declaradas_bs"
+                label="Ventas Declaradas (Bs)"
+                type="number"
+                density="compact"
+                variant="outlined"
+                prefix="Bs."
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <VTextField
+                v-model="formPlanillaManual.total_gastos_declarados_bs"
+                label="Gastos Declarados (Bs)"
+                type="number"
+                density="compact"
+                variant="outlined"
+                prefix="Bs."
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <VTextField
+                v-model="formPlanillaManual.monto_sobre_efectivo_bs"
+                label="Monto en Sobre Efectivo (Bs)"
+                type="number"
+                density="compact"
+                variant="outlined"
+                prefix="Bs."
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <VTextField
+                v-model="formPlanillaManual.cajero_nombre"
+                label="Nombre de Encargada / Cajera"
+                density="compact"
+                variant="outlined"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextField
+                v-model="formPlanillaManual.observaciones"
+                label="Observaciones"
+                density="compact"
+                variant="outlined"
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VDivider />
+        <VCardActions class="pa-3 justify-end">
+          <VBtn color="secondary" variant="outlined" @click="dialogSubirPlanilla = false">Cancelar</VBtn>
+          <VBtn
+            color="warning"
+            variant="elevated"
+            prepend-icon="ri-check-line"
+            :loading="subiendoPlanilla"
+            @click="handleSubirPlanilla"
+          >
+            Subir y Conciliar
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

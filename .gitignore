@@ -44,3 +44,8 @@ frontend_web/.env.local
 # Archives
 *.zip
 template_reference/
+
+# WhatsApp Bot
+scripts/whatsapp_bot/node_modules/
+scripts/whatsapp_bot/auth_info_baileys/
+scripts/whatsapp_bot/.env

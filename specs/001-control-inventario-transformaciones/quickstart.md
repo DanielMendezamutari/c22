@@ -387,4 +387,75 @@ Demostrar la ingesta automática de ventas desde la computadora de caja de la su
    - Si el efectivo de la planilla es menor a los pagos en efectivo del POS $\rightarrow$ Tarjeta en Rojo imputando faltante a la Cajera.
    - Si las botellas contadas en barra son menores a las comandas vendidas $\rightarrow$ Tarjeta en Rojo imputando faltante al Barman.
 
+---
+
+### Escenario 16: Ingesta Inbound de WhatsApp y Clasificación Autónoma con Gemini Vision
+
+1. **Simular evento de Webhook entrante desde Microservicio Baileys**:
+   ```bash
+   curl -X POST https://c22.ribersoft.com/api/v1/webhook/whatsapp \
+     -H "Content-Type: application/json" \
+     -H "X-Webhook-Secret: TU_WEBHOOK_SECRET_AQUI" \
+     -d '{
+       "remote_jid": "1203630283921@g.us",
+       "sender_phone": "59170123456",
+       "sender_name": "Mariela Encargada Casa22",
+       "message_timestamp": 1728168000,
+       "tipo": "imagen",
+       "caption": "Planilla cierre domingo c22",
+       "media_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+       "mimetype": "image/jpeg"
+     }'
+   ```
+2. **Verificar Procesamiento y Extracción por Gemini**:
+   - Consultar `GET /api/v1/whatsapp/mensajes` como Super Admin.
+   - Constatar:
+     - `clasificacion_ia = 'planilla_caja'`.
+     - `score_confianza >= 0.85`.
+     - `sucursal_id = 1` (identificada por multi-factor: teléfono Mariela + encabezado c22).
+     - `metadata_ia` contiene el JSON con efectivo, QR, tarjetas y gastos extraídos.
+
+---
+
+### Escenario 17: Conciliación Triangulada con Planilla Aún No Enviada (`[PENDIENTE_PLANILLA]`)
+
+1. **Generar cierre en POS sin foto de planilla**:
+   - El POS de Casa 22 sincroniza 8,500.00 Bs en ventas.
+   - La encargada aún no envía la foto al grupo.
+2. **Consultar Conciliación Triangulada en la Web**:
+   - `GET /api/v1/auditoria/conciliacion-triangulada/{turno_id}`.
+   - **Verificación**:
+     - Vértice 2 muestra badge amarillo: `[PENDIENTE_PLANILLA] - Esperando foto de encargada`.
+     - `diferencia_caja_bs` es `null`, **NO** calcula $-8,500.00$ Bs de robo ficticio.
+     - Botón "Subir Planilla Manualmente" activo para contingencia.
+
+---
+
+### Escenario 18: Conteo de Garzón Turno Día y Liquidación de Jornal con Descuento por Faltante
+
+1. **Conteo en Barra en APK Flutter**:
+   - El garzón ingresa con su PIN y cuenta el inventario de botellas usando los atajos `+12`, `+24` sin retrasos.
+   - La persistencia local en `SharedPreferences` protege el conteo en tiempo real.
+2. **Liquidación Inmediata de Jornal al Cerrar**:
+   - Jornal diario base configurado: $120.00$ Bs.
+   - Se detecta 1 botella faltante de cerveza Corona (costo: $15.00$ Bs).
+   - La app liquida: $120.00 - 15.00 = 105.00$ Bs neto a cobrar.
+   - Muestra pantalla sellada con código de cobro y reloj con segundero para presentar a la cajera.
+
+---
+
+### Escenario 19: Gestión y Vinculación Web de WhatsApp (QR en Vivo y Mapeo Interactivo)
+
+1. **Monitoreo de Estado y Escaneo de QR sin Terminal**:
+   - Abrir en el navegador la ruta `https://c22.ribersoft.com/whatsapp/gestion`.
+   - Si el bot no tiene sesión, la tarjeta presenta el código QR generado por Baileys en alta resolución con instrucciones de vinculación.
+   - Escanear el código con el WhatsApp del celular.
+   - En <2 segundos, la interfaz web actualiza automáticamente su estado a badge verde: `Conectado (+591 XXXXXXXX)`.
+2. **Descubrimiento y Asignación de Grupos con Dropdowns**:
+   - La tabla web carga automáticamente los grupos descubiertos (`GET /api/v1/whatsapp/grupos-disponibles`).
+   - Ubicar el grupo `"[C22] Cierres y Recaudación"`.
+   - Seleccionar en el dropdown de Sucursal: `Casa 22`.
+   - Seleccionar en el dropdown de Tipo: `Cierres y Recaudación`.
+   - Encender el interruptor `Activo` y pulsar `Guardar`.
+   - **Verificación**: El bot reconoce de inmediato el grupo para su whitelist de memoria y los mensajes recibidos se asocian de forma determinista al 100% con Casa 22.
 

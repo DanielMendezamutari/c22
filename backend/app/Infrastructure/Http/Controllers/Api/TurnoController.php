@@ -746,5 +746,41 @@ class TurnoController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Liquida de inmediato el jornal de barra del garzón de turno día (US35)
+     * POST /api/v1/turnos/{id}/liquidar-garzon
+     */
+    public function liquidarGarzon(int $id, Request $request, \App\Application\UseCases\Turnos\LiquidarJornalGarzonUseCase $useCase): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'usuario_id' => 'required|exists:usuarios,id',
+                'jornal_base_bs' => 'nullable|numeric|min:0',
+                'faltante_botellas_unidades' => 'nullable|numeric|min:0',
+                'descuento_faltante_bs' => 'nullable|numeric|min:0',
+                'costo_unitario_bs' => 'nullable|numeric|min:0',
+                'foto_comprobante_url' => 'nullable|string',
+            ]);
+
+            $datos = array_merge($validated, [
+                'turno_id' => $id,
+                'fecha' => now()->toDateString(),
+            ]);
+
+            $jornal = $useCase->execute($datos);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Jornal de garzón liquidado exitosamente con descuento por botellas faltantes aplicado.',
+                'data' => $jornal,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al liquidar jornal de garzón: ' . $e->getMessage(),
+            ], 400);
+        }
+    }
 }
 

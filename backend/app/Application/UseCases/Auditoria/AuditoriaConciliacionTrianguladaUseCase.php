@@ -75,13 +75,14 @@ class AuditoriaConciliacionTrianguladaUseCase
 
         $voucher = $recaudacion?->voucher;
 
-        $totalPlanillaEfectivo = $planilla ? (float)$planilla->total_ventas_declaradas_bs : 0.0;
-        $totalGastosPlanilla = $planilla ? (float)$planilla->total_gastos_declarados_bs : 0.0;
-        $montoSobreEfectivo = $planilla ? (float)$planilla->monto_sobre_efectivo_bs : 0.0;
+        $tienePlanilla = $planilla !== null;
+        $totalPlanillaEfectivo = $tienePlanilla ? (float)$planilla->total_ventas_declaradas_bs : null;
+        $totalGastosPlanilla = $tienePlanilla ? (float)$planilla->total_gastos_declarados_bs : 0.0;
+        $montoSobreEfectivo = $tienePlanilla ? (float)$planilla->monto_sobre_efectivo_bs : 0.0;
         $totalVoucherDeposito = $voucher ? (float)$voucher->monto_depositado_bs : 0.0;
 
-        // Diferencia de Caja: Efectivo cobrado por POS vs Efectivo anotado en planilla
-        $diferenciaCajaBs = $totalPlanillaEfectivo - $totalPosEfectivo;
+        // Diferencia de Caja: Solo se calcula si la planilla ya fue recibida
+        $diferenciaCajaBs = $tienePlanilla ? ($totalPlanillaEfectivo - $totalPosEfectivo) : null;
 
         // 3. Vértice 3: Conteo Físico en Barra (Barman)
         // Consumo físico según balance del turno
@@ -102,13 +103,17 @@ class AuditoriaConciliacionTrianguladaUseCase
         $responsableCajaId = $turno->cerrado_por_usuario_id ?: $turno->barman_id;
         $responsableBarraId = $turno->barman_id;
 
-        $estadoSemaforo = 'verde_cuadrado';
         $imputadoCaja = null;
         $imputadoBarra = null;
 
-        if (abs($diferenciaCajaBs) > 20) {
+        if (!$tienePlanilla) {
+            // Estado ámbar: Planilla pendiente de envío, no genera alerta roja ni imputa faltante
+            $estadoSemaforo = 'ambar_observado';
+        } elseif ($diferenciaCajaBs !== null && abs($diferenciaCajaBs) > 20) {
             $estadoSemaforo = ($diferenciaCajaBs < -50) ? 'rojo_discrepancia' : 'ambar_observado';
             $imputadoCaja = $turno->cerradoPor?->nombre ?: ($turno->usuario?->nombre ?: 'Cajera de Turno');
+        } else {
+            $estadoSemaforo = 'verde_cuadrado';
         }
 
         if (abs($diferenciaBotellas) > 2) {
@@ -122,9 +127,9 @@ class AuditoriaConciliacionTrianguladaUseCase
             [
                 'sucursal_id' => $turno->sucursal_id,
                 'total_pos_ventas_bs' => $totalPosVentas,
-                'total_planilla_efectivo_bs' => $totalPlanillaEfectivo,
+                'total_planilla_efectivo_bs' => $totalPlanillaEfectivo ?? 0.00,
                 'total_voucher_deposito_bs' => $totalVoucherDeposito,
-                'diferencia_caja_bs' => $diferenciaCajaBs,
+                'diferencia_caja_bs' => $diferenciaCajaBs ?? 0.00,
                 'responsable_caja_usuario_id' => $responsableCajaId,
                 'botellas_vendidas_pos' => $botellasVendidasPos,
                 'botellas_consumidas_inventario' => $botellasConsumoBarra,
@@ -156,11 +161,14 @@ class AuditoriaConciliacionTrianguladaUseCase
                 'botellas_vendidas_equiv' => round($botellasVendidasPos, 2),
             ],
             'vertice_2_planilla' => [
+                'estado' => $tienePlanilla ? '[RECIBIDA]' : '[PENDIENTE_PLANILLA]',
+                'mensaje' => $tienePlanilla ? 'Planilla procesada con éxito' : 'Esperando fotografía de planilla de caja de la encargada',
                 'efectivo_declarado_bs' => $totalPlanillaEfectivo,
                 'gastos_caja_chica_bs' => $totalGastosPlanilla,
                 'neto_sobre_declarado_bs' => $montoSobreEfectivo,
                 'voucher_depositado_banco_bs' => $totalVoucherDeposito,
                 'tiene_foto_planilla' => !empty($planilla?->foto_url),
+                'foto_url' => $planilla?->foto_url,
                 'tiene_foto_voucher' => !empty($voucher?->foto_url),
             ],
             'vertice_3_inventario' => [
@@ -171,8 +179,8 @@ class AuditoriaConciliacionTrianguladaUseCase
                 'consumo_fisico_botellas' => round($botellasConsumoBarra, 2),
             ],
             'auditoria_financiera' => [
-                'diferencia_efectivo_bs' => round($diferenciaCajaBs, 2),
-                'estado' => $diferenciaCajaBs < -20 ? 'faltante_caja' : ($diferenciaCajaBs > 20 ? 'sobrante_caja' : 'cuadrado'),
+                'diferencia_efectivo_bs' => $diferenciaCajaBs !== null ? round($diferenciaCajaBs, 2) : null,
+                'estado' => !$tienePlanilla ? 'pendiente_planilla' : ($diferenciaCajaBs < -20 ? 'faltante_caja' : ($diferenciaCajaBs > 20 ? 'sobrante_caja' : 'cuadrado')),
                 'imputado_a' => $imputadoCaja,
             ],
             'auditoria_botellas' => [

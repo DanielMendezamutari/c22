@@ -528,5 +528,79 @@ class AuditoriaController extends Controller
             ], 400);
         }
     }
+
+    public function subirPlanillaManual(Request $request, \App\Services\GeminiVisionAuditorService $visionAuditor): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'turno_id' => 'required|exists:turnos,id',
+                'foto' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:10240',
+                'foto_base64' => 'nullable|string',
+                'total_ventas_declaradas_bs' => 'nullable|numeric',
+                'total_gastos_declarados_bs' => 'nullable|numeric',
+                'monto_sobre_efectivo_bs' => 'nullable|numeric',
+                'cajero_nombre' => 'nullable|string|max:150',
+                'observaciones' => 'nullable|string',
+            ]);
+
+            $turno = \App\Infrastructure\Persistence\Eloquent\Models\Turno::findOrFail($validated['turno_id']);
+            $fotoUrl = null;
+
+            if ($request->hasFile('foto')) {
+                $path = $request->file('foto')->store('comprobantes/planillas', 'public');
+                $fotoUrl = 'storage/' . $path;
+            } elseif (!empty($validated['foto_base64'])) {
+                $raw = $validated['foto_base64'];
+                if (preg_match('/^data:image\/(\w+);base64,/', $raw)) {
+                    $raw = substr($raw, strpos($raw, ',') + 1);
+                }
+                $filename = 'comprobantes/planillas/manual_' . time() . '_' . uniqid() . '.jpg';
+                \Illuminate\Support\Facades\Storage::disk('public')->put($filename, base64_decode($raw));
+                $fotoUrl = 'storage/' . $filename;
+            }
+
+            $ocrData = [];
+            if ($fotoUrl) {
+                $ocrResult = $visionAuditor->auditarYClasificar($fotoUrl);
+                $ocrData = $ocrResult['datos'] ?? [];
+            }
+
+            $ventasDeclaradas = $validated['total_ventas_declaradas_bs'] 
+                ?? ($ocrData['total_ventas_declaradas_bs'] ?? 0.00);
+            $gastosDeclarados = $validated['total_gastos_declarados_bs'] 
+                ?? ($ocrData['total_gastos_declarados_bs'] ?? 0.00);
+            $montoSobre = $validated['monto_sobre_efectivo_bs'] 
+                ?? ($ocrData['monto_sobre_efectivo_bs'] ?? ($ventasDeclaradas - $gastosDeclarados));
+            $cajero = $validated['cajero_nombre'] 
+                ?? ($ocrData['cajero_nombre'] ?? 'Encargada');
+
+            $planilla = \App\Infrastructure\Persistence\Eloquent\Models\PlanillaCaja::updateOrCreate(
+                ['turno_id' => $turno->id],
+                [
+                    'sucursal_id' => $turno->sucursal_id,
+                    'fecha_operativa' => now()->toDateString(),
+                    'foto_url' => $fotoUrl ?: 'storage/comprobantes/planillas/manual_default.jpg',
+                    'total_ventas_declaradas_bs' => $ventasDeclaradas,
+                    'total_gastos_declarados_bs' => $gastosDeclarados,
+                    'monto_sobre_efectivo_bs' => $montoSobre,
+                    'cajero_nombre' => $cajero,
+                    'datos_ocr_json' => $ocrData,
+                    'estado_ocr' => 'procesado',
+                    'observaciones' => $validated['observaciones'] ?? 'Subida manual de contingencia',
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Planilla física registrada y conciliada exitosamente.',
+                'data' => $planilla,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al subir planilla manual: ' . $e->getMessage(),
+            ], 400);
+        }
+    }
 }
 

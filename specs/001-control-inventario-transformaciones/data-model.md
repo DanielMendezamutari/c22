@@ -37,6 +37,7 @@ Representa los puntos de venta / casas del Grupo Punto Frío.
 - `nombre`: VARCHAR(100) NOT NULL UNIQUE (ej. 'Casa22', 'Casa Coron', 'Madan')
 - `codigo`: VARCHAR(20) NOT NULL UNIQUE (ej. 'C22', 'CCORON', 'MDN')
 - `direccion`: VARCHAR(255) NULLABLE
+- `whatsapp_group_jid`: VARCHAR(100) NULLABLE (Identificador inmutable del grupo de WhatsApp para cierres, ej. '1203630283921@g.us')
 - `activo`: BOOLEAN NOT NULL DEFAULT TRUE
 - `created_at`, `updated_at`: TIMESTAMP
 
@@ -374,7 +375,87 @@ Registro auditable que cruza: [1. POS SQL Server] vs [2. Planilla de Caja] vs [3
 - `botellas_consumidas_inventario`: DECIMAL(8,2) NOT NULL DEFAULT 0.00 (Salida física según conteo de barman)
 - `diferencia_botellas`: DECIMAL(8,2) NOT NULL DEFAULT 0.00 (Faltante o sobrante de botellas)
 - `responsable_barra_usuario_id`: BIGINT UNSIGNED NULLABLE (Barman titular a quien se imputa)
-- `estado_semaforo`: ENUM('verde_cuadrado', 'ambar_observado', 'rojo_discrepancia') NOT NULL DEFAULT 'verde_cuadrado'
+- `estado_planilla`: ENUM('pendiente', 'recibida', 'conciliada') NOT NULL DEFAULT 'pendiente'
+- `estado_semaforo`: ENUM('verde_cuadrado', 'ambar_observado', 'rojo_discrepancia') NOT NULL DEFAULT 'ambar_observado'
 - `observaciones`: TEXT NULLABLE
 - `created_at`, `updated_at`: TIMESTAMP
 
+---
+
+### 2.19 `whatsapp_mensajes_inbound` (Eventos Ingeridos desde Bot de WhatsApp)
+Mensajes y archivos multimedia recibidos silenciosamente desde el grupo compartido de WhatsApp y clasificados por Gemini Vision.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `sucursal_id`: BIGINT UNSIGNED NULLABLE (Asignada automáticamente por multi-factor o manualmente)
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE SET NULL
+- `remote_jid`: VARCHAR(100) NOT NULL (Identificador de grupo, ej. `1203630283921@g.us`)
+- `sender_phone`: VARCHAR(50) NOT NULL (Teléfono emisor, ej. `59170123456`)
+- `sender_name`: VARCHAR(150) NULLABLE
+- `tipo_mensaje`: ENUM('imagen', 'documento', 'texto', 'audio') NOT NULL DEFAULT 'imagen'
+- `media_path`: VARCHAR(255) NULLABLE (Ruta local o URL en almacenamiento de la foto descargada)
+- `raw_text`: TEXT NULLABLE (Texto o caption adjunto)
+- `clasificacion_ia`: ENUM('planilla_caja', 'voucher_deposito', 'recibo_gasto', 'otro', 'desconocido') NOT NULL DEFAULT 'desconocido'
+- `score_confianza`: DECIMAL(5,2) NOT NULL DEFAULT 0.00 (De 0.00 a 1.00)
+- `metadata_ia`: JSON NULLABLE (JSON estructurado extraído por Gemini: montos, glosas, fechas, etc.)
+- `estado`: ENUM('pendiente_proceso', 'procesado', 'requiere_confirmacion', 'error') NOT NULL DEFAULT 'pendiente_proceso'
+- `turno_id`: BIGINT UNSIGNED NULLABLE (Turno enlazado)
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE SET NULL
+- `created_at`, `updated_at`: TIMESTAMP
+
+---
+
+### 2.20 `sucursal_encargadas` (Directorio de Encargadas por Sucursal)
+Asociación entre números telefónicos de WhatsApp y las sucursales donde operan las encargadas.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
+- `nombre`: VARCHAR(150) NOT NULL
+- `telefono_whatsapp`: VARCHAR(50) NOT NULL (Formato internacional, ej. `59170123456`)
+- `cargo`: ENUM('encargada', 'cajera', 'supervisora') NOT NULL DEFAULT 'encargada'
+- `activo`: BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at`, `updated_at`: TIMESTAMP
+- *UNIQUE*: `(sucursal_id, telefono_whatsapp)`
+
+---
+
+### 2.21 `jornales_garzones` (Liquidaciones Diarias de Barra - Turno Día)
+Liquidación inmutable del jornal diario para garzones que atienden la barra en turno día.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `turno_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE CASCADE
+- `usuario_id`: BIGINT UNSIGNED NOT NULL (Garzón titular de la barra)
+  - *FK*: `usuario_id` REFERENCES `usuarios(id)`
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)`
+- `fecha`: DATE NOT NULL
+- `jornal_base_bs`: DECIMAL(10,2) NOT NULL DEFAULT 0.00 (Monto diario convenido)
+- `faltante_botellas_unidades`: DECIMAL(8,2) NOT NULL DEFAULT 0.00
+- `descuento_faltante_bs`: DECIMAL(10,2) NOT NULL DEFAULT 0.00 (Botellas faltantes $\times$ costo unitario)
+- `total_neto_pagado_bs`: DECIMAL(10,2) NOT NULL DEFAULT 0.00 (`jornal_base_bs - descuento_faltante_bs`)
+- `foto_comprobante_url`: VARCHAR(255) NULLABLE (Foto de respaldo tomada por la cajera)
+- `estado`: ENUM('pendiente', 'pagado_en_caja', 'anulado') NOT NULL DEFAULT 'pendiente'
+- `created_at`, `updated_at`: TIMESTAMP
+
+---
+
+### 2.22 `sucursal_whatsapp_grupos` (Catálogo Dinámico de Grupos Auditables)
+Permite asociar de forma dinámica y escalable múltiples grupos de WhatsApp a cada sucursal (Cierres, Gastos, Taxis) para filtrado Zero-Leakage y asignación automática.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
+- `remote_jid`: VARCHAR(100) NOT NULL UNIQUE (Identificador inmutable del grupo de WhatsApp, ej. `1203630283921@g.us`)
+- `nombre_grupo`: VARCHAR(150) NOT NULL (Nombre visible del grupo en WhatsApp)
+- `tipo_auditoria`: ENUM('cierre_recaudacion', 'gastos_caja_chica', 'taxis_rotacion', 'general') NOT NULL DEFAULT 'cierre_recaudacion'
+- `activo`: BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at`, `updated_at`: TIMESTAMP
+- *INDEX*: `(sucursal_id, tipo_auditoria)`
+
+---
+
+### 2.23 `whatsapp_grupos_descubiertos` (Catálogo de Grupos Detectados por Baileys)
+Almacena los grupos donde el número vinculado es participante, detectados automáticamente al conectarse (`groupFetchAllParticipating`) para alimentar los selectores de la interfaz web.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `remote_jid`: VARCHAR(100) NOT NULL UNIQUE (Identificador de WhatsApp, ej. `1203630283921@g.us`)
+- `nombre_grupo`: VARCHAR(150) NOT NULL (Nombre visible del grupo)
+- `participantes_count`: INT UNSIGNED NOT NULL DEFAULT 0
+- `ultima_deteccion_at`: TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+- `created_at`, `updated_at`: TIMESTAMP

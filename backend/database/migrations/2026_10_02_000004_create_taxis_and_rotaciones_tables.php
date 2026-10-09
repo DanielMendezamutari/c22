@@ -67,10 +67,17 @@ return new class extends Migration
     {
         // Buscar IDs de sucursales si ya existen
         $casas = DB::table('sucursales')->pluck('id', 'nombre')->toArray();
+        if (empty($casas)) {
+            return;
+        }
 
-        $c22 = $casas['Casa22'] ?? 1;
-        $coron = $casas['Casa Coron'] ?? 2;
-        $madan = $casas['Madan'] ?? 3;
+        $c22 = $casas['Casa22'] ?? null;
+        $coron = $casas['Casa Coron'] ?? null;
+        $madan = $casas['Madan'] ?? null;
+
+        if (!$c22 || !$coron || !$madan) {
+            return;
+        }
 
         $rutas = [
             ['origen' => $c22, 'destino' => $coron, 'estandar' => 15.00, 'max' => 20.00],

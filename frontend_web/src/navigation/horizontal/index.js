@@ -19,4 +19,9 @@ export default [
     to: { path: '/movilidad/taxis' },
     icon: { icon: 'ri-taxi-line' },
   },
+  {
+    title: 'WhatsApp Bot',
+    to: { path: '/whatsapp/gestion' },
+    icon: { icon: 'ri-whatsapp-line' },
+  },
 ]

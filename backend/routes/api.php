@@ -21,6 +21,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/turnos/{id}/resumen-cajera', [TurnoController::class, 'resumenCajera']);
     Route::post('/turnos/{id}/cobro-recibido', [TurnoController::class, 'cobroRecibido']);
     Route::post('/turnos/{id}/confirmar-pago-comision', [TurnoController::class, 'confirmarPagoComision']);
+    Route::post('/turnos/{id}/liquidar-garzon', [TurnoController::class, 'liquidarGarzon']);
 
     // Gestión de Turnos de 12h y Cortes de Inventario - User Story 3
     Route::post('/turnos/abrir', [TurnoController::class, 'abrirTurno']);
@@ -144,7 +145,29 @@ Route::prefix('v1')->group(function () {
     Route::get('/pos/mapeo-productos', [\App\Infrastructure\Http\Controllers\Api\PosMapeoController::class, 'index']);
     Route::post('/pos/mapeo-productos', [\App\Infrastructure\Http\Controllers\Api\PosMapeoController::class, 'guardarMapeo']);
     Route::get('/auditoria/conciliacion-triangulada/{turno_id}', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'conciliacionTriangulada']);
+    Route::post('/auditoria/subir-planilla-manual', [\App\Infrastructure\Http\Controllers\Api\AuditoriaController::class, 'subirPlanillaManual']);
+
+    // Ingesta Silenciosa de WhatsApp y Auditoría Autónoma - User Story 33 & 34
+    Route::post('/webhook/whatsapp', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'handleWebhook'])->middleware('webhook.secret');
+    Route::get('/whatsapp/grupos-auditables', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'gruposAuditables'])->middleware('webhook.secret');
+    Route::post('/whatsapp/grupos', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'registrarGrupo']);
+    Route::post('/whatsapp/confirmar-sucursal', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'confirmarSucursal']);
+
+    // Panel Web de Gestión y Vinculación de WhatsApp - User Story 36
+    Route::post('/whatsapp/bot-status', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'actualizarBotStatus'])->middleware('webhook.secret');
+    Route::get('/whatsapp/bot-status', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'obtenerBotStatus']);
+    Route::post('/whatsapp/grupos-descubiertos', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'sincronizarGruposDescubiertos'])->middleware('webhook.secret');
+    Route::get('/whatsapp/grupos-disponibles', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'listarGruposDisponibles']);
+    Route::post('/whatsapp/desconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'solicitarDesconexion']);
+    Route::get('/whatsapp/mensajes-recientes', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'mensajesRecientes']);
+
+    // CRUD de Asignación de Grupos de WhatsApp a Sucursales - User Story 36
+    Route::get('/sucursal-whatsapp-grupos', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'index']);
+    Route::post('/sucursal-whatsapp-grupos', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'store']);
+    Route::put('/sucursal-whatsapp-grupos/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'update']);
+    Route::delete('/sucursal-whatsapp-grupos/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'destroy']);
 });
+
 
 
 

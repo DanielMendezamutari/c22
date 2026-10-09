@@ -616,6 +616,71 @@
 - [X] T237 [US32] Crear la vista de Matriz de Conciliación Triangulada en 3 Columnas ([POS] vs [Planilla Manual OCR] vs [Barra]) en `frontend_web/src/pages/auditoria/conciliacion-triangulada.vue`
 - [X] T238 [US32] Validar el flujo de sincronización y cruce triangulado según Scenario 15 en `specs/001-control-inventario-transformaciones/quickstart.md`
 
+---
+
+## Phase 38: User Story 33 - Bot de WhatsApp Silencioso con Grupos de Cierre por Sucursal e Ingesta Webhook (Priority: P1)
+
+**Goal**: Implementar el microservicio en Node.js (Baileys) que monitorea silenciosamente los grupos de cierre exclusivos de cada sucursal (`[C22] Cierres`, `[Madan] Cierres`, `[Coron] Cierres`) y retransmite fotos y documentos a `POST /api/v1/webhook/whatsapp` de Laravel con resolución 100% determinista de sucursal por `remote_jid`.  
+**Independent Test**: Enviar una fotografía de prueba a cualquiera de los grupos de cierre vinculados; verificar en la terminal de Baileys la captura del evento y en la tabla `whatsapp_mensajes_inbound` de Laravel la recepción HTTP 200 con el `sucursal_id` exacto de la casa según Scenario 16 en `quickstart.md`.
+
+- [X] T239 [P] [US33] Crear migración para tabla `sucursal_whatsapp_grupos` (`id`, `sucursal_id`, `remote_jid`, `nombre_grupo`, `tipo_auditoria`, `activo`) en `backend/database/migrations/2026_10_08_000001_create_sucursal_whatsapp_grupos_table.php`
+- [X] T240 [P] [US33] Crear migración para tabla `whatsapp_mensajes_inbound` en `backend/database/migrations/2026_10_08_000002_create_whatsapp_mensajes_inbound_table.php`
+- [X] T241 [P] [US33] Crear modelos Eloquent `SucursalWhatsAppGrupo` y `WhatsAppMensajeInbound` en `backend/app/Models/`
+- [X] T242 [P] [US33] Implementar middleware `VerifyWebhookSecret` en `backend/app/Http/Middleware/VerifyWebhookSecret.php` para validar cabecera `X-Webhook-Secret`
+- [X] T243 [US33] Implementar `WhatsAppWebhookController` con endpoints `GET /api/v1/whatsapp/grupos-auditables` (whitelist dinámica para el bot) y `POST /api/v1/webhook/whatsapp` con resolución 100% determinista por `sucursal_whatsapp_grupos` en `backend/app/Http/Controllers/Api/WhatsAppWebhookController.php`
+- [X] T244 [P] [US33] Registrar rutas de webhook y gestión de grupos auditables en `backend/routes/api.php`
+- [X] T245 [US33] Desarrollar microservicio en Node.js con `@whiskeysockets/baileys` en `scripts/whatsapp_bot/bot.js` con soporte QR terminal, listado interactivo de JIDs, consulta en caliente de whitelist dinámica `GET /whatsapp/grupos-auditables`, filtro local estricto Zero-Leakage (descarta al instante en memoria cualquier chat personal ajeno) y retransmisión de multimedia a Laravel
+- [X] T246 [US33] Validar recepción de imagen desde grupo de cierre simulado según Scenario 16 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
+---
+
+## Phase 39: User Story 34 - Extracción Autónoma con Gemini 1.5 Flash Vision y Vértice 2 [PENDIENTE_PLANILLA] (Priority: P1)
+
+**Goal**: Implementar la clasificación autónoma y extracción OCR de planillas manuscritas, vouchers y recibos de gastos con Gemini 1.5 Flash Vision, y soportar el estado `[PENDIENTE_PLANILLA]` en la pantalla de Conciliación Triangulada para evitar falsas alarmas de faltante de caja mientras la encargada envía la foto.  
+**Independent Test**: Consultar un turno POS cerrado sin planilla; constatar que Vértice 2 muestre badge ámbar `[PENDIENTE_PLANILLA]` con diferencia `null`. Ingestar foto de planilla física y verificar extracción JSON y transición a `[RECIBIDA]` calculando el cuadre según Scenario 17 en `quickstart.md`.
+
+- [X] T247 [P] [US34] Implementar `GeminiVisionAuditorService` en `backend/app/Services/GeminiVisionAuditorService.php` con prompt estructurado para clasificación en `planilla_caja`, `voucher_deposito`, `recibo_gasto` y JSON schema estricto
+- [X] T248 [US34] Crear job asíncrono `ProcesarMensajeWhatsAppJob` en `backend/app/Jobs/ProcesarMensajeWhatsAppJob.php` que invoca `GeminiVisionAuditorService`, persiste metadatos y asocia con el turno de la sucursal
+- [X] T249 [US34] Modificar `AuditoriaConciliacionTrianguladaUseCase` en `backend/app/Application/UseCases/Auditoria/AuditoriaConciliacionTrianguladaUseCase.php` para evaluar Vértice 2 en estado `[PENDIENTE_PLANILLA]` con semáforo ámbar si no hay planilla, sin computar faltante ficticio de caja
+- [X] T250 [US34] Implementar endpoint `POST /api/v1/whatsapp/confirmar-sucursal` para resolución rápida en 1 clic de comprobantes con badge `[SUCURSAL_POR_CONFIRMAR]` en `backend/app/Http/Controllers/Api/WhatsAppWebhookController.php`
+- [X] T251 [P] [US34] Crear endpoint `POST /api/v1/auditoria/subir-planilla-manual` para contingencia de carga manual en `backend/app/Http/Controllers/Api/AuditoriaController.php`
+- [X] T252 [US34] Actualizar la vista web de Conciliación Triangulada en `frontend_web/src/pages/auditoria/conciliacion-triangulada.vue` con badge interactivo `[PENDIENTE_PLANILLA]` y zona drag-and-drop de subida manual
+- [X] T253 [P] [US34] Crear componente modal `frontend_web/src/components/whatsapp/ConfirmarSucursalModal.vue` para confirmación de sucursal en 1 clic
+- [X] T254 [US34] Validar el flujo de conciliación resiliente con planilla pendiente según Scenario 17 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
+---
+
+## Phase 40: User Story 35 - Conteo de Garzones Offline-First (Turno Día) y Liquidación Inmediata de Jornal Diario (Priority: P1)
+
+**Goal**: Implementar una experiencia de conteo ultrarrápida, reactiva y offline-first en Flutter con persistencia instantánea en `SharedPreferences` para garzones de Turno Día, con liquidación inmediata de su jornal diario restando botellas faltantes al costo (`Jornal Base - Faltante Botellas = Total a Cobrar`) y comprobante visual sellado para caja.  
+**Independent Test**: Ingresar a la app Flutter en Turno Día con jornal de 120 Bs; registrar 1 botella faltante de Corona (15 Bs); comprobar liquidación de 105 Bs con comprobante sellado anti-fraude y persistencia en `jornales_garzones` según Scenario 18 en `quickstart.md`.
+
+- [X] T255 [P] [US35] Crear migración para tabla `jornales_garzones` en `backend/database/migrations/2026_10_08_000003_create_jornales_garzones_table.php`
+- [X] T256 [P] [US35] Crear modelo Eloquent `JornalGarzon` en `backend/app/Models/JornalGarzon.php`
+- [X] T257 [US35] Implementar `LiquidarJornalGarzonUseCase` y endpoint `POST /api/v1/turnos/{id}/liquidar-garzon` en `backend/app/Http/Controllers/Api/TurnoController.php`
+- [X] T258 [US35] Implementar `CorteGarzonNotifier` con arquitectura reactiva puramente en memoria y auto-persistencia instantánea en `SharedPreferences` en `frontend/puntofrio_app/lib/presentation/providers/corte_garzon_provider.dart`
+- [X] T259 [US35] Optimizar `CorteInventarioScreen` en `frontend/puntofrio_app/lib/presentation/screens/corte/corte_inventario_screen.dart` para respuesta táctil ultra-estable (<50ms) en atajos por caja `+12`, `+24`, `+6`, `-12` sin lag
+- [X] T260 [US35] Crear pantalla `LiquidacionJornalGarzonScreen` en `frontend/puntofrio_app/lib/presentation/screens/cobro/liquidacion_jornal_garzon_screen.dart` con cálculo dinámico: `Jornal Base - Faltante Botellas al Costo = Total a Cobrar` y comprobante sellado anti-fraude de 60s
+- [X] T261 [US35] Enlazar la acción de liquidación de jornal en el dashboard del garzón de turno día en `frontend/puntofrio_app/lib/presentation/screens/dashboard/dashboard_barman_screen.dart`
+- [X] T262 [US35] Validar el flujo de conteo estable y liquidación de jornal con descuento de faltante según Scenario 18 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
+---
+
+## Phase 41: User Story 36 - Panel Web de Gestión, Vinculación QR y Mapeo Interactivo de Grupos WhatsApp (Priority: P1)
+
+**Goal**: Implementar una interfaz gráfica web dedicada en `frontend_web` para monitorear el estado de conexión del bot, renderizar el código QR en vivo para escaneo desde el navegador, visualizar los grupos detectados y asignarlos interactivamente a sucursales con dropdowns, desacoplando completamente la gestión de la terminal.  
+**Independent Test**: Acceder a `frontend_web/src/pages/whatsapp/gestion.vue` con el bot desconectado; verificar renderizado del QR en pantalla; vincular WhatsApp y constatar transición automática a badge verde con número telefónico; asignar un grupo descubierto a Casa 22 con selectores desplegables y comprobar persistencia inmediata sin comandos de terminal según Scenario 19 en `quickstart.md`.
+
+- [X] T263 [P] [US36] Crear migración para tabla `whatsapp_grupos_descubiertos` (`id`, `remote_jid`, `nombre_grupo`, `participantes_count`, `ultima_deteccion_at`, `timestamps`) en `backend/database/migrations/2026_10_09_000001_create_whatsapp_grupos_descubiertos_table.php`
+- [X] T264 [P] [US36] Crear modelo Eloquent `WhatsAppGrupoDescubierto` con métodos de upsert por `remote_jid` en `backend/app/Models/WhatsAppGrupoDescubierto.php`
+- [X] T265 [US36] Implementar endpoints `POST /api/v1/whatsapp/bot-status`, `GET /api/v1/whatsapp/bot-status`, `POST /api/v1/whatsapp/grupos-descubiertos`, `GET /api/v1/whatsapp/grupos-disponibles` y `POST /api/v1/whatsapp/desconectar` en `backend/app/Infrastructure/Http/Controllers/Api/WhatsAppWebhookController.php`
+- [X] T266 [P] [US36] Implementar `SucursalWhatsAppGrupoController` para CRUD completo de asignación de grupos a sucursales (`POST /api/v1/sucursal-whatsapp-grupos`, `PUT /api/v1/sucursal-whatsapp-grupos/{id}`) en `backend/app/Infrastructure/Http/Controllers/Api/SucursalWhatsAppGrupoController.php`
+- [X] T267 [P] [US36] Registrar rutas protegidas para gestión web de WhatsApp y webhook en `backend/routes/api.php`
+- [X] T268 [US36] Modificar `scripts/whatsapp_bot/bot.js` para integrar librería `qrcode`, despachar el código QR en Base64 (`POST /whatsapp/bot-status`) al emitirse, sincronizar automáticamente grupos descubiertos (`POST /whatsapp/grupos-descubiertos`) al conectar y escuchar solicitud de desconexión
+- [X] T269 [US36] Desarrollar pantalla interactiva en Vue 3 / Vuetify `frontend_web/src/pages/whatsapp/gestion.vue` con visor de QR reactivo, badge de conexión verde, tabla de mapeo de grupos con selectores dropdowns (Sucursal, Tipo de Auditoría, Switch Activo) y botón guardar
+- [X] T270 [P] [US36] Incorporar acceso al módulo de gestión de WhatsApp en el menú lateral y rutas de `frontend_web/src/router/index.js` y layout principal
+- [X] T271 [US36] Validar el flujo integral de visualización de QR, detección de grupos y asignación interactiva sin terminal según Scenario 19 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
 
 ---
 
@@ -625,28 +690,34 @@
 - **Phases 1 a 28**: Completadas y verificadas [X].
 - **Phase 29 (US24 - Rol Cajera y Suplencia en Barra)**: Completada y verificada [X].
 - **Phase 30 (US25 - Conteo Resiliente, Búsqueda, Refresco y Producto Provisional)**: Completada y verificada [X].
-- **Phase 31 (US26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador)**:
-  - T180, T181 y T184 preparan la base de datos, modelo y enrutamiento en Laravel [P].
-  - T182 y T183 implementan la lógica de autorización y aplicación atómica de reconteo en `TurnoController.php`.
-  - T185 dota al Administrador de la capacidad de desbloqueo remoto en su APK.
-  - T186 y T187 implementan en el barman la detección del permiso, la precarga de memoria (100% de valores anteriores) y la confirmación selectiva en `corte_inventario_screen.dart`.
-  - T188 estampa la leyenda de versión corregida en los PDFs oficiales.
-  - T189 valida el escenario end-to-end (Scenario 23).
+- **Phase 31 (US26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador)**: Completada y verificada [X].
+- **Phases 32 a 36**: Completadas y verificadas [X].
+- **Phase 37 (US32 - Sincronización POS RestoTech y Conciliación Triangulada)**: Completada y verificada [X].
+- **Phase 38 (US33 - Bot WhatsApp Baileys & Ingesta Webhook)**: Completada y verificada [X].
+- **Phase 39 (US34 - Gemini 1.5 Flash Vision & Vértice 2 [PENDIENTE_PLANILLA])**: Completada y verificada [X].
+- **Phase 40 (US35 - Conteo Garzones Offline-First & Liquidación Diaria)**: Completada y verificada [X].
+- **Phase 41 (US36 - Panel Web de Gestión, QR y Mapeo Interactivo de WhatsApp)**:
+  - T263, T264, T266 y T267 preparan base de datos, modelos, controladores y rutas [P].
+  - T265 implementa los controladores de estado y grupos disponibles en Laravel.
+  - T268 actualiza el microservicio Node.js en `scripts/whatsapp_bot/bot.js` para emitir QR y grupos automáticamente.
+  - T269 y T270 construyen y enlazan la vista gráfica en `frontend_web`.
+  - T271 valida la experiencia visual end-to-end sin terminal (Scenario 19).
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Tareas Backend y Base de Datos Paralelas:
-Task T180: "Migración de reconteo en turnos y tabla auditorias_reconteo"
-Task T181: "Modelo Eloquent AuditoriaReconteo"
-Task T184: "Rutas de reconteo en api.php"
+# Tareas Backend Paralelas (Fase 41):
+Task T263: "Migración whatsapp_grupos_descubiertos"
+Task T264: "Modelo Eloquent WhatsAppGrupoDescubierto"
+Task T266: "Controlador SucursalWhatsAppGrupoController"
+Task T267: "Rutas API en backend/routes/api.php"
 
-# Tareas Frontend Paralelas:
-Task T185: "Botón y modal de habilitación de reconteo en dashboard_admin_screen.dart"
-Task T186: "Aviso de reconteo autorizado en dashboard_barman_screen.dart"
-Task T188: "Rótulo de versión corregida en conteo_pdf_service.dart y cierre_turno_pdf_service.dart"
+# Tareas Frontend y Microservicio Paralelas:
+Task T268: "Emisión reactiva de QR y push de grupos en scripts/whatsapp_bot/bot.js"
+Task T269: "Pantalla frontend_web/src/pages/whatsapp/gestion.vue"
+Task T270: "Rutas y menú lateral en frontend_web/src/router/index.js"
 ```
 
 ---
@@ -654,3 +725,4 @@ Task T188: "Rótulo de versión corregida en conteo_pdf_service.dart y cierre_tu
 ## Notes
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
+

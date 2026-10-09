@@ -1187,10 +1187,286 @@ Devuelve la matriz en 3 columnas comparativas para la pantalla de auditoría eje
       "estado": "verde_cuadrado",
       "imputado_a": null
     },
-    "estado_general_semaforo": "rojo_discrepancia"
+    "estado_general_semaforo": "ambar_observado"
   }
 }
 ```
 
+---
 
+## 10. Webhook Inbound WhatsApp (Bot Silencioso y Gemini Vision)
 
+### `POST /api/v1/webhook/whatsapp`
+Punto de entrada invocado por el microservicio Node.js (Baileys) al recibir un mensaje o archivo en el grupo.
+
+- **Headers**:
+  - `Content-Type: application/json`
+  - `X-Webhook-Secret: <secreto_configurado_en_env>`
+- **Request**:
+```json
+{
+  "remote_jid": "1203630283921@g.us",
+  "sender_phone": "59170123456",
+  "sender_name": "Mariela Encargada Casa22",
+  "message_timestamp": 1728168000,
+  "tipo": "imagen",
+  "caption": "Planilla cierre domingo c22",
+  "media_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "mimetype": "image/jpeg"
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Mensaje encolado para procesamiento autónomo con IA",
+  "inbound_id": 104,
+  "status": "pendiente_proceso"
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/confirmar-sucursal`
+Permite a la contadora o administrador confirmar la sucursal de un mensaje que quedó con estado `[SUCURSAL_POR_CONFIRMAR]`.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "inbound_id": 104,
+  "sucursal_id": 1,
+  "turno_id": 15
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Sucursal vinculada y conciliación recalculada exitosamente."
+}
+```
+
+### `GET /api/v1/whatsapp/grupos-auditables`
+Consulta rápida invocada por el microservicio Node.js para cargar o refrescar en caliente la whitelist de JIDs autorizados (filtro Zero-Leakage).
+
+- **Headers**: `X-Webhook-Secret: <secreto_configurado_en_env>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "remote_jid": "1203630283921@g.us",
+      "sucursal_id": 1,
+      "sucursal_nombre": "Casa22",
+      "tipo_auditoria": "cierre_recaudacion"
+    },
+    {
+      "remote_jid": "1203630987654@g.us",
+      "sucursal_id": 1,
+      "sucursal_nombre": "Casa22",
+      "tipo_auditoria": "gastos_caja_chica"
+    },
+    {
+      "remote_jid": "1203630112233@g.us",
+      "sucursal_id": 2,
+      "sucursal_nombre": "Madan",
+      "tipo_auditoria": "cierre_recaudacion"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/grupos`
+Permite a Daniel vincular un nuevo grupo descubierto a una sucursal y tipo de auditoría desde la plataforma web.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "sucursal_id": 1,
+  "remote_jid": "1203630283921@g.us",
+  "nombre_grupo": "[C22] Cierres y Recaudación",
+  "tipo_auditoria": "cierre_recaudacion"
+}
+```
+- **Response 201 Created**:
+```json
+{
+  "success": true,
+  "message": "Grupo de WhatsApp vinculado exitosamente a la sucursal.",
+  "data": {
+    "id": 12,
+    "sucursal_id": 1,
+    "remote_jid": "1203630283921@g.us",
+    "nombre_grupo": "[C22] Cierres y Recaudación",
+    "tipo_auditoria": "cierre_recaudacion",
+    "activo": true
+  }
+}
+```
+
+---
+
+## 11. Liquidación de Jornal para Garzones (Turno Día)
+
+### `POST /api/v1/turnos/{id}/liquidar-garzon`
+Liquida de inmediato el jornal de barra del garzón de turno día, descontando al costo las botellas faltantes.
+
+- **Headers**: `Authorization: Bearer <token_usuario>`
+- **Request**:
+```json
+{
+  "usuario_id": 8,
+  "jornal_base_bs": 120.00,
+  "faltante_botellas_unidades": 1.00,
+  "descuento_faltante_bs": 15.00,
+  "total_neto_pagado_bs": 105.00,
+  "foto_comprobante_url": "storage/comprobantes/jornal_turno_15_garzon_8.jpg"
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Jornal de garzón liquidado exitosamente",
+  "data": {
+    "jornal_id": 42,
+    "turno_id": 15,
+    "total_neto_pagado_bs": 105.00,
+    "codigo_recibo": "JRN-8921",
+    "expira_en_segundos": 60
+  }
+}
+```
+
+---
+
+## 12. Panel Web de Gestión y Vinculación de WhatsApp (US36)
+
+### `POST /api/v1/whatsapp/bot-status`
+Invocado por el microservicio en Node.js (Baileys) para notificar cambios de estado en caliente, emitir el código QR en Base64 o informar el número de teléfono conectado.
+
+- **Headers**:
+  - `Content-Type: application/json`
+  - `X-Webhook-Secret: <secreto_configurado_en_env>`
+- **Request**:
+```json
+{
+  "estado": "esperando_qr",
+  "qr_code_data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "telefono": null
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Estado del bot actualizado exitosamente"
+}
+```
+
+---
+
+### `GET /api/v1/whatsapp/bot-status`
+Consultado por la interfaz web (`frontend_web`) para renderizar el código QR en tiempo real, el badge de estado y el número del teléfono enlazado.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": {
+    "estado": "conectado",
+    "qr_code_data_url": null,
+    "telefono": "59167369293",
+    "ultimo_ping": "2026-10-09 16:10:00"
+  }
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/grupos-descubiertos`
+Invocado por el bot de WhatsApp al conectarse (`groupFetchAllParticipating`) para sincronizar todos los grupos donde el número es participante.
+
+- **Headers**:
+  - `Content-Type: application/json`
+  - `X-Webhook-Secret: <secreto_configurado_en_env>`
+- **Request**:
+```json
+{
+  "grupos": [
+    {
+      "jid": "1203630283921@g.us",
+      "nombre": "[C22] Cierres y Recaudación",
+      "participantes_count": 8
+    },
+    {
+      "jid": "1203630987654@g.us",
+      "nombre": "[Madan] Cierres de Turno",
+      "participantes_count": 6
+    }
+  ]
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Grupos descubiertos sincronizados exitosamente",
+  "total_sincronizados": 2
+}
+```
+
+---
+
+### `GET /api/v1/whatsapp/grupos-disponibles`
+Consultado por la vista web de gestión para listar todos los grupos descubiertos en WhatsApp y su estado de vinculación a sucursales.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "remote_jid": "1203630283921@g.us",
+      "nombre_grupo": "[C22] Cierres y Recaudación",
+      "participantes_count": 8,
+      "vinculado": true,
+      "sucursal_id": 1,
+      "sucursal_nombre": "Casa22",
+      "tipo_auditoria": "cierre_recaudacion",
+      "activo": true
+    },
+    {
+      "remote_jid": "1203630987654@g.us",
+      "nombre_grupo": "[Madan] Cierres de Turno",
+      "participantes_count": 6,
+      "vinculado": false,
+      "sucursal_id": null,
+      "sucursal_nombre": null,
+      "tipo_auditoria": null,
+      "activo": false
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/desconectar`
+Permite a Daniel solicitar la desconexión del teléfono desde la web para generar un nuevo QR y vincular otro número.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Solicitud de desconexión encolada. El bot generará un nuevo QR para vinculación."
+}
+```

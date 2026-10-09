@@ -1,0 +1,19 @@
+{
+  "name": "c22-whatsapp-silent-bot",
+  "version": "1.0.0",
+  "description": "Microservicio silencioso de Baileys para escucha de grupos de cierre con Zero-Leakage Guard",
+  "main": "bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "list-groups": "node bot.js --list-groups"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.12",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
