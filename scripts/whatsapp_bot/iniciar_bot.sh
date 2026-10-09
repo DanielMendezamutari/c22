@@ -38,10 +38,15 @@ fi
 export PATH="$(dirname "$NODE_BIN"):$PATH"
 echo "✅ Usando Node.js: $("$NODE_BIN" -v) en: $NODE_BIN"
 
-# 2. Asegurar archivo .env
-if [ ! -f .env ]; then
-    echo "⚙️ Creando archivo .env desde .env.example..."
-    cp .env.example .env
+# 2. Asegurar archivo .env con URL de produccion
+if [ ! -f .env ] || grep -q "localhost" .env; then
+    echo "⚙️ Configurando archivo .env para produccion c22.ribersoft.com..."
+    cat <<EOF > .env
+LARAVEL_API_URL=https://c22.ribersoft.com/api/v1
+WHATSAPP_WEBHOOK_SECRET=puntofrio_wh_secret_2026_super
+SYNC_INTERVAL_MS=300000
+AUTH_DIR=./auth_info_baileys
+EOF
 fi
 
 # 3. Verificar dependencias instaladas

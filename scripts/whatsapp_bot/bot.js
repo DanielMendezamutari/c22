@@ -13,7 +13,7 @@ import fs from 'fs';
 
 dotenv.config();
 
-const LARAVEL_API_URL = process.env.LARAVEL_API_URL || 'http://localhost:8000/api/v1';
+const LARAVEL_API_URL = process.env.LARAVEL_API_URL || 'https://c22.ribersoft.com/api/v1';
 const WEBHOOK_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET || 'puntofrio_wh_secret_2026_super';
 const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '300000', 10);
 const AUTH_DIR = process.env.AUTH_DIR || './auth_info_baileys';
@@ -41,8 +41,9 @@ async function reportarEstadoBot(estado, qrDataUrl = null, telefono = null) {
       },
       timeout: 10000,
     });
+    console.log(`[BOT ESTADO] Notificado a Laravel (${estado}) en ${LARAVEL_API_URL}`);
   } catch (err) {
-    // Silencioso ante fallos temporales de red local
+    console.error(`[BOT ESTADO WARN] No se pudo reportar a Laravel (${LARAVEL_API_URL}):`, err.response?.data?.error || err.message);
   }
 }
 
