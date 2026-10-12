@@ -7,6 +7,7 @@ import makeWASocket, {
 import terminalQr from 'qrcode-terminal';
 import QRCode from 'qrcode';
 import axios from 'axios';
+import http from 'http';
 import dotenv from 'dotenv';
 import pino from 'pino';
 import fs from 'fs';
@@ -18,6 +19,9 @@ const WEBHOOK_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET || 'puntofrio_wh_secr
 const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '300000', 10);
 const AUTH_DIR = process.env.AUTH_DIR || './auth_info_baileys';
 const IS_LIST_GROUPS_MODE = process.argv.includes('--list-groups');
+const BOT_HTTP_PORT = parseInt(process.env.BOT_HTTP_PORT || '3001', 10);
+
+let currentSock = null;
 
 // Logger silencioso
 const logger = pino({ level: process.env.LOG_LEVEL || 'warn' });
@@ -152,6 +156,7 @@ async function startWhatsAppBot() {
     }
 
     if (connection === 'close') {
+      currentSock = null;
       clearInterval(whitelistTimer);
       if (monitorDesconexionTimer) clearInterval(monitorDesconexionTimer);
 
@@ -171,6 +176,7 @@ async function startWhatsAppBot() {
         setTimeout(startWhatsAppBot, 3000);
       }
     } else if (connection === 'open') {
+      currentSock = sock;
       const telefono = (sock.user?.id || '').split(':')[0].split('@')[0] || 'Conectado';
       console.log('\n[CONECTADO CON ÉXITO]');
       console.log(`Usuario WhatsApp: +${telefono}`);
@@ -312,7 +318,104 @@ async function startWhatsAppBot() {
   });
 }
 
+// =========================================================================
+// SERVIDOR HTTP LOCAL OUTBOUND (Despacho de informes y control remoto)
+// =========================================================================
+const httpServer = http.createServer((req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+
+  if (req.method === 'POST' && req.url === '/enviar-mensaje') {
+    const secret = req.headers['x-internal-secret'] || req.headers['x-webhook-secret'];
+    if (secret !== WEBHOOK_SECRET) {
+      res.writeHead(403);
+      return res.end(JSON.stringify({ success: false, error: 'Unauthorized secret' }));
+    }
+
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const { remote_jid, texto, media_url } = data;
+
+        if (!remote_jid || (!texto && !media_url)) {
+          res.writeHead(400);
+          return res.end(JSON.stringify({ success: false, error: 'remote_jid y texto o media_url son requeridos' }));
+        }
+
+        if (!currentSock) {
+          res.writeHead(503);
+          return res.end(JSON.stringify({ success: false, error: 'Bot no conectado a WhatsApp actualmente' }));
+        }
+
+        let sentMsg;
+        if (media_url) {
+          const isPdf = media_url.toLowerCase().endsWith('.pdf');
+          if (isPdf) {
+            sentMsg = await currentSock.sendMessage(remote_jid, {
+              document: { url: media_url },
+              mimetype: 'application/pdf',
+              fileName: 'informe_cierre_auditoria.pdf',
+              caption: texto || '',
+            });
+          } else {
+            sentMsg = await currentSock.sendMessage(remote_jid, {
+              image: { url: media_url },
+              caption: texto || '',
+            });
+          }
+        } else {
+          sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });
+        }
+
+        console.log(`[OUTBOUND ENVIADO] Mensaje despachado a ${remote_jid} (ID: ${sentMsg?.key?.id})`);
+
+        res.writeHead(200);
+        return res.end(JSON.stringify({
+          success: true,
+          messageId: sentMsg?.key?.id,
+          remote_jid,
+        }));
+      } catch (err) {
+        console.error('[OUTBOUND ERROR]', err.message);
+        res.writeHead(500);
+        return res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/reconectar') {
+    const secret = req.headers['x-internal-secret'] || req.headers['x-webhook-secret'];
+    if (secret !== WEBHOOK_SECRET) {
+      res.writeHead(403);
+      return res.end(JSON.stringify({ success: false, error: 'Unauthorized secret' }));
+    }
+
+    try {
+      console.log('[RECONEXIÓN MANUAL] Solicitada vía HTTP local');
+      if (currentSock) {
+        try { currentSock.end(new Error('Reconexión manual')); } catch (e) {}
+      }
+      setTimeout(startWhatsAppBot, 2000);
+      res.writeHead(200);
+      return res.end(JSON.stringify({ success: true, message: 'Reconexión iniciada' }));
+    } catch (e) {
+      res.writeHead(500);
+      return res.end(JSON.stringify({ success: false, error: e.message }));
+    }
+  }
+
+  res.writeHead(404);
+  res.end(JSON.stringify({ success: false, error: 'Ruta no encontrada' }));
+});
+
+httpServer.listen(BOT_HTTP_PORT, '127.0.0.1', () => {
+  console.log(`[BOT HTTP LOCAL] Servidor interno outbound activo en http://127.0.0.1:${BOT_HTTP_PORT}`);
+});
+
 // Iniciar microservicio
 startWhatsAppBot().catch((err) => {
   console.error('[FATAL ERROR IN BOT]', err);
 });
+

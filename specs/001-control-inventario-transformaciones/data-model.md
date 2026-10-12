@@ -438,13 +438,14 @@ Liquidación inmutable del jornal diario para garzones que atienden la barra en 
 ---
 
 ### 2.22 `sucursal_whatsapp_grupos` (Catálogo Dinámico de Grupos Auditables)
-Permite asociar de forma dinámica y escalable múltiples grupos de WhatsApp a cada sucursal (Cierres, Gastos, Taxis) para filtrado Zero-Leakage y asignación automática.
+Permite asociar de forma dinámica y escalable múltiples grupos de WhatsApp a cada sucursal (Cierres, Gastos, Taxis) o registrarlos como grupos compartidos multi-sucursal para filtrado Zero-Leakage y asignación automática.
 - `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
-- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+- `sucursal_id`: BIGINT UNSIGNED NULLABLE (NULL para grupos globales compartidos de todas las casas)
   - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
 - `remote_jid`: VARCHAR(100) NOT NULL UNIQUE (Identificador inmutable del grupo de WhatsApp, ej. `1203630283921@g.us`)
 - `nombre_grupo`: VARCHAR(150) NOT NULL (Nombre visible del grupo en WhatsApp)
-- `tipo_auditoria`: ENUM('cierre_recaudacion', 'gastos_caja_chica', 'taxis_rotacion', 'general') NOT NULL DEFAULT 'cierre_recaudacion'
+- `tipo_auditoria`: ENUM('cierre_recaudacion', 'gastos_caja_chica', 'taxis_rotacion', 'general', 'control_recaudo_global') NOT NULL DEFAULT 'cierre_recaudacion'
+- `es_global`: BOOLEAN NOT NULL DEFAULT FALSE (TRUE = Grupo compartido de todas las casas)
 - `activo`: BOOLEAN NOT NULL DEFAULT TRUE
 - `created_at`, `updated_at`: TIMESTAMP
 - *INDEX*: `(sucursal_id, tipo_auditoria)`
@@ -459,3 +460,49 @@ Almacena los grupos donde el número vinculado es participante, detectados autom
 - `participantes_count`: INT UNSIGNED NOT NULL DEFAULT 0
 - `ultima_deteccion_at`: TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 - `created_at`, `updated_at`: TIMESTAMP
+
+---
+
+### 2.24 `auditorias_cruce_canales` (Auditoría Cruzada de Veracidad Inter-Canales WhatsApp)
+Entidad relacional de control anti-fraude que cruza la información declarada en el grupo local de cada casa contra lo publicado en los grupos globales compartidos.
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `mensaje_local_inbound_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `mensaje_local_inbound_id` REFERENCES `whatsapp_mensajes_inbound(id)` ON DELETE SET NULL
+- `mensaje_global_inbound_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `mensaje_global_inbound_id` REFERENCES `whatsapp_mensajes_inbound(id)` ON DELETE SET NULL
+- `sucursal_id`: BIGINT UNSIGNED NOT NULL
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE CASCADE
+- `turno_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE SET NULL
+- `tipo_evento`: ENUM('planilla_cierre', 'gasto_caja_chica', 'voucher_banco') NOT NULL DEFAULT 'planilla_cierre'
+- `monto_declarado_local`: DECIMAL(10,2) NULLABLE (Monto registrado en el grupo local)
+- `monto_declarado_global`: DECIMAL(10,2) NULLABLE (Monto registrado en el grupo global)
+- `diferencia_bs`: DECIMAL(10,2) NOT NULL DEFAULT 0.00 (`monto_declarado_local - monto_declarado_global`)
+- `estado_cruce`: ENUM('conforme_doble_canal', 'discrepancia_detectada', 'solo_canal_local', 'solo_canal_global', 'justificado') NOT NULL DEFAULT 'conforme_doble_canal'
+- `hash_imagen`: VARCHAR(64) NULLABLE (SHA-256 de la imagen para detección de duplicados)
+- `observaciones`: TEXT NULLABLE (Explicación de la discrepancia o justificación del auditor)
+- `revisado_por_usuario_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `revisado_por_usuario_id` REFERENCES `usuarios(id)` ON DELETE SET NULL
+- `created_at`, `updated_at`: TIMESTAMP
+- *INDEX*: `(sucursal_id, tipo_evento, estado_cruce)`
+
+---
+
+### 2.25 `whatsapp_mensajes_outbound` (Historial de Despacho de Informes a WhatsApp)
+Registro de auditoría y cola de salida de los informes ejecutivos y alertas automáticas despachadas por el bot hacia los grupos de WhatsApp (ej. grupo "Control de Recaudo").
+- `id`: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+- `remote_jid`: VARCHAR(100) NOT NULL (Identificador de destino en WhatsApp)
+- `sucursal_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `sucursal_id` REFERENCES `sucursales(id)` ON DELETE SET NULL
+- `turno_id`: BIGINT UNSIGNED NULLABLE
+  - *FK*: `turno_id` REFERENCES `turnos(id)` ON DELETE SET NULL
+- `tipo_mensaje`: ENUM('informe_cierre_ejecutivo', 'alerta_discrepancia', 'resumen_diario_consolidado', 'texto_simple') NOT NULL DEFAULT 'informe_cierre_ejecutivo'
+- `contenido_texto`: LONGTEXT NOT NULL (Cuerpo estructurado del informe con emojis y tipografía para WhatsApp)
+- `media_url`: VARCHAR(255) NULLABLE (Ruta pública/local del archivo PDF o imagen adjunta)
+- `estado_envio`: ENUM('pendiente', 'enviado', 'fallido') NOT NULL DEFAULT 'pendiente'
+- `whatsapp_message_id`: VARCHAR(100) NULLABLE (Identificador del mensaje devuelto por Baileys)
+- `error_motivo`: TEXT NULLABLE (Detalle técnico en caso de fallo en el socket)
+- `despachado_at`: TIMESTAMP NULLABLE (Fecha y hora efectiva de salida del mensaje)
+- `created_at`, `updated_at`: TIMESTAMP
+- *INDEX*: `(remote_jid, estado_envio)`
+- *INDEX*: `(turno_id, tipo_mensaje)`

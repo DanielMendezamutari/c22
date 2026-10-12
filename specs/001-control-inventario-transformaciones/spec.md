@@ -88,10 +88,17 @@
 ### Session 2026-10-09
 - Q: Si se inicia vinculando un WhatsApp personal del administrador (con chats privados y familiares), ¿cómo debe el bot discriminar los grupos de auditoría para garantizar 100% de privacidad y cero fugas de información? → A: Whitelist Estricta por Base de Datos con Filtro Local Inmediato (Zero-Leakage Guard): El microservicio Baileys consulta a la API de Laravel la lista de grupos autorizados (`sucursal_whatsapp_grupos`). Al recibir cualquier mensaje en el WhatsApp personal, si el `remoteJid` no pertenece a esa lista exacta de grupos autorizados, se descarta al instante en memoria (0ms) a nivel local. Ningún chat privado, conversación personal, familiar o foto ajena a los grupos de trabajo sale del teléfono ni se transmite o registra en el servidor. Asimismo, la arquitectura es agnóstica al dispositivo: cuando se adquiera un celular exclusivo, basta con desvincular la sesión local y escanear el nuevo QR sin alterar la lógica del backend ni de la base de datos.
 - Q: Dado que existen múltiples grupos por casa (cierres, gastos, taxis) y se irán agregando más sucursales y grupos en el futuro, ¿cómo debe el sistema gestionar de forma dinámica y escalable los grupos auditables? → A: Entidad Relacional y Módulo Web `sucursal_whatsapp_grupos`: Cada sucursal puede vincular múltiples grupos de WhatsApp clasificados por tipo de auditoría (`cierre_recaudacion`, `gastos_caja_chica`, `taxis_rotacion`). El microservicio en Node.js consulta periódicamente la lista activa de JIDs autorizados (`GET /api/v1/whatsapp/grupos-auditables`) manteniéndola en memoria. En la Plataforma Web (Consola de Super Usuario), Daniel dispone de un catálogo visual donde visualiza los grupos descubiertos y asocia nuevos grupos a cualquier casa comercial con 1 solo clic, permitiendo escalar a 10, 20 o más grupos en el futuro sin modificar código ni reiniciar el bot.
-- Q: ¿Cómo debe operar la vinculación del número (código QR), el descubrimiento de grupos y la asignación a sucursales sin depender de la terminal de comandos? → A: Interfaz Gráfica Web Integral en la Plataforma Administrativa (Desacople Total de la Terminal): La terminal de comandos se reserva estrictamente para la gestión de infraestructura y procesos daemon del sistema operativo (ej. `pm2 start bot.js`). Toda la operativa de negocio se traslada a la Plataforma Web (`frontend_web`): 1) Visor de QR en vivo: Cuando el bot requiere vincular sesión, transmite el código QR vía API a Laravel, y la web lo renderiza de forma nítida y reactiva para ser escaneado directamente desde la pantalla con el celular del administrador. 2) Monitor de Estado: Badge en tiempo real que indica si el bot está 'Conectado' (con número emisor), 'Esperando Escaneo' o 'Desconectado', con botón para forzar desvinculación/cierre de sesión. 3) Descubrimiento Automático y Mapeo Visual de Grupos: Al conectarse, el bot descubre los grupos del WhatsApp y los sincroniza al backend; en la web se despliega una tabla con selectores desplegables (Dropdowns) para vincular cada grupo a su respectiva sucursal (`Casa22`, `Madan`, `Coron`) y definir su tipo de auditoría (`Cierre/Recaudación`, `Gastos`, `Taxis`) con un interruptor de activación, eliminando la necesidad de comandos de terminal, scripts de listado o manipulación manual de identificadores JID.
-
-
-## User Scenarios & Testing *(mandatory)*
+91: - Q: ¿Cómo debe operar la vinculación del número (código QR), el descubrimiento de grupos y la asignación a sucursales sin depender de la terminal de comandos? → A: Interfaz Gráfica Web Integral en la Plataforma Administrativa (Desacople Total de la Terminal): La terminal de comandos se reserva estrictamente para la gestión de infraestructura y procesos daemon del sistema operativo (ej. `pm2 start bot.js`). Toda la operativa de negocio se traslada a la Plataforma Web (`frontend_web`): 1) Visor de QR en vivo: Cuando el bot requiere vincular sesión, transmite el código QR vía API a Laravel, y la web lo renderiza de forma nítida y reactiva para ser escaneado directamente desde la pantalla con el celular del administrador. 2) Monitor de Estado: Badge en tiempo real que indica si el bot está 'Conectado' (con número emisor), 'Esperando Escaneo' o 'Desconectado', con botón para forzar desvinculación/cierre de sesión. 3) Descubrimiento Automático y Mapeo Visual de Grupos: Al conectarse, el bot descubre los grupos del WhatsApp y los sincroniza al backend; en la web se despliega una tabla con selectores desplegables (Dropdowns) para vincular cada grupo a su respectiva sucursal (`Casa22`, `Madan`, `Coron`) y definir su tipo de auditoría (`Cierre/Recaudación`, `Gastos`, `Taxis`) con un interruptor de activación, eliminando la necesidad de comandos de terminal, scripts de listado o manipulación manual de identificadores JID.
+92: 
+93: ### Session 2026-10-11
+94: - Q: ¿Cómo debe operar el sistema con los dos grupos de WhatsApp que no pertenecen a una casa en particular, sino que son de todas las casas (gastos, cierres)? → A: Modelo Híbrido con Grupos Globales y Motor de Auditoría Cruzada de Veracidad:
+95:   1) Configuración de Grupos Globales: Se habilita en `sucursal_whatsapp_grupos` la opción `es_global = true` (con `sucursal_id = null`), permitiendo registrar los dos grupos compartidos en la whitelist del bot sin forzarlos a una casa en específico.
+96:   2) Inferencia de Sucursal Multi-Factor en Grupos Globales: Para los mensajes de estos grupos, la sucursal se infiere automáticamente mediante: OCR de encabezado manuscrito de Gemini Vision + directorio de teléfonos de encargadas (`sender_phone`) + cruce de turnos abiertos.
+97:   3) Deduplicación Inteligente y Verificación Cruzada (Doble Canal): Si una encargada envía el mismo comprobante a su grupo local y al grupo general, el sistema no duplica el gasto/cierre; lo vincula por hash/metadatos y lo sella como `[VERIFICADO_DOBLE_CANAL]`.
+98:   4) Alerta Anti-Fraude de Discrepancia Inter-Grupos: Si el monto o concepto declarado en el grupo general difiere del grupo local de la casa, el sistema dispara inmediatamente una alerta crítica `[DISCREPANCIA_INTER_GRUPOS]` en la web de auditoría para inspección del dueño y contadora.
+99: 
+100: 
+101: ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Registro de Rellenos y Liquidación Visual a Cajera (Priority: P1)
 
@@ -335,6 +342,17 @@ Como Barman en turno activo, quiero pulsar el botón "BAJAS / ROTURAS" de mi pan
 - **FR-060**: Al confirmar el corte de cierre de inventario en el Turno Día, la aplicación móvil DEBE calcular y presentar en pantalla la liquidación inmediata del jornal diario del garzón restando del importe del jornal base acordado el valor al costo de las botellas de inventario faltantes (`Jornal Neto = Jornal Base - Faltantes al Costo`), emitiendo un comprobante visual sellado con segundero anti-fraude y cuenta regresiva de 60 segundos para presentación en caja.
 - **FR-061**: El backend en Laravel DEBE persistir la liquidación de jornales en la tabla `jornales_garzones` mediante el endpoint `POST /api/v1/turnos/{id}/liquidar-garzon`, vinculando la fotografía obligatoria de comprobante capturada en caja.
 - **FR-062**: El sistema DEBE auditar y correlacionar automáticamente en la base de datos el monto en efectivo neto declarado en la planilla física de caja extraída por OCR contra el voucher de depósito bancario asociado a la misma recaudación, emitiendo una alerta en caso de faltante no justificado.
+- **FR-063**: El sistema DEBE soportar el registro de Grupos Globales Multi-Sucursal en `sucursal_whatsapp_grupos` (`es_global = true`, `sucursal_id = null`), permitiendo monitorear grupos compartidos de WhatsApp (cierres y gastos generales) e incorporarlos en la lista blanca de Baileys sin forzarlos a una casa en particular.
+- **FR-064**: En el panel web de gestión de WhatsApp (`gestion.vue`), el selector de sucursales DEBE ofrecer la opción explícita `[Todas las Casas / Grupo Global]` para asociar grupos compartidos con el tipo de auditoría correspondiente (`cierre_recaudacion` o `gastos_caja_chica`).
+- **FR-065**: Para todo mensaje o comprobante recibido desde un grupo marcado como `es_global`, el sistema DEBE inferir de forma autónoma la sucursal de pertenencia cruzando: OCR de encabezado manuscrito por Gemini Vision, número emisor del personal en `sucursal_encargadas` y turnos POS activos, asignando el badge `[SUCURSAL_POR_CONFIRMAR]` solo si el score es inferior al 85%.
+- **FR-066**: El sistema DEBE implementar un mecanismo de deduplicación inteligente entre canales de WhatsApp: si una misma imagen o comprobante físico es enviado tanto al grupo exclusivo de la sucursal como al grupo global general, el sistema DEBE emparejarlos evitando la duplicación de ingresos o gastos en la contabilidad.
+- **FR-067**: El sistema DEBE ejecutar un Motor de Auditoría Cruzada de Veracidad (`AuditoriaCruceCanales`): si los datos declarados en el grupo de la casa coinciden con los reportados en el grupo general, se certifica el comprobante con estado `[VERIFICADO_DOBLE_CANAL]`; si existe discrepancia en montos o conceptos, el sistema DEBE disparar una Alerta Crítica de Discrepancia Inter-Grupos con comparativa lado a lado en la web.
+- **FR-068**: El microservicio de WhatsApp DEBE mantener un latido periódico (Heartbeat) de 60 segundos hacia la API de Laravel (`POST /api/v1/whatsapp/bot-status`) renovando el TTL de caché para garantizar la visibilidad precisa del estado activo del bot y prevenir falsas desconexiones.
+- **FR-069**: El sistema DEBE proveer un canal saliente (Outbound) en el bot de WhatsApp con el endpoint `POST /api/v1/whatsapp/enviar-mensaje` que permita despachar mensajes formateados (texto estructurado y archivos/PDFs) a cualquier identificador de grupo (`remote_jid`) autorizado.
+- **FR-070**: El sistema DEBE soportar la configuración del grupo especial `"Control de Recaudo"` (o identificador asignado como `tipo_auditoria = 'control_recaudo_global'`), y al completarse y conciliarse la información de cierre de turno de cualquiera de las 4 casas, el backend DEBE despachar de forma autónoma a dicho grupo el **Informe Ejecutivo de Auditoría y Conciliación** detallando: Ventas totales POS, Cobros QR reportados vs. POS, Desglose de Egresos (chicas, garzones, compras de hielo, taxis, personal), Efectivo en sobre entregado y Semáforo de Discrepancias / Alertas detectadas.
+- **FR-071**: El servicio de WhatsApp (Node.js Baileys) DEBE mantenerse ejecutando de forma ininterrumpida 24/7 gestionado por un daemon persistente de sistema con watchdog de auto-reinicio, manteniendo la sesión conectada y procesando continuamente todos los mensajes entrantes (texto, imágenes de planillas y tickets de venta) a lo largo de las jornadas diurnas y nocturnas.
+- **FR-072**: El motor de auditoría DEBE soportar la modalidad operativa **"Solo WhatsApp"**: cuando las encargadas envían fotografías de los tickets impresos de venta del POS (RestoTech) junto con las planillas manuscritas y el resumen de texto, Gemini Vision DEBE extraer ambos documentos físicos, contrastar los datos automáticamente (Ventas declaradas en papel vs. Ventas del ticket impreso, Cobros QR en banco vs. QR declarado en papel, y Texto del mensaje vs. Papel) y emitir el balance de auditoría con nivel de confianza superior al 95% sin requerir conectividad de red directa con la computadora de caja.
+- **FR-073**: El sistema DEBE admitir dinámicamente el catálogo de las 4 casas activas (Casa22/Belén, Casa Corona, Madan y la 4ta sucursal) parametrizadas en la base de datos, mapeando sus respectivos grupos de WhatsApp y resolviendo las inferencias de casa mediante el OCR y los números de remitentes sin límites fijos ni nombres quemados en código.
 
 ### User Story 11 - Gestión Integral de Sucursales por el Administrador (Altas, Bajas/Suspensión y Edición) (Priority: P2)
 
@@ -663,6 +681,32 @@ Como Administrador y Dueño, quiero que la IA supervise los mensajes y fotos en 
 
 ---
 
+### User Story 31 - Despliegue y Resiliencia Web en Hosting cPanel (Priority: P1)
+
+Como Desarrollador y Administrador (Daniel), quiero un script de despliegue automatizado (`deploy.sh`) en la raíz del proyecto y un mecanismo guardián (Watchdog) para cPanel, para desplegar actualizaciones en `c22.ribersoft.com` con detección automática de PHP 8.2, migración atómica forzada, refresco de caché y reinicio automático de procesos sin intervenciones manuales propensas a error.
+
+**Independent Test**:
+Ejecutar `./deploy.sh` en el servidor; constatar detección de `/opt/cpanel/ea-php82/root/usr/bin/php`, activación de modo mantenimiento temporal, ejecución de `migrate --force`, limpieza/reconstrucción de caches y retorno al modo productivo con código 0.
+
+**Acceptance Scenarios**:
+1. **Given** un cambio en `origin/main`, **When** se ejecuta `./deploy.sh`, **Then** el script actualiza el repositorio, pone el sistema en mantenimiento seguro y reconstruye la configuración y rutas sin errores 500.
+2. **Given** el bot de WhatsApp detenido en cPanel, **When** el cron job ejecuta `verificar_y_levantar.sh`, **Then** detecta la ausencia del proceso mediante `bot.pid`, levanta la instancia en segundo plano con Node 20 y registra el evento en `bot_watchdog.log`.
+
+---
+
+### User Story 32 - Sincronización POS RestoTech y Conciliación Triangulada Unificada (Priority: P1)
+
+Como Dueño, Contadora y Administrador, quiero ingestar las transacciones de venta del software local RestoTech (SQL Server) de cada casa mediante un agente ligero push vía HTTPS y visualizarlas en una matriz ejecutiva de Conciliación Triangulada ([1. POS RestoTech] vs [2. Planilla Manual de Caja] vs [3. Conteo Físico en Barra]), para detectar y delimitar responsabilidades exactas por faltante de dinero o botellas en menos de 2 minutos.
+
+**Independent Test**:
+Ingestar lote de transacciones POS con token `X-Branch-Token`; comprobar descomposición de combos de cerveza en botellas unitarias mediante `pos_producto_mapeo`; abrir la vista web de conciliación y verificar que si hay faltante de dinero se impute a la Cajera y si hay faltante de botellas se impute al Barman.
+
+**Acceptance Scenarios**:
+1. **Given** transacciones de venta generadas en RestoTech, **When** el agente local envía el lote a `POST /sync/pos-transacciones`, **Then** el backend valida el `X-Branch-Token`, inserta los registros sin duplicados y desglosa los combos en unidades físicas de botellas.
+2. **Given** el cierre del turno, **When** la administración consulta `GET /auditoria/conciliacion-triangulada/{turno_id}`, **Then** la web presenta la comparativa en 3 columnas ([POS] vs [Planilla Manual OCR] vs [Conteo Barra]) con semáforo y asignación de responsabilidad.
+
+---
+
 ### User Story 33 - Bot de WhatsApp Silencioso con Grupos de Cierre Dedicados por Sucursal e Ingesta Webhook (Priority: P1)
 
 Como Administrador, Dueño y Contadora, quiero un servicio autónomo de WhatsApp (Node.js con Baileys) escuchando en segundo plano los grupos exclusivos de cierre de cada sucursal (`[C22] Cierres`, `[Madan] Cierres`, `[Coron] Cierres`) y retransmitiendo fotos y archivos a la API de Laravel (`POST /api/v1/webhook/whatsapp`), para que cada comprobante quede registrado de inmediato y asignado al 100% a su casa correspondiente de forma silenciosa e invisible para el personal.
@@ -728,10 +772,49 @@ Como Super Administrador (Daniel) y Auditor, quiero una interfaz gráfica web de
 
 ---
 
+### User Story 37 - Grupos Compartidos Multi-Sucursal y Auditoría Cruzada de Veracidad Inter-Canales (Priority: P1)
+
+Como Dueño, Contadora y Super Administrador (Daniel), quiero que el bot de WhatsApp escuche los dos grupos compartidos de la empresa que no pertenecen a una casa en particular sino a todas las casas (Cierres Generales y Gastos Compartidos), deduplique inteligentemente los comprobantes que se envían repetidos en ambos canales y ejecute un Motor de Auditoría Cruzada que compare la información declarada en el grupo local de cada casa contra lo publicado en el grupo general, para certificar la veracidad de los datos y detectar fraudes, montos inflados o gastos huérfanos.
+
+**Why this priority**: Es la barrera de control anti-fraude definitiva. Las encargadas suelen mandar información al dueño en el grupo general y a la contabilidad en el grupo local; contrastar ambos canales de forma automatizada detecta alteraciones de números, gastos no autorizados o comprobantes duplicados.
+
+**Independent Test**:
+1. Enviar una foto de planilla manuscrita por 8,000 Bs al grupo local de Casa 22 y enviar la misma foto al grupo general de Cierres; verificar que el sistema la asocie al mismo turno de Casa 22 sin duplicar el ingreso contable y marque el estado como `[VERIFICADO_DOBLE_CANAL]`.
+2. Enviar una foto de gasto de 500 Bs al grupo general indicando "Gasto hielo Casa22", pero en la planilla del grupo local anotar "300 Bs": constatar que el motor de auditoría cruzada dispare una alerta roja `[DISCREPANCIA_INTER_GRUPOS]` con comparativa de 500 Bs vs 300 Bs en la web.
+
+**Acceptance Scenarios**:
+1. **Given** un grupo registrado como `es_global = true` en `sucursal_whatsapp_grupos`, **When** una encargada envía una foto o documento al grupo, **Then** el webhook lo recibe sin descartarlo y delega a Gemini Vision la inferencia de la casa correspondiente (`sucursal_id`) mediante OCR del encabezado, teléfono del remitente y turnos activos.
+2. **Given** un comprobante recibido en el grupo global que coincide en hash digital o metadatos (`monto`, `fecha`, `concepto`) con uno previamente ingresado en el grupo local de la casa, **When** el motor de deduplicación lo procesa, **Then** vincula ambos eventos bajo un registro de cruce sin duplicar saldos y lo sella como `[VERIFICADO_DOBLE_CANAL]`.
+3. **Given** un comprobante o gasto publicado en el grupo general cuyos valores difieren de los reportados en la planilla del grupo local de la sucursal, **When** se ejecuta la auditoría cruzada, **Then** el sistema emite una alerta prioritaria `[DISCREPANCIA_INTER_GRUPOS]` visible en el panel de control con el desglose de ambos mensajes para investigación inmediata.
+
+---
+
+### User Story 38 - Bot Autónomo 24/7 y Despacho de Informes de Turno al Grupo "Control de Recaudo" para las 4 Casas (Priority: P1)
+
+Como Dueño, Contadora y Super Administrador (Daniel), quiero que el servicio de WhatsApp opere de forma ininterrumpida 24/7 escuchando los grupos de las 4 casas, procesando los mensajes de texto, fotos de planillas de caja manuscritas y tickets de ventas del POS (RestoTech) hasta el momento del cierre, para que el sistema audite y cruce automáticamente la información (Ingresos, QR bancario vs físico, egresos, comisiones de chicas/garzones, caja chica y saldo de sobre) y despache de manera autónoma un Informe Ejecutivo de Auditoría directamente al grupo de WhatsApp "Control de Recaudo" sin requerir intervención manual ni conexión de red directa con la computadora de caja.
+
+**Why this priority**: Es la cúspide operativa del negocio. Permite al dueño y a los socios recibir en el grupo de control el balance de cierre exacto, certificado y auditado con alertas de discrepancia en tiempo real en cuanto las cajeras terminan su turno, eliminando por completo el trabajo de digitación contable y cerrando las fugas de dinero en los sobres.
+
+**Independent Test**:
+1. Enviar el lote de fotografías de cierre de turno (Planilla manuscrita de caja, planilla de champagne, desglose de pagos de chicas y ticket térmico del POS) junto con el texto de resumen al grupo de WhatsApp de cualquiera de las 4 casas (ej. Casa Belén/22).
+2. Comprobar que el daemon de WhatsApp procese las imágenes en segundo plano con Gemini Vision sin caerse.
+3. Constatar que el backend detecte las discrepancias (ej. diferencia entre texto de WhatsApp y planilla física, o cruce de QR vs efectivo).
+4. Verificar que en menos de 60 segundos el bot despache automáticamente el Informe Ejecutivo de Auditoría formateado con semáforo de alertas al grupo de WhatsApp vinculado como "Control de Recaudo".
+
+**Acceptance Scenarios**:
+1. **Given** el servicio de WhatsApp ejecutándose en producción, **When** opera continuamente día y noche, **Then** un daemon supervisado con watchdog mantiene el socket activo 24/7 y reconecta automáticamente en <15 segundos ante microcortes.
+2. **Given** la recepción de un resumen en texto acompañado de fotografías de planillas físicas y tickets del POS en el grupo de cualquiera de las 4 casas, **When** el job de auditoría procesa el lote, **Then** extrae con OCR la matriz de cobros, compara el texto de WhatsApp contra la planilla (ej. `Qr: 14448` vs `QR: 12448`), concilia las ventas del POS contra la planilla y valida el cuadre físico del sobre.
+3. **Given** un cierre de turno procesado y auditado, **When** el estado de liquidación se consolida, **Then** el dispatcher de salida (`POST /api/v1/whatsapp/enviar-mensaje`) envía de forma autónoma al grupo "Control de Recaudo" el informe estructurado con resumen de ventas, egresos, desglose de chicas, efectivo en sobre y alertas rojas/amarillas.
+4. **Given** la operación multi-sucursal ampliada a 4 casas comerciales, **When** se reciben mensajes en los distintos grupos, **Then** el motor resuelve la asignación dinámica de la casa sin valores quemados en código.
+
+---
+
 ### Key Entities *(include if feature involves data)*
 
-- **Sucursal**: Identificador de la casa (Casa22, Casa Coron, Madan, etc.), configuración local y umbrales de tolerancia de merma.
-- **SucursalWhatsAppGrupo**: Entidad relacional (`id`, `sucursal_id`, `remote_jid`, `nombre_grupo`, `tipo_auditoria`, `activo`) que mapea un grupo de WhatsApp a una casa comercial y un propósito de auditoría.
+- **Sucursal**: Identificador de la casa (Casa22/Belén, Casa Coron, Madan y 4ta Casa), configuración local y umbrales de tolerancia de merma.
+- **SucursalWhatsAppGrupo**: Entidad relacional (`id`, `sucursal_id` nullable, `remote_jid`, `nombre_grupo`, `tipo_auditoria`, `es_global` boolean, `activo`) que mapea un grupo de WhatsApp a una casa comercial o lo identifica como grupo global compartido multi-sucursal (incluyendo `tipo_auditoria = 'control_recaudo_global'`).
+- **AuditoriaCruceCanales**: Entidad de auditoría inter-grupos (`id`, `mensaje_local_inbound_id`, `mensaje_global_inbound_id`, `sucursal_id`, `turno_id`, `monto_declarado_local`, `monto_declarado_global`, `diferencia_bs`, `estado_cruce`, `observaciones`) que certifica concordancia o levanta alertas de discrepancia.
+- **InformeAuditoriaWhatsAppOutbound**: Mensaje estructurado con balance de cierre, conciliación triangulada (POS vs Planilla vs WhatsApp), alertas de discrepancia y desglose de sobres despachado directamente al grupo "Control de Recaudo".
 - **WhatsAppGrupoDescubierto**: Entidad temporal/catálogo (`remote_jid`, `nombre_grupo`, `participantes_count`, `ultima_deteccion`) con los grupos donde el número vinculado es participante activo.
 - **WhatsAppEstadoBot**: Estado en memoria/caché del servicio de WhatsApp (`estado`: 'conectado'|'esperando_qr'|'desconectado', `qr_data_url`, `numero_telefono`, `ultimo_ping`).
 - **Proveedor**: Identificador único, nombre comercial de la empresa o distribuidora (ej. CBN, Embol), persona de contacto, teléfono/WhatsApp, NIT/CI, dirección y estado activo.
@@ -776,6 +859,13 @@ Como Super Administrador (Daniel) y Auditor, quiero una interfaz gráfica web de
 - **SC-021**: Visualización del código QR de vinculación de WhatsApp en la plataforma web en menos de 2 segundos desde su emisión por el bot.
 - **SC-022**: Vinculación y asignación de un grupo descubierto de WhatsApp a cualquier sucursal y tipo en menos de 10 segundos mediante selectores desplegables en la web.
 - **SC-023**: 0 intervenciones en terminal de comandos requeridas para vincular, auditar o reasignar grupos de WhatsApp en producción.
+- **SC-024**: 100% de los comprobantes emitidos en grupos globales compartidos resueltos automáticamente a su sucursal correcta o catalogados bajo `[SUCURSAL_POR_CONFIRMAR]` sin pérdida de datos.
+- **SC-025**: 0.0% de duplicaciones en saldos de gastos o recaudaciones cuando un comprobante se publica concurrentemente en el grupo local y en el grupo general.
+- **SC-026**: Detección y notificación en menos de 5 segundos de discrepancias de montos entre lo reportado en el canal local y el canal global mediante el motor de auditoría cruzada.
+- **SC-027**: Despacho automático del informe ejecutivo consolidado al grupo de WhatsApp "Control de Recaudo" en menos de 60 segundos tras completarse la recepción de las fotografías de cierre.
+- **SC-028**: Disponibilidad del daemon de WhatsApp 24/7 con reconexión automática de socket en menos de 15 segundos ante microcortes o reinicios de red.
+- **SC-029**: Detección con precisión >95% de discrepancias entre el texto escrito del mensaje de WhatsApp, la planilla manuscrita física y el ticket impreso del POS.
+- **SC-030**: Soporte operativo dinámico para las 4 casas comerciales en el mapeo de grupos y emisión de informes sin intervención de código ni valores quemados.
 
 ---
 
@@ -785,5 +875,5 @@ Como Super Administrador (Daniel) y Auditor, quiero una interfaz gráfica web de
 - **Plataforma Web (Vue 3 / Vite)**: La plataforma de control para Super Usuario, Dueño y Contabilidad se ejecuta sobre `frontend_web/` utilizando Vite, Vue 3 y Vuetify.
 - **Infraestructura de Servidor (Hosting Compartido cPanel)**: Backend en Laravel 11 y PHP 8.2 en `c22.ribersoft.com`, con endpoints RESTful optimizados.
 - **Motor de Inteligencia Artificial**: Se utiliza Google Gemini 1.5 Flash Vision API para el procesamiento de alta velocidad y bajo costo de comprobantes, vouchers y manuscritos.
-- **Bot de WhatsApp**: Integrado mediante Baileys / Evolution API para monitoreo de los grupos de comprobantes, recaudación y rotación.
-- **Agente Local de Caja**: Servicio ligero en Windows para las computadoras de caja que envía las ventas cada 60 segundos por HTTPS.
+- **Bot de WhatsApp**: Integrado mediante Baileys con soporte bidireccional (inbound webhook y outbound dispatcher) ejecutándose como daemon persistente 24/7.
+- **Agente Local de Caja**: Servicio ligero en Windows para las computadoras de caja que envía las ventas cada 60 segundos por HTTPS (con modo dual offline mediante OCR de tickets fotografiados).

@@ -1470,3 +1470,207 @@ Permite a Daniel solicitar la desconexión del teléfono desde la web para gener
   "message": "Solicitud de desconexión encolada. El bot generará un nuevo QR para vinculación."
 }
 ```
+
+---
+
+## 15. Auditoría Cruzada de Veracidad Inter-Canales WhatsApp (US37)
+
+### `GET /api/v1/whatsapp/auditorias-cruce`
+Consulta las comparaciones cruzadas entre el canal local de la sucursal y los grupos globales compartidos para detectar discrepancias y doble verificación.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Query Params**:
+  - `sucursal_id`: Opcional (filtro por casa)
+  - `fecha`: Opcional (`YYYY-MM-DD`)
+  - `estado`: Opcional (`conforme_doble_canal`, `discrepancia_detectada`, `solo_canal_local`, `solo_canal_global`)
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "sucursal": {
+        "id": 1,
+        "nombre": "Casa22"
+      },
+      "tipo_evento": "planilla_cierre",
+      "fecha": "2026-10-11",
+      "canal_local": {
+        "mensaje_id": 104,
+        "grupo": "C22 Belén cierres",
+        "monto_declarado": 8500.00,
+        "foto_url": "storage/comprobantes/whatsapp/c22_cierre_1.jpg",
+        "remitente": "Mariela (+59170123456)"
+      },
+      "canal_global": {
+        "mensaje_id": 105,
+        "grupo": "[General] Cierres y Recaudaciones",
+        "monto_declarado": 8500.00,
+        "foto_url": "storage/comprobantes/whatsapp/gen_cierre_1.jpg",
+        "remitente": "Mariela (+59170123456)"
+      },
+      "diferencia_bs": 0.00,
+      "estado_cruce": "conforme_doble_canal",
+      "observaciones": null
+    },
+    {
+      "id": 2,
+      "sucursal": {
+        "id": 2,
+        "nombre": "corona"
+      },
+      "tipo_evento": "gasto_caja_chica",
+      "fecha": "2026-10-11",
+      "canal_local": {
+        "mensaje_id": 110,
+        "grupo": "C22 Corona cierres",
+        "monto_declarado": 300.00,
+        "foto_url": "storage/comprobantes/whatsapp/coron_recibo_1.jpg",
+        "remitente": "Encargada Corona"
+      },
+      "canal_global": {
+        "mensaje_id": 112,
+        "grupo": "[General] Gastos Operativos",
+        "monto_declarado": 500.00,
+        "foto_url": "storage/comprobantes/whatsapp/gen_gasto_1.jpg",
+        "remitente": "Encargada Corona"
+      },
+      "diferencia_bs": -200.00,
+      "estado_cruce": "discrepancia_detectada",
+      "observaciones": "El monto reportado al dueño en el grupo general (500 Bs) excede en 200 Bs la planilla local (300 Bs)."
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/resolver-discrepancia-cruce`
+Permite a la contadora o dueño auditar una discrepancia inter-canales, fijar el monto definitivo e ingresar la justificación oficial.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "cruce_id": 2,
+  "monto_definitivo_auditado": 300.00,
+  "imputar_responsable": "cajera",
+  "observaciones": "Se valida que el recibo real es por 300 Bs. Los 200 Bs de diferencia en el grupo general fueron un error de digitación de la encargada."
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Discrepancia inter-canales resuelta y asentada exitosamente",
+  "data": {
+    "cruce_id": 2,
+    "estado_cruce": "justificado",
+    "monto_final": 300.00
+  }
+}
+```
+
+---
+
+## 16. Despacho Autónomo a WhatsApp (Outbound) e Informes al Grupo "Control de Recaudo"
+
+### `POST /api/v1/whatsapp/enviar-mensaje`
+Endpoint interno / administrativo para despachar texto estructurado y documentos PDF o imágenes al grupo de WhatsApp especificado a través del bot Baileys.
+
+- **Headers**: `Authorization: Bearer <token_admin>` o `X-Internal-Secret: <secret>`
+- **Request**:
+```json
+{
+  "remote_jid": "1203630283921@g.us",
+  "texto": "📊 *INFORME DE CIERRE - CASA BELÉN*\n*Fecha:* 10/10/2026 | *Turno:* Día\n...",
+  "media_url": "https://c22.ribersoft.com/storage/informes/cierre_belen_101026.pdf",
+  "tipo_mensaje": "informe_cierre_ejecutivo",
+  "sucursal_id": 1,
+  "turno_id": 45
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Mensaje encolado y despachado a WhatsApp exitosamente",
+  "data": {
+    "outbound_id": 12,
+    "whatsapp_message_id": "BAE5912384729102",
+    "remote_jid": "1203630283921@g.us",
+    "estado_envio": "enviado"
+  }
+}
+```
+
+---
+
+### `POST /api/v1/whatsapp/despachar-informe-cierre`
+Genera el informe ejecutivo de auditoría y conciliación para el turno indicado y lo despacha de forma automática al grupo mapeado como `"control_recaudo_global"`.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Request**:
+```json
+{
+  "turno_id": 45,
+  "forzar_reenvio": false
+}
+```
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Informe de cierre consolidado y despachado al grupo Control de Recaudo",
+  "data": {
+    "sucursal": "Casa Belén",
+    "grupo_destino": "Control de Recaudo (+591...)",
+    "ventas_pos": 32490.00,
+    "qr_pos": 31310.00,
+    "egresos_totales": 18732.00,
+    "efectivo_sobre": 1510.00,
+    "alertas_detectadas": [
+      {
+        "nivel": "CRITICO",
+        "descripcion": "Discrepancia de 2,000 Bs entre texto de WhatsApp (14,448) y planilla manuscrita (12,448)."
+      }
+    ],
+    "despachado_at": "2026-10-10 21:05:00"
+  }
+}
+```
+
+---
+
+### `GET /api/v1/whatsapp/config-control-recaudo`
+Consulta el grupo de WhatsApp actualmente configurado como receptor de los informes de recaudo para las 4 casas y el estado de salud del daemon 24/7.
+
+- **Headers**: `Authorization: Bearer <token_admin>`
+- **Response 200 OK**:
+```json
+{
+  "success": true,
+  "data": {
+    "grupo_asignado": {
+      "id": 5,
+      "remote_jid": "1203639999999@g.us",
+      "nombre_grupo": "Control de Recaudo (Todas las Casas)",
+      "tipo_auditoria": "control_recaudo_global",
+      "activo": true
+    },
+    "casas_cubiertas": [
+      { "id": 1, "nombre": "Casa Belén (C22)" },
+      { "id": 2, "nombre": "Casa Corona" },
+      { "id": 3, "nombre": "Madan" },
+      { "id": 4, "nombre": "Cuarta Casa" }
+    ],
+    "daemon_24_7": {
+      "estado": "conectado",
+      "uptime_segundos": 86400,
+      "ultimo_heartbeat": "2026-10-11 21:04:00"
+    }
+  }
+}
+```
+

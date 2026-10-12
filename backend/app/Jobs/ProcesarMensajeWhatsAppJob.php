@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Application\UseCases\Auditoria\AuditoriaCruceCanalesUseCase;
 use App\Infrastructure\Persistence\Eloquent\Models\PlanillaCaja;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
@@ -25,7 +26,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         $this->inboundId = $inboundId;
     }
 
-    public function handle(GeminiVisionAuditorService $visionAuditor): void
+    public function handle(GeminiVisionAuditorService $visionAuditor, AuditoriaCruceCanalesUseCase $cruceCanalesUseCase): void
     {
         $inbound = WhatsAppMensajeInbound::find($this->inboundId);
         if (!$inbound) {
@@ -43,7 +44,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             $resultado = $visionAuditor->auditarYClasificar($inbound->media_path);
 
             $inbound->clasificacion_ia = in_array($resultado['clasificacion'], [
-                'planilla_caja', 'voucher_deposito', 'recibo_gasto', 'otro'
+                'planilla_caja', 'voucher_deposito', 'recibo_gasto', 'ticket_pos', 'otro'
             ]) ? $resultado['clasificacion'] : 'otro';
             $inbound->score_confianza = $resultado['score_confianza'];
             $inbound->metadata_ia = $resultado['datos'];
@@ -66,9 +67,10 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                 $inbound->turno_id = $turno?->id;
             }
 
+            $datos = $resultado['datos'] ?? [];
+
             // Si es planilla de caja, persistir o actualizar en planillas_caja para alimentar la Conciliación Triangulada
             if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->turno_id) {
-                $datos = $resultado['datos'] ?? [];
                 PlanillaCaja::updateOrCreate(
                     ['turno_id' => $inbound->turno_id],
                     [
@@ -84,6 +86,58 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                         'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
                     ]
                 );
+            }
+
+            // Si es ticket_pos y hay turno, actualizar o enriquecer los datos OCR de la planilla con las ventas del POS
+            if ($inbound->clasificacion_ia === 'ticket_pos' && $inbound->turno_id) {
+                $planilla = PlanillaCaja::firstOrNew(['turno_id' => $inbound->turno_id]);
+                $datosActuales = $planilla->datos_ocr_json ?? [];
+                $datosActuales['ventas_pos'] = $datos['total_ticket_bs'] ?? 0.00;
+                $datosActuales['ventas_qr_bs'] = $datos['qr_pos_bs'] ?? 0.00;
+                $datosActuales['ticket_pos_foto_url'] = $inbound->media_path;
+                
+                $planilla->sucursal_id = $inbound->sucursal_id;
+                $planilla->datos_ocr_json = $datosActuales;
+                if (!$planilla->foto_url) {
+                    $planilla->foto_url = $inbound->media_path;
+                }
+                $planilla->save();
+            }
+
+            // Calcular SHA-256 de la imagen para deduplicación inter-canales
+            $hashImagen = null;
+            $fullPath = public_path($inbound->media_path);
+            if (file_exists($fullPath)) {
+                $hashImagen = hash_file('sha256', $fullPath);
+            }
+
+            // Ejecutar Auditoría Cruzada de Veracidad Inter-Canales si tenemos sucursal
+            if ($inbound->sucursal_id) {
+                $tipoEvento = match ($inbound->clasificacion_ia) {
+                    'planilla_caja', 'ticket_pos' => 'planilla_cierre',
+                    'recibo_gasto' => 'gasto_caja_chica',
+                    'voucher_deposito' => 'voucher_banco',
+                    default => 'otro',
+                };
+
+                if ($tipoEvento !== 'otro') {
+                    $montoDeclarado = (float) match ($inbound->clasificacion_ia) {
+                        'planilla_caja' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
+                        'ticket_pos' => $datos['total_ticket_bs'] ?? 0.00,
+                        'recibo_gasto' => $datos['monto_total_bs'] ?? 0.00,
+                        'voucher_deposito' => $datos['monto_depositado_bs'] ?? 0.00,
+                        default => 0.00,
+                    };
+
+                    $cruceCanalesUseCase->ejecutar(
+                        $inbound->id,
+                        $inbound->sucursal_id,
+                        $tipoEvento,
+                        $montoDeclarado,
+                        $hashImagen,
+                        $inbound->turno_id
+                    );
+                }
             }
 
             $inbound->estado = $inbound->sucursal_id ? 'procesado' : 'requiere_confirmacion';

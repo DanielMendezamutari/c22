@@ -38,4 +38,9 @@ class WhatsAppMensajeInbound extends Model
     {
         return $this->belongsTo(Turno::class, 'turno_id');
     }
+
+    public function grupo(): BelongsTo
+    {
+        return $this->belongsTo(SucursalWhatsAppGrupo::class, 'remote_jid', 'remote_jid');
+    }
 }

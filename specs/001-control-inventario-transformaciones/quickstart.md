@@ -459,3 +459,88 @@ Demostrar la ingesta automática de ventas desde la computadora de caja de la su
    - Encender el interruptor `Activo` y pulsar `Guardar`.
    - **Verificación**: El bot reconoce de inmediato el grupo para su whitelist de memoria y los mensajes recibidos se asocian de forma determinista al 100% con Casa 22.
 
+---
+
+### Escenario 20: Despliegue en cPanel y Monitoreo del Watchdog con Heartbeat
+
+1. **Ejecutar Despliegue Automatizado en el Servidor**:
+   ```bash
+   cd /home/vnplktsg/public_html/c22
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+   - **Verificación**:
+     - Detecta PHP 8.2 en `/opt/cpanel/ea-php82/root/usr/bin/php`.
+     - Actualiza código desde `origin/main`.
+     - Ejecuta migraciones `--force` y cachea rutas y configuración.
+     - Finaliza con mensaje de éxito: `https://c22.ribersoft.com`.
+
+2. **Verificar Watchdog y Heartbeat del Bot de WhatsApp**:
+   - Comprobar que el cron job `*/5 * * * * /home/.../verificar_y_levantar.sh` verifique el PID en `bot.pid`.
+   - Constatar que `bot_watchdog.log` reporte el proceso activo sin spawnear instancias duplicadas.
+   - En la web `https://c22.ribersoft.com/whatsapp/gestion`, verificar que el badge de estado verde se mantenga activo continuamente tras más de 15 minutos gracias al Heartbeat cada 60 segundos.
+
+---
+
+### Escenario 21: Auditoría Cruzada de Veracidad Inter-Canales y Deduplicación
+
+1. **Vincular Grupo Global en la Plataforma Web**:
+   - Acceder a `https://c22.ribersoft.com/whatsapp/gestion`.
+   - Ubicar el grupo descubierto `"[General] Cierres y Recaudaciones"`.
+   - En el selector de sucursal elegir `[Todas las Casas / Grupo Global]` y tipo `Cierres y Recaudación`.
+   - Activar y pulsar `Guardar`.
+
+2. **Ingesta Concurrente y Deduplicación**:
+   - La encargada envía una foto de planilla manuscrita de Casa 22 por 8,500.00 Bs al grupo local `C22 Belén cierres`.
+   - Minutos después, envía la misma foto al grupo global `[General] Cierres y Recaudaciones`.
+   - **Verificación**:
+     - El sistema detecta el hash idéntico y empareja ambos eventos en `auditorias_cruce_canales`.
+     - `estado_cruce = 'conforme_doble_canal'`.
+     - El saldo contable de ventas de Casa 22 se mantiene en 8,500.00 Bs (0.0% de duplicación).
+
+3. **Detección de Discrepancia Anti-Fraude**:
+   - En el grupo global de gastos se envía un comprobante de 500 Bs con el caption `"Gasto hielo Corona"`.
+   - En la planilla manuscrita del grupo local de Corona se reporta `"Hielo: 300 Bs"`.
+   - **Verificación**:
+     - El sistema levanta de inmediato en la web la tarjeta roja `[DISCREPANCIA_INTER_GRUPOS]`.
+     - Muestra lado a lado: Canal Local (300 Bs) vs Canal Global (500 Bs) con diferencia de $-200$ Bs.
+     - La contadora pulsa "Resolver Discrepancia", asienta la justificación y fija el monto auditado definitivo.
+
+---
+
+### Escenario 22: Recepción de Lote de Cierre y Despacho Autónomo al Grupo "Control de Recaudo" para las 4 Casas (Modo Solo WhatsApp)
+
+1. **Configurar el Grupo de Salida en la Web**:
+   - En `https://c22.ribersoft.com/whatsapp/gestion`, ubicar en la tabla de grupos el chat grupal `"Control de Recaudo"`.
+   - En el selector de tipo elegir: `Control de Recaudo (Consolidado)`.
+   - Guardar la configuración.
+
+2. **Ingesta Multi-Foto desde WhatsApp (Turno Día)**:
+   - La cajera de Casa Belén / 22 envía al grupo de la casa el siguiente mensaje a las 10:31 p.m.:
+     ```text
+     Casa Belén
+     Venta total:32690
+     Qr:14448
+     Efectivo:1510
+     Fanny:599
+     ```
+   - Adjunta 4 fotografías reales:
+     - Foto 1: Planilla Manuscrita de Caja General (Venta 32,690 | Egresos 18,732 | QR 12,448 | Efectivo Sobre 1,510).
+     - Foto 2: Planilla de Chicas / Champagne (16 servicios a 500 Bs = 8,000 Bs).
+     - Foto 3: Desglose de Pago de Chicas (27 chicas = 16,570 Bs).
+     - Foto 4: Tickets impresos del POS RestoTech (Cobros totales 32,490 Bs | QR 31,310 Bs | Efectivo 1,180 Bs).
+
+3. **Ejecución del Motor de Auditoría y Verificación**:
+   - El daemon Baileys 24/7 recibe el lote y despacha a Laravel.
+   - `GeminiVisionAuditorService` extrae los montos de las 4 imágenes.
+   - El motor de conciliación triangula y detecta:
+     - ⚠️ Discrepancia 1: Texto de WhatsApp dice `Qr: 14448` pero el papel manuscrito dice `QR: 12448` (Diferencia de Bs 2,000).
+     - ⚠️ Discrepancia 2: El POS cobró Bs 31,310 en QR al banco, mientras en la planilla se declararon Bs 12,448 de QR y los egresos (Bs 18,732) se restaron del balance físico.
+     - ⚠️ Discrepancia 3: Diferencia de Bs 200 en ventas (Comisión de limpieza manual no facturada en el POS).
+     - ✅ Cuadre de Champagne: 16 servicios x Bs 500 = Bs 8,000 exactos.
+     - ✅ Cuadre de Pagos Chicas: Bs 16,570 exactos.
+
+4. **Despacho Automático a WhatsApp**:
+   - En <60 segundos, el bot despacha directamente al grupo `"Control de Recaudo"` el informe ejecutivo formateado con emojis, alertando al dueño y administradores sobre las 3 observaciones sin requerir intervención humana.
+
+

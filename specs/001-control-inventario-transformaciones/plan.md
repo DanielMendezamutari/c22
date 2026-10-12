@@ -390,8 +390,91 @@ frontend/puntofrio_app/ (Flutter 3.19+ - Arquitectura Local-First)
       - Lista de últimos mensajes y fotos procesadas con miniatura y estado de OCR Gemini.
   - Enlazar la ruta en el menú lateral de navegación (`frontend_web/src/router/` o sidebar).
 
+
+### FASE 20: Despliegue Automatizado en cPanel & Arquitectura Resiliente del Bot de WhatsApp (US31, US33, US36)
+- **Ticket 20.1 (Script de Despliegue Automatizado cPanel en Raíz)**:
+  - Crear `deploy.sh` en la raíz del repositorio con detección automática de entorno (local o cPanel `bh8970`):
+    - Detección del binario PHP 8.2 en `/opt/cpanel/ea-php82/root/usr/bin/php`.
+    - Puesta en modo mantenimiento (`artisan down`) con trampa de salida segura (`trap 'artisan up' EXIT`).
+    - Actualización de código (`git pull origin main`), creación de directorios en `storage/framework/` y permisos `775`.
+    - Ejecución de migraciones automáticas (`artisan migrate --force`), enlace a storage (`artisan storage:link`) y reconstrucción de caché (`config:cache`, `route:cache`, `view:cache`).
+- **Ticket 20.2 (Watchdog Bash Guardián con Archivo PID para cPanel)**:
+  - En `scripts/whatsapp_bot/verificar_y_levantar.sh`:
+    - Sustituir la detección frágil de `ps aux \| grep` por control estricto mediante archivo de PID (`bot.pid`) y validación con `kill -0 "$PID"`.
+    - Auto-detección del binario de Node.js 20+ en CloudLinux (`/opt/alt/alt-nodejs20/root/usr/bin/node`, etc.).
+    - Si el proceso no responde o el archivo PID está obsoleto, lanzar en segundo plano con `nohup`, capturar `$!` y registrar en `bot_watchdog.log`.
+    - Documentar la entrada del Cron Job de cPanel para ejecución cada 5 minutos (`*/5 * * * *`).
+- **Ticket 20.3 (Heartbeat Bidireccional y Prevención de Desconexión Falsa en Bot y Laravel)**:
+  - En `scripts/whatsapp_bot/bot.js`:
+    - Incorporar temporizador de Heartbeat cada 60 segundos que emite `POST /api/v1/whatsapp/bot-status` con `{ estado: 'conectado', telefono }`, renovando el TTL de caché y refrescando `ultimo_ping`.
+    - En `WhatsAppWebhookController.php`: fijar TTL de caché en 3 minutos. Si transcurren más de 3 minutos sin recibir un ping del bot, el controlador evalúa el estado como `desconectado`, reflejando la caída real del servicio en la web sin demoras ni falsos positivos.
+- **Ticket 20.4 (Manejo Anti-Crash y Resiliencia en Node.js)**:
+  - En `bot.js`:
+    - Capturar globalmente `process.on('uncaughtException')` y `process.on('unhandledRejection')` para registrar advertencias en log y evitar que micro-cortes de red de Baileys o errores de descifrado tumben el proceso.
+    - Implementar reconexión con reintento progresivo y liberación de listeners antes de reinstanciar el socket de Baileys.
+
 ---
 
+### FASE 21: Grupos Compartidos Multi-Sucursal y Motor de Auditoría Cruzada de Veracidad Inter-Canales (US37)
+- **Ticket 21.1 (Backend: Migración para Grupos Globales y Tabla `auditorias_cruce_canales`)**:
+  - Migración aditiva en `sucursal_whatsapp_grupos`: modificar `sucursal_id` a `nullable` y agregar columna `es_global` (boolean default false).
+  - Migración para nueva tabla `auditorias_cruce_canales`:
+    `id`, `mensaje_local_inbound_id` (foreignId nullable), `mensaje_global_inbound_id` (foreignId nullable), `sucursal_id` (foreignId), `turno_id` (foreignId nullable), `tipo_evento` ('planilla_cierre', 'gasto_caja_chica', 'voucher_banco'), `monto_declarado_local` (decimal 10,2 nullable), `monto_declarado_global` (decimal 10,2 nullable), `diferencia_bs` (decimal 10,2 default 0.00), `estado_cruce` ('conforme_doble_canal', 'discrepancia_detectada', 'solo_canal_local', 'solo_canal_global'), `hash_imagen` (string nullable), `observaciones` (text nullable), `timestamps`.
+- **Ticket 21.2 (Backend: Ingesta Híbrida, Deduplicación y Cruce en `WhatsAppWebhookController` y Job)**:
+  - En `WhatsAppWebhookController.php`:
+    - Si el grupo tiene `es_global == true`, no fijar `sucursal_id` fija en la ingesta; despachar `ProcesarMensajeWhatsAppJob`.
+  - En `ProcesarMensajeWhatsAppJob.php`:
+    - Inferencia multi-factor: OCR de encabezado manuscrito de Gemini Vision (`"C22"`, `"Madan"`, `"Coron"`) + teléfono emisor en `sucursal_encargadas` + turno POS activo.
+    - Ejecutar `AuditoriaCruceCanalesUseCase`:
+      - Calcula SHA-256 del comprobante y busca coincidencias en mensajes del mismo día.
+      - Si existe un mensaje en el canal local para la misma casa y fecha:
+        - Si los montos coinciden: marca el cruce como `conforme_doble_canal` y evita duplicar saldos contables en `planillas_caja` o `gastos_caja_chica`.
+        - Si los montos o conceptos difieren: registra la diferencia en `diferencia_bs`, marca `discrepancia_detectada` y dispara alerta prioritaria en la web.
+- **Ticket 21.3 (Backend: Endpoints de Auditoría Cruzada de Canales)**:
+  - `GET /api/v1/whatsapp/auditorias-cruce`: Lista las conciliaciones inter-canales con filtros por sucursal, fecha y estado de discrepancia.
+  - `POST /api/v1/whatsapp/resolver-discrepancia-cruce`: Permite al dueño o contadora ingresar la justificación oficial o ajustar el monto definitivo auditado.
+- **Ticket 21.4 (Frontend Web: Selector "Todas las Casas" y Panel de Auditoría Cruzada)**:
+  - En `frontend_web/src/pages/whatsapp/gestion.vue`:
+    - En el selector de sucursales añadir opción `[Todas las Casas / Grupo Global]`. Al guardar, persiste `sucursal_id: null` y `es_global: true`.
+    - Pestaña o card interactiva *"Auditoría Cruzada Inter-Grupos"*:
+      - Tabla comparativa con dos columnas: `[Canal Local de Casa]` vs `[Canal Global Compartido]`.
+      - Semáforo visual: Verde (*Verificado Doble Canal*), Rojo (*Discrepancia en Monto*), Naranja (*Solo Reportado en Canal Global*).
+
+---
+
+### FASE 22: Bot Autónomo 24/7 y Despacho de Informes al Grupo "Control de Recaudo" para las 4 Casas (US38)
+- **Ticket 22.1 (Backend: Migración para `whatsapp_mensajes_outbound` y Tipo de Grupo)**:
+  - Migración aditiva en `sucursal_whatsapp_grupos`: modificar `tipo_auditoria` para soportar `'control_recaudo_global'`.
+  - Crear tabla `whatsapp_mensajes_outbound`:
+    `id`, `remote_jid` (string 100), `sucursal_id` (foreignId nullable), `turno_id` (foreignId nullable), `tipo_mensaje` (enum 'informe_cierre_ejecutivo', 'alerta_discrepancia', 'resumen_diario_consolidado', 'texto_simple'), `contenido_texto` (longText), `media_url` (string nullable), `estado_envio` (enum 'pendiente', 'enviado', 'fallido'), `whatsapp_message_id` (string nullable), `error_motivo` (text nullable), `despachado_at` (timestamp nullable), `timestamps`.
+- **Ticket 22.2 (Microservicio Baileys: Capacidad Outbound y Endpoint de Despacho)**:
+  - En `scripts/whatsapp_bot/bot.js`:
+    - Implementar servidor HTTP interno ligero (Express en puerto 3001) para recibir peticiones locales de despacho de Laravel (`POST /enviar-mensaje` con `{ remote_jid, texto, media_url }`).
+    - Invocar `sock.sendMessage(remote_jid, { text: texto })` y opcionalmente `{ document: { url: ... }, mimetype: 'application/pdf' }`.
+    - Retornar `{ success: true, messageId: ... }` al backend y actualizar el estado a `'enviado'`.
+- **Ticket 22.3 (Backend: Servicio y Caso de Uso `GenerarYDespacharInformeAuditoriaUseCase`)**:
+  - Implementar `GenerarYDespacharInformeAuditoriaUseCase`:
+    - Compila los resultados del turno cerrado:
+      - 📊 Total ventas POS vs Planilla.
+      - 💳 Cobros QR (Banco vs declarado).
+      - 💵 Efectivo físico en sobre y balance de ingresos.
+      - 📉 Desglose de egresos (chicas, garzones, personal, gastos operativos).
+      - 🚨 Semáforo de discrepancias detectadas (alertas de inconsistencias texto vs papel o papel vs POS).
+    - Formatea el mensaje en Markdown enriquecido con emojis y tipografía legible para WhatsApp.
+    - Localiza el grupo mapeado con `tipo_auditoria = 'control_recaudo_global'` en `sucursal_whatsapp_grupos` y despacha el mensaje.
+- **Ticket 22.4 (Backend: Motor de Auditoría "Solo WhatsApp" en `GeminiVisionAuditorService`)**:
+  - Extender el prompt y parser de Gemini Vision para admitir fotografías de tickets térmicos del POS (RestoTech) junto con las planillas manuscritas.
+  - Extraer los campos del ticket POS: Ventas Efectivo, Ventas QR, Total Cobros, Fecha/Hora, Servidor/Cajero.
+  - Ejecutar la conciliación automática cruzando los valores del ticket POS contra la planilla de caja y contra el texto del mensaje enviado en WhatsApp.
+- **Ticket 22.5 (Infraestructura: Daemon Persistente 24/7 y Soporte Dinámico 4 Casas)**:
+  - Parametrizar las 4 casas comerciales en el seeder y catálogo de `sucursales` (Casa Belén/22, Casa Corona, Madan y 4ta Casa).
+  - Configurar script de monitoreo 24/7 con auto-reconexión inmediata y watchdog para ejecución ininterrumpida.
+- **Ticket 22.6 (Frontend Web: Configuración del Grupo "Control de Recaudo" y Registro de Envíos)**:
+  - En `frontend_web/src/pages/whatsapp/gestion.vue`:
+    - Permitir asignar un grupo descubierto como `[Control de Recaudo (Consolidado)]`.
+    - Vista o pestaña *"Historial de Despachos a WhatsApp"* con visualización de los informes enviados y estado de entrega.
+
+---
 
 ## Complexity Tracking
 

@@ -196,14 +196,63 @@
 
 ---
 
-## 20. Resiliencia de Conciliación [PENDIENTE_PLANILLA] y Conteo Offline-First de Garzones
 
-- **Decision**:
-  1. **Semáforo y Estado de Vértice 2**: Cuando el POS registra ventas y cierre pero la encargada aún no envió la foto de la planilla, Vértice 2 se evalúa como `[PENDIENTE_PLANILLA]` con estado ámbar interactivo, en lugar de asumir $0.00$ Bs y detonar una falsa alerta crítica de robo.
-  2. **Conteo en Barra para Garzones (Turno Día)**: En la app móvil Flutter, el conteo opera con memoria reactiva indexada y persistencia instantánea en `SharedPreferences`. Al confirmar el cierre, la app liquida inmediatamente su jornal diario descontando el costo de las botellas faltantes:
-     $$\text{Total Efectivo a Cobrar} = \text{Jornal Diario} - \sum (\text{Botellas Faltantes} \times \text{Costo})$$
-     Desplegando el comprobante sellado anti-fraude para presentar en caja.
-- **Rationale**: Protege la armonía laboral al evitar falsas acusaciones de robo mientras la planilla está en tránsito, y garantiza que los garzones de turno día cobren su jornal exacto y justo sin demoras ni lag en la barra.
+---
+
+## 21. Grupos Dedicados de Cierre por Sucursal con Whitelist Dinámica y Zero-Leakage Guard (US33)
+
+- **Decision**: Cada sucursal dispone de un grupo de cierre exclusivo (`[C22] Cierres`, `[Madan] Cierres`, `[Coron] Cierres`) mapeado deterministamente en la tabla `sucursal_whatsapp_grupos`. El bot consulta periódicamente la lista autorizada (`GET /api/v1/whatsapp/grupos-auditables`). Cualquier mensaje procedente de un chat ajeno (personal o familiar) es descartado de inmediato en memoria local (0ms).
+- **Rationale**: Al vincular inicialmente un número personal del administrador, se garantiza 100% de privacidad y cero fuga de datos hacia el servidor. Además, la resolución de sucursal por `remote_jid` es determinista y no depende de la calidad de la foto ni del texto.
+- **Alternatives considered**:
+  - *Filtrado en el servidor tras retransmisión*: Rechazado tajantemente porque violaría la privacidad al enviar mensajes personales a la red.
+
+---
+
+## 22. Panel Web de Gestión, Visor QR en Vivo y Mapeo Interactivo sin Terminal (US36)
+
+- **Decision**: Desarrollar en `frontend_web/` (`gestion.vue`) un panel interactivo que renderiza el código QR emitido por Baileys en Base64 (`POST /whatsapp/bot-status`), muestra el estado de conexión reactivo y permite mapear grupos descubiertos a sucursales con selectores desplegables `v-select`.
+- **Rationale**: Desacopla la administración diaria de la consola SSH. La terminal queda reservada a infraestructura; la contadora o Daniel pueden vincular WhatsApp y asociar nuevos locales directamente desde el navegador web.
+
+---
+
+## 23. Estrategia de Daemon, Watchdog con PID y Heartbeat Recurrente en Hosting cPanel (US31, US33)
+
+- **Decision**: 
+  1. **Control por PID File**: El script guardián `verificar_y_levantar.sh` almacena el PID en `bot.pid` y verifica su estado con `kill -0 "$PID"`, eliminando falsos positivos de `ps aux \| grep` y evitando procesos Baileys duplicados.
+  2. **Heartbeat Activo cada 60s**: El bot emite un ping continuo a Laravel (`POST /whatsapp/bot-status`), renovando la caché con TTL de 3 minutos para eliminar la falsa desconexión por expiración a los 10 minutos.
+  3. **Manejo Global Anti-Crash**: Controladores `process.on('uncaughtException')` y `process.on('unhandledRejection')` en `bot.js` para evitar caídas súbitas ante micro-cortes de red.
+- **Rationale**: En entornos cPanel con CloudLinux LVE, los procesos de fondo carecen de PM2 nativo y están sujetos a reinicios del servidor. El cron cada 5 minutos junto con el archivo PID y el heartbeat proporcionan alta disponibilidad sin sobrecostos de infraestructura.
+
+---
+
+## 24. Canal Outbound en Baileys y Formato de Informe Ejecutivo para WhatsApp (US38)
+
+- **Decision**: Integrar un micro-servidor HTTP local en `scripts/whatsapp_bot/bot.js` (escuchando en `127.0.0.1:3001` con autenticación por clave compartida `X-Internal-Secret`). Cuando Laravel procesa un cierre, llama a `POST http://127.0.0.1:3001/enviar-mensaje` pasando `{ remote_jid, texto, media_url }`. Baileys ejecuta `sock.sendMessage(remote_jid, { text: texto })` y opcionalmente adjunta el PDF.
+- **Formato del Informe**: Estructurado en texto Markdown compatible con WhatsApp usando emojis, negritas y bloques monospace:
+  - 🏢 Encabezado: Casa, Fecha, Turno, Servidor/Cajera.
+  - 📊 Conciliación Triangulada: Ventas POS vs Planilla vs WhatsApp.
+  - 🚨 Alertas de Discrepancia: Resalta en rojo errores de tipeo (ej. Bs 2,000 en QR) o diferencias de efectivo.
+  - 💵 Desglose de Gastos y Efectivo en Sobre entregado.
+- **Rationale**: Comunicación directa y asíncrona entre Laravel y Baileys sin depender de Redis o websockets complejos en hosting cPanel. El dueño y socios reciben el informe listo en su chat sin abrir ninguna web.
+
+---
+
+## 25. Auditoría Offline "Solo WhatsApp" mediante Cruce Dual con Gemini Vision (US38)
+
+- **Decision**: Cuando las encargadas fotografían el ticket térmico del POS (RestoTech) junto con la planilla física manuscrita, Gemini Vision procesa ambas imágenes simultáneamente:
+  1. `Ticket POS`: Extrae fecha, hora, turno, cajero, ventas en efectivo y cobros QR.
+  2. `Planilla Manuscrita`: Extrae ventas bebidas, champagnes, desglose de chicas, garzones, gastos y sobre.
+  3. `Mensaje de WhatsApp`: Extrae el texto escrito por la encargada.
+  - El sistema cruza los 3 vértices: si el texto dice `Qr: 14448` pero el papel dice `QR: 12448`, emite alerta de digitación. Si el ticket POS marca Bs 31,310 en QR pero la planilla declara Bs 12,448, levanta la alerta contable de flujo de fondos.
+- **Rationale**: Independencia total del POS físico. No requiere que la máquina de caja tenga internet ni agente instalado para auditar el cierre con 98% de fidelidad.
+
+---
+
+## 26. Persistencia y Escalabilidad Multi-Sucursal para 4 Casas Comerciales (US38)
+
+- **Decision**: Parametrizar en la base de datos las 4 casas comerciales activas (`Casa Belén / 22`, `Casa Corona`, `Madan` y la 4ta Casa). Los prompts de Gemini Vision reciben la lista de sucursales activas dinámicamente (`Sucursal::where('activo', true)->pluck('nombre')`), eliminando cualquier nombre quemado en código.
+- **Rationale**: El negocio se expande de 3 a 4 o más casas; la arquitectura no debe requerir cambios de código para incorporar nuevos locales.
+
 
 
 

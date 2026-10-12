@@ -11,12 +11,9 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Sucursal principal base
-        $casa22 = Sucursal::firstOrCreate(['codigo' => 'C22'], [
-            'nombre' => 'Casa22',
-            'direccion' => 'Calle 22 de Calacoto #100',
-            'activo' => true,
-        ]);
+        // 1. Catálogo base de las 4 Casas Comerciales
+        $this->call(SucursalSeeder::class);
+        $casa22 = Sucursal::where('codigo', 'C22')->first();
 
         // 2. Administrador General del Sistema
         Usuario::firstOrCreate(['nombre' => 'Daniel', 'apellido' => 'Méndez Amutari'], [

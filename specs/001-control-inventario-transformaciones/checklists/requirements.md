@@ -17,16 +17,16 @@
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Conteo Apertura, US24 Rol Cajera, US25 Conteo Resiliente, US26 Reconteo con Memoria, US27 Web Tiempo Real 1min, US28 Planillas vs Vouchers Gemini, US29 Caja Chica y US30 Taxis/Rotación)
+- [x] All acceptance scenarios are defined (incluyendo US22 Balance PDFs, US23 Conteo Apertura, US24 Rol Cajera, US25 Conteo Resiliente, US26 Reconteo con Memoria, US27 Web Tiempo Real 1min, US28 Planillas vs Vouchers Gemini, US29 Caja Chica, US30 Taxis/Rotación, US31 Despliegue cPanel, US32 Sync POS RestoTech, US37 Grupos Compartidos Multi-Sucursal y US38 Bot 24/7 con Envío de Informes a "Control de Recaudo" para 4 Casas)
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness
 
-- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-065)
-- [x] User scenarios cover primary flows (US01 a US36)
-- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-023)
+- [x] All functional requirements have clear acceptance criteria (FR-001 a FR-073)
+- [x] User scenarios cover primary flows (US01 a US38)
+- [x] Feature meets measurable outcomes defined in Success Criteria (SC-001 a SC-030)
 - [x] No implementation details leak into specification
 
 ## Notes
@@ -44,9 +44,13 @@
 - Especificada auditoría con Gemini Vision de Planillas Físicas vs Vouchers bancarios en Grupo de Recaudaciones (US28 / SC-017, SC-018).
 - Especificada auditoría híbrida de Caja Chica y reposiciones con ventas de barra (US29 / SC-019).
 - Especificado control inteligente de taxis, comisiones y rotación de chicas con IA (US30 / SC-020).
+- Especificado script de despliegue automatizado cPanel con detección de PHP 8.2 y Watchdog bash (US31).
+- Especificada sincronización POS RestoTech y Matriz de Conciliación Triangulada (US32).
 - Especificado Bot de WhatsApp autónomo (Node.js/Baileys a webhook Laravel) con catálogo dinámico `sucursal_whatsapp_grupos` y filtro Zero-Leakage para WhatsApp personal (US33 / FR-054, FR-055).
 - Especificada extracción autónoma con Gemini 1.5 Flash Vision y Vértice 2 `[PENDIENTE_PLANILLA]` en Conciliación Triangulada (US34 / FR-056 a FR-058).
 - Especificado módulo de conteo ultra-estable offline-first para Garzones con liquidación de jornal diario restando botellas faltantes al costo (US35 / FR-059 a FR-061).
 - Especificado Panel Web de Gestión, Vinculación QR y Mapeo Interactivo de Grupos de WhatsApp desacoplado de la terminal (US36 / FR-062 a FR-065 / SC-021 a SC-023).
+- Especificados Grupos Compartidos Multi-Sucursal (`es_global = true`), deduplicación de comprobantes y Motor de Auditoría Cruzada de Veracidad Inter-Canales (US37 / FR-063 a FR-067 / SC-024 a SC-026).
+- Especificado Bot Autónomo 24/7 con Despacho de Informes de Turno al Grupo "Control de Recaudo" para 4 Casas, modo "Solo WhatsApp" con cruce de fotos de tickets vs. planillas físicas y detección de errores de tipeo (US38 / FR-069 a FR-073 / SC-027 a SC-030).
 - Spec validated and ready for planning (`/speckit-plan`).
 

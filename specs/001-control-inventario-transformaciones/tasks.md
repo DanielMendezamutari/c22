@@ -681,43 +681,85 @@
 - [X] T270 [P] [US36] Incorporar acceso al módulo de gestión de WhatsApp en el menú lateral y rutas de `frontend_web/src/router/index.js` y layout principal
 - [X] T271 [US36] Validar el flujo integral de visualización de QR, detección de grupos y asignación interactiva sin terminal según Scenario 19 en `specs/001-control-inventario-transformaciones/quickstart.md`
 
+---
+
+## Phase 42: User Story 37 - Grupos Compartidos Multi-Sucursal y Auditoría Cruzada de Veracidad Inter-Canales (Priority: P1)
+
+**Goal**: Permitir al bot monitorear grupos compartidos de WhatsApp (`es_global = true`), deduplicar comprobantes enviados concurrentemente al grupo local y general, e implementar el Motor de Auditoría Cruzada que detecta alteraciones de números, gastos inflados o inconsistencias inter-canales.  
+**Independent Test**: Enviar foto de planilla por 8,500 Bs al grupo local y al grupo general; verificar que el sistema la asocie al mismo turno sin duplicar el ingreso (`[VERIFICADO_DOBLE_CANAL]`). Enviar recibo de 500 Bs en grupo general y 300 Bs en planilla local; comprobar alerta roja `[DISCREPANCIA_INTER_GRUPOS]` en la web según Escenario 21 en `quickstart.md`.
+
+- [X] T272 [P] [US37] Crear migración para columnas `es_global` en `sucursal_whatsapp_grupos` y crear tabla `auditorias_cruce_canales` en `backend/database/migrations/2026_10_10_000001_create_auditorias_cruce_canales_table.php`
+- [X] T273 [P] [US37] Crear modelo Eloquent `AuditoriaCruceCanales` en `backend/app/Models/AuditoriaCruceCanales.php`
+- [X] T274 [US37] Implementar `AuditoriaCruceCanalesUseCase` en `backend/app/Application/UseCases/Auditoria/AuditoriaCruceCanalesUseCase.php` para deduplicación por SHA-256 y detección de discrepancias entre canal local y global
+- [X] T275 [US37] Actualizar `ProcesarMensajeWhatsAppJob` y `WhatsAppWebhookController` en `backend/app/Jobs/ProcesarMensajeWhatsAppJob.php` para soportar `es_global == true` e inferencia multi-factor
+- [X] T276 [US37] Implementar endpoints `GET /api/v1/whatsapp/auditorias-cruce` y `POST /api/v1/whatsapp/resolver-discrepancia-cruce` en `backend/app/Infrastructure/Http/Controllers/Api/WhatsAppWebhookController.php`
+- [X] T277 [US37] Actualizar pantalla `frontend_web/src/pages/whatsapp/gestion.vue` con opción `[Todas las Casas / Grupo Global]` y tarjeta/tabla de Auditoría Cruzada Inter-Grupos
+- [X] T278 [US37] Validar el flujo de deduplicación y alerta de discrepancia inter-canales según Escenario 21 en `specs/001-control-inventario-transformaciones/quickstart.md`
+
+---
+
+## Phase 43: User Story 38 - Bot Autónomo 24/7 y Despacho de Informes de Turno al Grupo "Control de Recaudo" para las 4 Casas (Priority: P1)
+
+**Goal**: Permitir al servicio de WhatsApp operar 24/7 sin caídas, ingestar fotos de tickets térmicos del POS RestoTech y planillas manuscritas en modo "Solo WhatsApp", conciliar ingresos, cobros QR y gastos con Gemini Vision, y despachar de forma autónoma el Informe Ejecutivo de Auditoría y Conciliación directamente al grupo de WhatsApp "Control de Recaudo" para las 4 casas con control total desde la interfaz gráfica web.  
+**Independent Test**: Enviar el lote de 4 fotos de cierre (Planilla general, planilla champagne, desglose chicas y ticket POS) junto con el texto de WhatsApp; comprobar que el bot procese las fotos, detecte la discrepancia de 2,000 Bs entre texto y papel y el flujo bancario de QR, y despache en <60 segundos el informe estructurado al grupo "Control de Recaudo" según Escenario 22 en `quickstart.md`.
+
+- [X] T279 [P] [US38] Crear migración para tabla `whatsapp_mensajes_outbound` y ampliar ENUM `tipo_auditoria` para soportar `'control_recaudo_global'` en `backend/database/migrations/2026_10_11_000001_create_whatsapp_mensajes_outbound_table.php`
+- [X] T280 [P] [US38] Crear modelo Eloquent `WhatsAppMensajeOutbound` en `backend/app/Models/WhatsAppMensajeOutbound.php`
+- [X] T281 [US38] Implementar servidor HTTP local ligero en `scripts/whatsapp_bot/bot.js` (`POST /enviar-mensaje` en puerto 3001 con `X-Internal-Secret`) para recibir peticiones locales de Laravel y despachar mensajes y documentos con Baileys `sock.sendMessage`
+- [X] T282 [US38] Implementar servicio `WhatsAppOutboundDispatcherService` y endpoint `POST /api/v1/whatsapp/enviar-mensaje` en `backend/app/Services/WhatsAppOutboundDispatcherService.php` y `backend/app/Infrastructure/Http/Controllers/Api/WhatsAppWebhookController.php`
+- [X] T283 [US38] Implementar `GenerarYDespacharInformeAuditoriaUseCase` y endpoint `POST /api/v1/whatsapp/despachar-informe-cierre` en `backend/app/Application/UseCases/Auditoria/GenerarYDespacharInformeAuditoriaUseCase.php` que formatea el resumen ejecutivo y lo envía al grupo "Control de Recaudo"
+- [X] T284 [US38] Extender `GeminiVisionAuditorService` en `backend/app/Services/GeminiVisionAuditorService.php` para clasificar y extraer tickets térmicos del POS RestoTech y conciliar automáticamente contra la planilla manuscrita de caja y el texto de WhatsApp (Modo Solo WhatsApp)
+- [X] T285 [US38] Parametrizar las 4 casas comerciales en el seeder y catálogo de `sucursales` (`backend/database/seeders/SucursalSeeder.php`), permitiendo inferencia dinámica sin nombres quemados
+- [X] T286 [US38] Implementar endpoints `POST /api/v1/whatsapp/reconectar` y `GET /api/v1/whatsapp/config-control-recaudo` en `backend/app/Infrastructure/Http/Controllers/Api/WhatsAppWebhookController.php` para control gráfico del daemon y estado 24/7
+- [X] T287 [US38] Actualizar la pantalla `frontend_web/src/pages/whatsapp/gestion.vue`:
+  - Añadir tipo `'control_recaudo_global'` (*Control de Recaudo (Consolidado 4 Casas)*) en el selector de tipos de auditoría
+  - Añadir botón interactivo `[Reconectar Servicio WhatsApp]` en la tarjeta de Estado del Servicio
+  - Incorporar tarjeta de *"Estado de Integraciones"* (WhatsApp Activo 24/7, POS RestoTech en modo Lectura OCR de Foto, App Flutter en espera)
+  - Incorporar pestaña *"Cierres Recibidos y Despachos a Control de Recaudo"* con visualización de estado de entrega y reenvío manual
+- [X] T288 [US38] Actualizar script guardián y daemon en `scripts/whatsapp_bot/verificar_y_levantar.sh` para soporte de ejecución continua 24/7 con control de PID y reinicio automático de socket
+- [X] T289 [US38] Validar el flujo integral de recepción de fotos de cierre y despacho automático del informe al grupo "Control de Recaudo" según Escenario 22 en `specs/001-control-inventario-transformaciones/quickstart.md`
 
 ---
 
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
-- **Phases 1 a 28**: Completadas y verificadas [X].
-- **Phase 29 (US24 - Rol Cajera y Suplencia en Barra)**: Completada y verificada [X].
-- **Phase 30 (US25 - Conteo Resiliente, Búsqueda, Refresco y Producto Provisional)**: Completada y verificada [X].
-- **Phase 31 (US26 - Desbloqueo de Reconteo de Inventario Autorizado por Administrador)**: Completada y verificada [X].
-- **Phases 32 a 36**: Completadas y verificadas [X].
-- **Phase 37 (US32 - Sincronización POS RestoTech y Conciliación Triangulada)**: Completada y verificada [X].
-- **Phase 38 (US33 - Bot WhatsApp Baileys & Ingesta Webhook)**: Completada y verificada [X].
-- **Phase 39 (US34 - Gemini 1.5 Flash Vision & Vértice 2 [PENDIENTE_PLANILLA])**: Completada y verificada [X].
-- **Phase 40 (US35 - Conteo Garzones Offline-First & Liquidación Diaria)**: Completada y verificada [X].
-- **Phase 41 (US36 - Panel Web de Gestión, QR y Mapeo Interactivo de WhatsApp)**:
-  - T263, T264, T266 y T267 preparan base de datos, modelos, controladores y rutas [P].
-  - T265 implementa los controladores de estado y grupos disponibles en Laravel.
-  - T268 actualiza el microservicio Node.js en `scripts/whatsapp_bot/bot.js` para emitir QR y grupos automáticamente.
-  - T269 y T270 construyen y enlazan la vista gráfica en `frontend_web`.
-  - T271 valida la experiencia visual end-to-end sin terminal (Scenario 19).
+- **Phases 1 a 41**: Completadas y verificadas [X].
+- **Phase 42 (US37 - Grupos Compartidos Multi-Sucursal y Auditoría Cruzada)**:
+  - T272 y T273 preparan base de datos y modelo [P].
+  - T274 y T275 implementan el caso de uso de cruce y adaptan el job de ingesta.
+  - T276 expone los endpoints en Laravel.
+  - T277 añade el soporte gráfico en el frontend web.
+  - T278 valida el flujo inter-canales (Scenario 21).
+- **Phase 43 (US38 - Bot Autónomo 24/7 y Despacho a "Control de Recaudo" para 4 Casas)**:
+  - Depende de Phase 42 (extiende `sucursal_whatsapp_grupos` y webhook).
+  - T279 y T280 crean migración y modelo para mensajes de salida [P].
+  - T281 habilita el servidor HTTP interno en el microservicio Baileys.
+  - T282 y T283 implementan el dispatcher y el caso de uso de consolidación de informes.
+  - T284 añade la extracción de tickets térmicos del POS a `GeminiVisionAuditorService`.
+  - T285 actualiza el catálogo a 4 casas comerciales.
+  - T286 y T287 integran el control gráfico total en `frontend_web/src/pages/whatsapp/gestion.vue` (botón de reconexión, selector de Control de Recaudo y tarjeta de integraciones modulares).
+  - T288 asegura la persistencia del daemon 24/7 con watchdog.
+  - T289 valida el despacho automático del informe al grupo de WhatsApp (Scenario 22).
 
 ---
 
 ## Parallel Opportunities
 
 ```bash
-# Tareas Backend Paralelas (Fase 41):
-Task T263: "Migración whatsapp_grupos_descubiertos"
-Task T264: "Modelo Eloquent WhatsAppGrupoDescubierto"
-Task T266: "Controlador SucursalWhatsAppGrupoController"
-Task T267: "Rutas API en backend/routes/api.php"
+# Tareas Backend Paralelas (Fase 42):
+Task T272: "Migración es_global y auditorias_cruce_canales"
+Task T273: "Modelo Eloquent AuditoriaCruceCanales"
 
-# Tareas Frontend y Microservicio Paralelas:
-Task T268: "Emisión reactiva de QR y push de grupos en scripts/whatsapp_bot/bot.js"
-Task T269: "Pantalla frontend_web/src/pages/whatsapp/gestion.vue"
-Task T270: "Rutas y menú lateral en frontend_web/src/router/index.js"
+# Tareas Backend Paralelas (Fase 43):
+Task T279: "Migración whatsapp_mensajes_outbound"
+Task T280: "Modelo Eloquent WhatsAppMensajeOutbound"
+Task T285: "Actualización de catálogo de 4 casas en SucursalSeeder"
+
+# Tareas Microservicio y Frontend (Fase 43):
+Task T281: "Servidor HTTP local de salida en scripts/whatsapp_bot/bot.js"
+Task T287: "Control gráfico 24/7 y selector de Control de Recaudo en gestion.vue"
+Task T288: "Script daemon 24/7 en scripts/whatsapp_bot/verificar_y_levantar.sh"
 ```
 
 ---
@@ -725,4 +767,5 @@ Task T270: "Rutas y menú lateral en frontend_web/src/router/index.js"
 ## Notes
 - Cada tarea sigue estrictamente el formato `- [ ] [TaskID] [P?] [Story?] Descripción con ruta de archivo`.
 - Los endpoints y esquemas respetan con exactitud `data-model.md` y `contracts/api-contracts.md`.
+- El sistema opera 100% en modo "Solo WhatsApp" hoy y está listo para encender el POS directo y la app Flutter sin rehacer la interfaz gráfica.
 

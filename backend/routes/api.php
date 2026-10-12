@@ -166,6 +166,16 @@ Route::prefix('v1')->group(function () {
     Route::post('/sucursal-whatsapp-grupos', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'store']);
     Route::put('/sucursal-whatsapp-grupos/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'update']);
     Route::delete('/sucursal-whatsapp-grupos/{id}', [\App\Infrastructure\Http\Controllers\Api\SucursalWhatsAppGrupoController::class, 'destroy']);
+
+    // Grupos Compartidos Multi-Sucursal y Auditoría Cruzada de Veracidad Inter-Canales - User Story 37
+    Route::get('/whatsapp/auditorias-cruce', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'auditoriasCruce']);
+    Route::post('/whatsapp/resolver-discrepancia-cruce', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'resolverDiscrepanciaCruce']);
+
+    // Bot Autónomo 24/7 y Despacho de Informes a "Control de Recaudo" - User Story 38
+    Route::post('/whatsapp/enviar-mensaje', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'enviarMensaje']);
+    Route::post('/whatsapp/despachar-informe-cierre', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'despacharInformeCierre']);
+    Route::post('/whatsapp/reconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'reconectar']);
+    Route::get('/whatsapp/config-control-recaudo', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'configControlRecaudo']);
 });
 
 

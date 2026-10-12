@@ -2,11 +2,14 @@
 
 namespace App\Infrastructure\Http\Controllers\Api;
 
+use App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase;
+use App\Infrastructure\Persistence\Eloquent\Models\AuditoriaCruceCanales;
 use App\Infrastructure\Persistence\Eloquent\Models\SucursalWhatsAppGrupo;
 use App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
 use App\Jobs\ProcesarMensajeWhatsAppJob;
+use App\Services\WhatsAppOutboundDispatcherService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -432,6 +435,192 @@ class WhatsAppWebhookController extends Controller
         return response()->json([
             'success' => true,
             'data' => $mensajes,
+        ]);
+    }
+
+    /**
+     * Lista auditorías de cruce de canales (local vs global).
+     * GET /api/v1/whatsapp/auditorias-cruce
+     */
+    public function auditoriasCruce(Request $request): JsonResponse
+    {
+        $query = AuditoriaCruceCanales::with(['sucursal:id,nombre,codigo', 'mensajeLocal', 'mensajeGlobal', 'turno']);
+
+        if ($request->filled('sucursal_id')) {
+            $query->where('sucursal_id', $request->input('sucursal_id'));
+        }
+
+        if ($request->filled('estado_cruce')) {
+            $query->where('estado_cruce', $request->input('estado_cruce'));
+        }
+
+        if ($request->filled('fecha')) {
+            $query->whereDate('created_at', $request->input('fecha'));
+        }
+
+        $items = $query->latest('id')->paginate($request->input('per_page', 25));
+
+        return response()->json([
+            'success' => true,
+            'data' => $items,
+        ]);
+    }
+
+    /**
+     * Resuelve y asienta una discrepancia inter-canales.
+     * POST /api/v1/whatsapp/resolver-discrepancia-cruce
+     */
+    public function resolverDiscrepanciaCruce(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'cruce_id' => 'required|exists:auditorias_cruce_canales,id',
+            'monto_definitivo_auditado' => 'required|numeric|min:0',
+            'imputar_responsable' => 'nullable|string|max:50',
+            'observaciones' => 'required|string|max:1000',
+        ]);
+
+        $cruce = AuditoriaCruceCanales::findOrFail($validated['cruce_id']);
+        $cruce->monto_definitivo_auditado = $validated['monto_definitivo_auditado'];
+        $cruce->imputar_responsable = $validated['imputar_responsable'] ?? null;
+        $cruce->observaciones = $validated['observaciones'];
+        $cruce->estado_cruce = 'justificado';
+        $cruce->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Discrepancia inter-canales resuelta y asentada exitosamente',
+            'data' => [
+                'cruce_id' => $cruce->id,
+                'estado_cruce' => $cruce->estado_cruce,
+                'monto_final' => (float) $cruce->monto_definitivo_auditado,
+            ],
+        ]);
+    }
+
+    /**
+     * Despacha un mensaje o multimedia a WhatsApp vía Baileys.
+     * POST /api/v1/whatsapp/enviar-mensaje
+     */
+    public function enviarMensaje(Request $request, WhatsAppOutboundDispatcherService $dispatcher): JsonResponse
+    {
+        $validated = $request->validate([
+            'remote_jid' => 'required|string',
+            'texto' => 'required|string',
+            'media_url' => 'nullable|string',
+            'tipo_mensaje' => 'nullable|string',
+            'sucursal_id' => 'nullable|exists:sucursales,id',
+            'turno_id' => 'nullable|exists:turnos,id',
+        ]);
+
+        $res = $dispatcher->enviarMensaje(
+            $validated['remote_jid'],
+            $validated['texto'],
+            $validated['media_url'] ?? null,
+            $validated['tipo_mensaje'] ?? 'informe_cierre_ejecutivo',
+            $validated['sucursal_id'] ?? null,
+            $validated['turno_id'] ?? null
+        );
+
+        if (!$res['success']) {
+            return response()->json([
+                'success' => false,
+                'error' => $res['error'] ?? 'Error despachando mensaje a WhatsApp',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Mensaje encolado y despachado a WhatsApp exitosamente',
+            'data' => [
+                'outbound_id' => $res['outbound_id'],
+                'whatsapp_message_id' => $res['message_id'],
+                'remote_jid' => $validated['remote_jid'],
+                'estado_envio' => 'enviado',
+            ],
+        ]);
+    }
+
+    /**
+     * Genera y despacha el informe de cierre al grupo de Control de Recaudo.
+     * POST /api/v1/whatsapp/despachar-informe-cierre
+     */
+    public function despacharInformeCierre(Request $request, GenerarYDespacharInformeAuditoriaUseCase $useCase): JsonResponse
+    {
+        $validated = $request->validate([
+            'turno_id' => 'required|exists:turnos,id',
+            'forzar_reenvio' => 'nullable|boolean',
+        ]);
+
+        try {
+            $resultado = $useCase->ejecutar((int) $validated['turno_id'], (bool) ($validated['forzar_reenvio'] ?? false));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Informe de cierre consolidado y despachado al grupo Control de Recaudo',
+                'data' => $resultado,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Solicita la reconexión manual del bot de WhatsApp.
+     * POST /api/v1/whatsapp/reconectar
+     */
+    public function reconectar(WhatsAppOutboundDispatcherService $dispatcher): JsonResponse
+    {
+        $ok = $dispatcher->solicitarReconexion();
+        
+        $current = \Illuminate\Support\Facades\Cache::get('whatsapp_bot_status', []);
+        $current['ultimo_intento_reconexion'] = now()->toDateTimeString();
+        \Illuminate\Support\Facades\Cache::put('whatsapp_bot_status', $current, now()->addMinutes(10));
+
+        return response()->json([
+            'success' => true,
+            'message' => $ok ? 'Reconexión solicitada al servicio WhatsApp exitosamente.' : 'Comando de reconexión registrado; el servicio se restablecerá automáticamente.',
+        ]);
+    }
+
+    /**
+     * Devuelve la configuración del grupo Control de Recaudo y estado de integración 24/7.
+     * GET /api/v1/whatsapp/config-control-recaudo
+     */
+    public function configControlRecaudo(): JsonResponse
+    {
+        $grupoAsignado = SucursalWhatsAppGrupo::where('tipo_auditoria', 'control_recaudo_global')
+            ->where('activo', true)
+            ->first();
+
+        $casasCubiertas = Sucursal::where('activo', true)
+            ->get(['id', 'nombre', 'codigo']);
+
+        $botStatus = \Illuminate\Support\Facades\Cache::get('whatsapp_bot_status', [
+            'estado' => 'desconectado',
+            'ultimo_ping' => null,
+            'telefono' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'grupo_asignado' => $grupoAsignado ? [
+                    'id' => $grupoAsignado->id,
+                    'remote_jid' => $grupoAsignado->remote_jid,
+                    'nombre_grupo' => $grupoAsignado->nombre_grupo,
+                    'tipo_auditoria' => $grupoAsignado->tipo_auditoria,
+                    'activo' => (bool) $grupoAsignado->activo,
+                ] : null,
+                'casas_cubiertas' => $casasCubiertas,
+                'daemon_24_7' => [
+                    'estado' => $botStatus['estado'] ?? 'desconectado',
+                    'telefono' => $botStatus['telefono'] ?? null,
+                    'ultimo_heartbeat' => $botStatus['ultimo_ping'] ?? now()->toDateTimeString(),
+                ],
+            ],
         ]);
     }
 }

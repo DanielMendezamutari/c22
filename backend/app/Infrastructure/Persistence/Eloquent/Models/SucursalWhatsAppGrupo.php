@@ -14,10 +14,12 @@ class SucursalWhatsAppGrupo extends Model
         'remote_jid',
         'nombre_grupo',
         'tipo_auditoria',
+        'es_global',
         'activo',
     ];
 
     protected $casts = [
+        'es_global' => 'boolean',
         'activo' => 'boolean',
     ];
 
