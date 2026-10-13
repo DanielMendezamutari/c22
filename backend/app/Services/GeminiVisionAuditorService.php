@@ -69,7 +69,18 @@ Realiza las siguientes 3 tareas:
    - "recibo_gasto": Recibo o factura de gasto menor de caja chica (hielo, taxis, compras, etc.).
    - "otro": Fotografías no contables.
 
-2. DETECCIÓN DE SUCURSAL: Busca si en la cabecera, notas o servidor se menciona la sucursal (ej. "Belén", "Casa22", "C22", "Corona", "Madan", etc.).
+2. DETECCIÓN INTELIGENTE DE CASA / SUCURSAL (REGLA CRÍTICA):
+En Grupo Punto Frío operan 4 casas comerciales. Como las encargadas envían fotos a un grupo común, DEBES identificar obligatoriamente a cuál de las 4 sedes pertenece el documento inspeccionando cada detalle:
+   - "Casa Belén (C22)":
+     * En tickets figura "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22" o "CASA22".
+     * En planillas manuscritas aparece escrito arriba, en notas o márgenes "Belen", "Belén" o "C22".
+     * En nombres de cajeros, meseros o firmas figuran "FANNY", "FANNY MORON", "CUEVAS" o "CUEVAS 25".
+   - "Casa Corona":
+     * En tickets, sellos, membretes o notas aparece "CORONA", "CASA CORONA" o "CORON".
+   - "Madan":
+     * En tickets, notas o membretes aparece "MADAN" o "MADAM".
+   - "Cuarta Casa":
+     * En tickets o notas aparece "VIP", "C22VIP", "JOKER", "CASA 4", "CASA NUEVA" o "CUARTA CASA".
 
 3. EXTRACCIÓN DE DATOS:
    - Si es "ticket_pos":
@@ -81,17 +92,19 @@ Realiza las siguientes 3 tareas:
      * items_vendidos_count: cantidad total de ítems.
    - Si es "planilla_caja":
      * total_ingresos_bs: suma total de ingresos declarados.
+     * total_ventas_declaradas_bs: total ventas de la noche.
      * ventas_bebidas_bs: total ventas bebidas.
      * shampagne_ingreso_bs: total ingreso por champagne.
      * caja_chica_inicial_bs: monto inicial de caja chica.
-     * total_egresos_bs: suma de todos los egresos.
+     * total_egresos_bs: suma de todos los egresos / gastos.
+     * total_gastos_declarados_bs: suma de egresos.
      * pago_chicas_bs: total pagado a chicas.
      * pago_garzones_bs: total pagado a garzones.
      * pago_personal_bs: total pagado a personal (caja, limpieza).
      * gastos_operativos_bs: suma de hielo, taxis, compras.
      * qr_declarado_bs: monto declarado como cobrado o pagado por QR.
      * monto_sobre_efectivo_bs: efectivo físico entregado en sobre.
-     * cajero_nombre: nombre de la cajera que firma.
+     * cajero_nombre: nombre de la cajera que firma o entrega el sobre.
      * fecha: fecha del turno.
      * turno: Día o Noche.
    - Si es "voucher_deposito": Extrae banco_nombre, monto_depositado_bs, nro_operacion, fecha_hora, titular_cuenta.
@@ -101,7 +114,7 @@ Responde ÚNICAMENTE un JSON con este formato exacto:
 {
   "clasificacion": "planilla_caja" | "ticket_pos" | "voucher_deposito" | "recibo_gasto" | "otro",
   "score_confianza": 0.95,
-  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Cuarta Casa" | null,
+  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Cuarta Casa",
   "datos": { ...campos extraidos... }
 }
 PROMPT;

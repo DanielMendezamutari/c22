@@ -49,13 +49,12 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             $inbound->score_confianza = $resultado['score_confianza'];
             $inbound->metadata_ia = $resultado['datos'];
 
-            // Si aún no tenía sucursal asignada, intentar inferirla de sucursal_sugerida
-            if (!$inbound->sucursal_id && !empty($resultado['sucursal_sugerida'])) {
-                $sucursal = Sucursal::where('nombre', 'LIKE', '%' . $resultado['sucursal_sugerida'] . '%')
-                    ->orWhere('codigo', 'LIKE', '%' . $resultado['sucursal_sugerida'] . '%')
-                    ->first();
-                if ($sucursal) {
-                    $inbound->sucursal_id = $sucursal->id;
+            // Inferencia y auto-detección inteligente de la sucursal por IA
+            if (!$inbound->sucursal_id) {
+                $autoSucursalId = self::inferirSucursalId($resultado, $inbound);
+                if ($autoSucursalId) {
+                    $inbound->sucursal_id = $autoSucursalId;
+                    Log::info("ProcesarMensajeWhatsAppJob: Sucursal auto-detectada por IA: ID {$autoSucursalId}");
                 }
             }
 
@@ -175,5 +174,60 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             $inbound->estado = 'error';
             $inbound->save();
         }
+    }
+
+    /**
+     * Infiere y auto-detecta la sucursal de Casa22 examinando pistas de IA, encabezados y cajeras.
+     */
+    public static function inferirSucursalId(array $resultado, WhatsAppMensajeInbound $inbound): ?int
+    {
+        $textos = [
+            $resultado['sucursal_sugerida'] ?? '',
+            $resultado['datos']['servidor_cajero'] ?? '',
+            $resultado['datos']['cajero_nombre'] ?? '',
+            $resultado['datos']['observaciones'] ?? '',
+            $inbound->raw_text ?? '',
+            $inbound->sender_name ?? '',
+            json_encode($resultado['datos'] ?? []),
+        ];
+
+        $todo = strtolower(implode(' ', $textos));
+        $todoNorm = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $todo);
+
+        // 1. Casa Belén (C22) -> ID 1
+        if (
+            str_contains($todoNorm, 'belen') ||
+            str_contains($todoNorm, 'c22') ||
+            str_contains($todoNorm, 'casa22') ||
+            str_contains($todoNorm, 'casa 22') ||
+            str_contains($todoNorm, 'fanny') ||
+            str_contains($todoNorm, 'cuevas')
+        ) {
+            return 1;
+        }
+
+        // 2. Casa Corona -> ID 2
+        if (str_contains($todoNorm, 'corona') || str_contains($todoNorm, 'coron')) {
+            return 2;
+        }
+
+        // 3. Madan / Madam -> ID 3
+        if (str_contains($todoNorm, 'madan') || str_contains($todoNorm, 'madam')) {
+            return 3;
+        }
+
+        // 4. Cuarta Casa / VIP / Joker -> ID 4
+        if (
+            str_contains($todoNorm, 'vip') ||
+            str_contains($todoNorm, 'joker') ||
+            str_contains($todoNorm, 'cuarta') ||
+            str_contains($todoNorm, 'casa 4') ||
+            str_contains($todoNorm, 'casa4') ||
+            str_contains($todoNorm, 'nueva')
+        ) {
+            return 4;
+        }
+
+        return null;
     }
 }
