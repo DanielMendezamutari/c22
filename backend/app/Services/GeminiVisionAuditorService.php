@@ -18,7 +18,7 @@ class GeminiVisionAuditorService
     {
         $this->baseVisionService = $baseVisionService;
         $this->apiKey = env('GEMINI_API_KEY', '');
-        $this->model = env('GEMINI_MODEL', 'gemini-1.5-flash');
+        $this->model = env('GEMINI_MODEL', 'gemini-3.5-flash-lite');
         $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
     }
 
@@ -119,44 +119,60 @@ Responde ÚNICAMENTE un JSON con este formato exacto:
 }
 PROMPT;
 
-        try {
-            $endpoint = "{$this->baseUrl}{$this->model}:generateContent?key={$this->apiKey}";
+        $modelos = array_unique([$this->model ?: 'gemini-3.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-flash-latest']);
 
-            $response = Http::timeout(35)->post($endpoint, [
-                'contents' => [
-                    [
-                        'parts' => [
-                            ['text' => $prompt],
-                            [
-                                'inline_data' => [
-                                    'mime_type' => $mimetype ?: 'image/jpeg',
-                                    'data' => $base64,
+        foreach ($modelos as $modeloActual) {
+            try {
+                $endpoint = "{$this->baseUrl}{$modeloActual}:generateContent?key={$this->apiKey}";
+
+                $response = Http::withOptions([
+                    'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4],
+                ])->timeout(30)->post($endpoint, [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                ['text' => $prompt],
+                                [
+                                    'inline_data' => [
+                                        'mime_type' => $mimetype ?: 'image/jpeg',
+                                        'data' => $base64,
+                                    ],
                                 ],
                             ],
                         ],
                     ],
-                ],
-                'generationConfig' => [
-                    'temperature' => 0.1,
-                    'responseMimeType' => 'application/json',
-                ],
-            ]);
+                    'generationConfig' => [
+                        'temperature' => 0.1,
+                        'responseMimeType' => 'application/json',
+                    ],
+                ]);
 
-            if ($response->successful()) {
-                $jsonText = $response->json('candidates.0.content.parts.0.text', '{}');
-                $decoded = json_decode($jsonText, true);
+                if ($response->successful()) {
+                    $parts = $response->json('candidates.0.content.parts', []);
+                    $jsonText = '';
+                    foreach ($parts as $p) {
+                        if (!empty($p['text'])) {
+                            $jsonText = $p['text'];
+                        }
+                    }
 
-                if (is_array($decoded) && isset($decoded['clasificacion'])) {
-                    return [
-                        'clasificacion' => $decoded['clasificacion'],
-                        'score_confianza' => (float) ($decoded['score_confianza'] ?? 0.85),
-                        'sucursal_sugerida' => $decoded['sucursal_sugerida'] ?? null,
-                        'datos' => $decoded['datos'] ?? [],
-                    ];
+                    $cleanJson = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($jsonText));
+                    $decoded = json_decode($cleanJson, true);
+
+                    if (is_array($decoded) && isset($decoded['clasificacion'])) {
+                        return [
+                            'clasificacion' => $decoded['clasificacion'],
+                            'score_confianza' => (float) ($decoded['score_confianza'] ?? 0.85),
+                            'sucursal_sugerida' => $decoded['sucursal_sugerida'] ?? null,
+                            'datos' => $decoded['datos'] ?? [],
+                        ];
+                    }
+                } else {
+                    Log::warning("Gemini Vision ({$modeloActual}) Error (" . $response->status() . "): " . $response->body() . ". Probando siguiente modelo...");
                 }
+            } catch (\Throwable $e) {
+                Log::warning("Gemini Vision ({$modeloActual}) Excepción: " . $e->getMessage() . ". Probando siguiente modelo...");
             }
-        } catch (\Throwable $e) {
-            Log::error("GeminiVisionAuditorService Exception: " . $e->getMessage());
         }
 
         return $this->simularClasificacion($imagePathOrBase64);

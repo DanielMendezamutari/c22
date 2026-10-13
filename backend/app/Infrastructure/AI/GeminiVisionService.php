@@ -15,7 +15,7 @@ class GeminiVisionService
     public function __construct()
     {
         $this->apiKey = env('GEMINI_API_KEY', '');
-        $this->model = env('GEMINI_MODEL', 'gemini-1.5-flash');
+        $this->model = env('GEMINI_MODEL', 'gemini-flash-latest');
         $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
     }
 
@@ -79,7 +79,9 @@ PROMPT;
         try {
             $endpoint = "{$this->baseUrl}{$this->model}:generateContent?key={$this->apiKey}";
 
-            $response = Http::timeout(30)->post($endpoint, [
+            $response = Http::withOptions([
+                'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4],
+            ])->timeout(45)->post($endpoint, [
                 'contents' => [
                     [
                         'parts' => [
