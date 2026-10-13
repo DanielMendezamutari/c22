@@ -70,7 +70,7 @@ Artisan::command('whatsapp:auditar-hoy {--forzar : Forzar reenvío de informes y
             if (!empty($res['success'])) {
                 $this->info("     ✔ Informe despachado con éxito a WhatsApp:");
                 $this->line("        Grupo: {$res['grupo_destino']} | JID: {$res['remote_jid']}");
-                $this->line("        Ventas POS: Bs {$res['ventas_pos']} | Efectivo Sobre: Bs {$res['efectivo_sobre']}");
+                $this->line("        Ventas Declaradas: Bs {$res['ventas_declaradas']} | Efectivo Sobre: Bs {$res['efectivo_sobre']}");
             } else {
                 $this->error("     ❌ Falló el envío a WhatsApp: " . ($res['error'] ?? 'El bot no pudo entregar el mensaje'));
                 $this->line("        Grupo Destino: {$res['grupo_destino']} | JID: " . ($res['remote_jid'] ?? 'N/A'));
