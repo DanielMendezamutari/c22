@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
@@ -131,11 +132,23 @@ async function startWhatsAppBot() {
   await refrescarWhitelistGrupos();
   const whitelistTimer = setInterval(refrescarWhitelistGrupos, SYNC_INTERVAL_MS);
 
+  const msgRetryCounterCache = new Map();
+
   const sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
     logger,
     printQRInTerminal: false,
+    generateHighQualityLinkPreview: false,
+    msgRetryCounterCache: {
+      get: (key) => msgRetryCounterCache.get(key),
+      set: (key, val) => msgRetryCounterCache.set(key, val),
+      del: (key) => msgRetryCounterCache.delete(key),
+    },
+    getMessage: async () => undefined,
   });
 
   sock.ev.on('creds.update', saveCreds);
