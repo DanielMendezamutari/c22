@@ -27,6 +27,37 @@ const loadingGrupos = ref(false)
 const filtroBusqueda = ref('')
 const guardandoGrupoId = ref(null)
 
+// Filtros Rápidos y Paginación UX de Grupos
+const tabFiltroGrupos = ref('sugeridos') // 'vinculados' | 'sugeridos' | 'todos'
+const paginaActual = ref(1)
+const itemsPorPagina = ref(10)
+
+const palabrasClaveNegocio = [
+  'c22', 'casa 22', 'casa22', 'belen', 'belén', 'corona', 'madan',
+  'cierre', 'cierres', 'recaud', 'recaudacion', 'recaudaciones',
+  'arqueo', 'arqueos', 'taxi', 'taxis', 'rotacion', 'rotaciones',
+  'turno', 'caja', 'joker', 'licoreria', 'ventas', 'vip', 'sistema'
+]
+
+const esGrupoSugerido = (nombre) => {
+  if (!nombre) return false
+  const lower = nombre.toLowerCase()
+  return palabrasClaveNegocio.some(kw => lower.includes(kw))
+}
+
+const gruposVinculadosCount = computed(() => grupos.value.filter(g => g.vinculado).length)
+const gruposSugeridosCount = computed(() => grupos.value.filter(g => esGrupoSugerido(g.nombre_grupo) || g.vinculado).length)
+
+const aplicarFiltroChip = (texto) => {
+  filtroBusqueda.value = texto
+  paginaActual.value = 1
+}
+
+const limpiarFiltro = () => {
+  filtroBusqueda.value = ''
+  paginaActual.value = 1
+}
+
 // Auditoría Cruzada Inter-Canales
 const auditoriasCruce = ref([])
 const loadingCruces = ref(false)
@@ -298,14 +329,83 @@ const confirmarDesconexion = async () => {
   }
 }
 
+const autoSugerirAsignaciones = () => {
+  let sugeridos = 0
+  
+  // Buscar IDs de sucursales en el catálogo
+  const idBelen = sucursales.value.find(s => s.title?.toLowerCase().includes('bel') || s.title?.toLowerCase().includes('c22'))?.value
+  const idCorona = sucursales.value.find(s => s.title?.toLowerCase().includes('coron'))?.value
+  const idMadan = sucursales.value.find(s => s.title?.toLowerCase().includes('madan'))?.value
+
+  grupos.value.forEach(g => {
+    if (g.vinculado) return
+    const lower = (g.nombre_grupo || '').toLowerCase()
+
+    let asigno = false
+    // 1. Auto-detectar Sucursal
+    if (lower.includes('corona')) {
+      if (idCorona) { g.sucursal_id_edit = idCorona; asigno = true; }
+    } else if (lower.includes('madan')) {
+      if (idMadan) { g.sucursal_id_edit = idMadan; asigno = true; }
+    } else if (lower.includes('c22') || lower.includes('casa 22') || lower.includes('casa22') || lower.includes('belen') || lower.includes('belén')) {
+      if (idBelen) { g.sucursal_id_edit = idBelen; asigno = true; }
+    } else if (lower.includes('recaud') || lower.includes('todas')) {
+      g.sucursal_id_edit = 0 // Global
+      asigno = true
+    }
+
+    // 2. Auto-detectar Tipo de Auditoría
+    if (lower.includes('recaud')) {
+      g.tipo_auditoria_edit = 'control_recaudo_global'
+    } else if (lower.includes('taxi') || lower.includes('rotacion')) {
+      g.tipo_auditoria_edit = 'taxis_rotacion'
+    } else if (lower.includes('gasto') || lower.includes('caja chica')) {
+      g.tipo_auditoria_edit = 'gastos_caja_chica'
+    } else if (lower.includes('cierre') || lower.includes('caja') || lower.includes('arqueo')) {
+      g.tipo_auditoria_edit = 'cierre_recaudacion'
+    }
+
+    if (asigno) sugeridos++
+  })
+
+  tabFiltroGrupos.value = 'sugeridos'
+  paginaActual.value = 1
+  mostrarSnackbar(`🪄 Se pre-identificaron sugerencias para ${sugeridos} grupos. Revisa y pulsa 'Guardar'.`)
+}
+
 const gruposFiltrados = computed(() => {
-  if (!filtroBusqueda.value.trim()) return grupos.value
-  const query = filtroBusqueda.value.toLowerCase()
-  return grupos.value.filter(g =>
-    (g.nombre_grupo || '').toLowerCase().includes(query) ||
-    (g.sucursal_nombre || '').toLowerCase().includes(query) ||
-    (g.remote_jid || '').toLowerCase().includes(query)
-  )
+  let list = grupos.value
+
+  // 1. Filtro por Pestaña / Modo
+  if (tabFiltroGrupos.value === 'vinculados') {
+    list = list.filter(g => g.vinculado)
+  } else if (tabFiltroGrupos.value === 'sugeridos') {
+    list = list.filter(g => esGrupoSugerido(g.nombre_grupo) || g.vinculado)
+  }
+
+  // 2. Filtro por Búsqueda de Texto
+  if (filtroBusqueda.value.trim()) {
+    const query = filtroBusqueda.value.toLowerCase()
+    list = list.filter(g =>
+      (g.nombre_grupo || '').toLowerCase().includes(query) ||
+      (g.sucursal_nombre || '').toLowerCase().includes(query) ||
+      (g.remote_jid || '').toLowerCase().includes(query)
+    )
+  }
+
+  // 3. Ordenar: los vinculados siempre primero
+  return [...list].sort((a, b) => {
+    if (a.vinculado && !b.vinculado) return -1
+    if (!a.vinculado && b.vinculado) return 1
+    return (a.nombre_grupo || '').localeCompare(b.nombre_grupo || '')
+  })
+})
+
+const totalPaginas = computed(() => Math.ceil(gruposFiltrados.value.length / itemsPorPagina.value) || 1)
+
+const gruposPaginados = computed(() => {
+  const inicio = (paginaActual.value - 1) * itemsPorPagina.value
+  return gruposFiltrados.value.slice(inicio, inicio + itemsPorPagina.value)
 })
 
 const abrirPreview = (url) => {
@@ -553,11 +653,55 @@ onUnmounted(() => {
             </template>
             <VCardTitle class="text-h6 font-weight-bold">Asignación de Grupos a Sucursales</VCardTitle>
             <VCardSubtitle>Mapea cada grupo de WhatsApp para auditoría automática</VCardSubtitle>
+            <template #append>
+              <VBtn
+                color="primary"
+                variant="tonal"
+                size="small"
+                prepend-icon="tabler-wand"
+                @click="autoSugerirAsignaciones"
+              >
+                🪄 Auto-Detectar C22
+              </VBtn>
+            </template>
           </VCardItem>
 
           <VCardText class="pa-4">
+            <!-- Pestañas de Modo / Filtro Rápido -->
+            <div class="d-flex flex-wrap gap-2 mb-3 align-center">
+              <VBtn
+                :color="tabFiltroGrupos === 'sugeridos' ? 'primary' : 'default'"
+                :variant="tabFiltroGrupos === 'sugeridos' ? 'flat' : 'tonal'"
+                size="small"
+                prepend-icon="tabler-sparkles"
+                @click="() => { tabFiltroGrupos = 'sugeridos'; paginaActual = 1; }"
+              >
+                🎯 Sugeridos Casa 22 ({{ gruposSugeridosCount }})
+              </VBtn>
+
+              <VBtn
+                :color="tabFiltroGrupos === 'vinculados' ? 'success' : 'default'"
+                :variant="tabFiltroGrupos === 'vinculados' ? 'flat' : 'tonal'"
+                size="small"
+                prepend-icon="tabler-check"
+                @click="() => { tabFiltroGrupos = 'vinculados'; paginaActual = 1; }"
+              >
+                ⭐ Vinculados / Activos ({{ gruposVinculadosCount }})
+              </VBtn>
+
+              <VBtn
+                :color="tabFiltroGrupos === 'todos' ? 'secondary' : 'default'"
+                :variant="tabFiltroGrupos === 'todos' ? 'flat' : 'tonal'"
+                size="small"
+                prepend-icon="tabler-list"
+                @click="() => { tabFiltroGrupos = 'todos'; paginaActual = 1; }"
+              >
+                🌐 Todos los Grupos ({{ grupos.length }})
+              </VBtn>
+            </div>
+
             <!-- Barra de Búsqueda -->
-            <VRow class="mb-2">
+            <VRow class="mb-1">
               <VCol cols="12">
                 <VTextField
                   v-model="filtroBusqueda"
@@ -567,11 +711,25 @@ onUnmounted(() => {
                   prepend-inner-icon="tabler-search"
                   hide-details
                   clearable
+                  @update:model-value="paginaActual = 1"
                 />
               </VCol>
             </VRow>
 
-            <!-- Tabla de Grupos -->
+            <!-- Chips de Atajos Rápidos -->
+            <div class="d-flex flex-wrap gap-1 mb-3 align-center">
+              <span class="text-caption text-medium-emphasis me-1">Atajos:</span>
+              <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Casa 22')">Casa 22</VChip>
+              <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Corona')">Corona</VChip>
+              <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Madan')">Madan</VChip>
+              <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Cierres')">Cierres</VChip>
+              <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Recaudo')">Recaudo</VChip>
+              <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Taxi')">Taxis</VChip>
+              <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Rotaciones')">Rotaciones</VChip>
+              <VChip v-if="filtroBusqueda" size="x-small" variant="text" color="error" class="cursor-pointer" @click="limpiarFiltro">✖️ Quitar filtro</VChip>
+            </div>
+
+            <!-- Tabla de Grupos Paginada -->
             <VTable density="comfortable" class="tabla-grupos border rounded">
               <thead>
                 <tr>
@@ -592,11 +750,11 @@ onUnmounted(() => {
                 <tr v-else-if="gruposFiltrados.length === 0">
                   <td colspan="5" class="text-center pa-6 text-medium-emphasis">
                     <VIcon icon="tabler-folder-off" size="32" class="mb-2" /><br />
-                    No se encontraron grupos disponibles. Conecta el bot para detectar grupos de WhatsApp.
+                    No se encontraron grupos con este filtro. Cambia de pestaña o usa el botón "Todos los Grupos".
                   </td>
                 </tr>
                 <tr
-                  v-for="grupo in gruposFiltrados"
+                  v-for="grupo in gruposPaginados"
                   :key="grupo.remote_jid"
                   :class="{ 'bg-var-theme-surface': grupo.vinculado }"
                 >
@@ -609,7 +767,7 @@ onUnmounted(() => {
                         v-if="grupo.vinculado"
                         color="success"
                         size="x-small"
-                        variant="tonal"
+                        variant="flat"
                         class="ms-2"
                       >
                         Vinculado
@@ -667,6 +825,45 @@ onUnmounted(() => {
                 </tr>
               </tbody>
             </VTable>
+
+            <!-- Barra de Paginación y Resumen -->
+            <div class="d-flex flex-wrap align-center justify-space-between mt-3 px-1 gap-2">
+              <div class="text-caption text-medium-emphasis">
+                Mostrando {{ gruposFiltrados.length === 0 ? 0 : (paginaActual - 1) * itemsPorPagina + 1 }} a {{ Math.min(paginaActual * itemsPorPagina, gruposFiltrados.length) }} de {{ gruposFiltrados.length }} grupos
+                <span v-if="tabFiltroGrupos !== 'todos'" class="font-italic">({{ tabFiltroGrupos }})</span>
+              </div>
+
+              <div class="d-flex align-center gap-2">
+                <span class="text-caption text-medium-emphasis">Filas:</span>
+                <VSelect
+                  v-model="itemsPorPagina"
+                  :items="[10, 20, 50]"
+                  density="compact"
+                  variant="outlined"
+                  style="width: 85px;"
+                  hide-details
+                  @update:model-value="paginaActual = 1"
+                />
+
+                <VBtn
+                  icon="tabler-chevron-left"
+                  variant="tonal"
+                  size="small"
+                  :disabled="paginaActual <= 1"
+                  @click="paginaActual--"
+                />
+                <span class="text-caption font-weight-medium">
+                  {{ paginaActual }} / {{ totalPaginas }}
+                </span>
+                <VBtn
+                  icon="tabler-chevron-right"
+                  variant="tonal"
+                  size="small"
+                  :disabled="paginaActual >= totalPaginas"
+                  @click="paginaActual++"
+                />
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
