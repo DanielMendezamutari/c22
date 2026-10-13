@@ -11,6 +11,11 @@ import http from 'http';
 import dotenv from 'dotenv';
 import pino from 'pino';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -331,6 +336,16 @@ async function startWhatsAppBot() {
 const httpServer = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
 
+  if (req.method === 'GET' && req.url === '/status') {
+    res.writeHead(200);
+    return res.end(JSON.stringify({
+      success: true,
+      conectado: !!currentSock,
+      usuario: currentSock?.user?.id ? (currentSock.user.id.split(':')[0].split('@')[0]) : null,
+      grupos_registrados: auditableGroupsMap.size,
+    }));
+  }
+
   if (req.method === 'POST' && req.url === '/enviar-mensaje') {
     const secret = req.headers['x-internal-secret'] || req.headers['x-webhook-secret'];
     if (secret !== WEBHOOK_SECRET) {
@@ -343,11 +358,11 @@ const httpServer = http.createServer((req, res) => {
     req.on('end', async () => {
       try {
         const data = JSON.parse(body || '{}');
-        const { remote_jid, texto, media_url } = data;
+        const { remote_jid, texto, media_url, media_path } = data;
 
-        if (!remote_jid || (!texto && !media_url)) {
+        if (!remote_jid || (!texto && !media_url && !media_path)) {
           res.writeHead(400);
-          return res.end(JSON.stringify({ success: false, error: 'remote_jid y texto o media_url son requeridos' }));
+          return res.end(JSON.stringify({ success: false, error: 'remote_jid y texto o media_url/media_path son requeridos' }));
         }
 
         if (!currentSock) {
@@ -356,20 +371,50 @@ const httpServer = http.createServer((req, res) => {
         }
 
         let sentMsg;
-        if (media_url) {
-          const isPdf = media_url.toLowerCase().endsWith('.pdf');
-          if (isPdf) {
-            sentMsg = await currentSock.sendMessage(remote_jid, {
-              document: { url: media_url },
-              mimetype: 'application/pdf',
-              fileName: 'informe_cierre_auditoria.pdf',
-              caption: texto || '',
-            });
-          } else {
-            sentMsg = await currentSock.sendMessage(remote_jid, {
-              image: { url: media_url },
-              caption: texto || '',
-            });
+        const targetMedia = media_path || media_url;
+        if (targetMedia) {
+          let mediaBuffer = null;
+          const isPdf = targetMedia.toLowerCase().endsWith('.pdf');
+
+          // Intentar resolver desde disco local primero para cero dependencia de red en cPanel
+          if (media_path) {
+            const cleanPath = media_path.replace(/^\/?storage\//, '').replace(/^public\//, '');
+            const candidatos = [
+              path.resolve(__dirname, '../../backend/public', media_path),
+              path.resolve(__dirname, '../../backend/storage/app/public', cleanPath),
+              path.resolve(__dirname, '../../backend/public/storage', cleanPath),
+              path.resolve(process.cwd(), '../../backend/public/storage', cleanPath),
+            ];
+            for (const c of candidatos) {
+              if (fs.existsSync(c)) {
+                try {
+                  mediaBuffer = fs.readFileSync(c);
+                  console.log(`[OUTBOUND MEDIA] Archivo local cargado exitosamente desde: ${c} (${mediaBuffer.length} bytes)`);
+                  break;
+                } catch (e) {}
+              }
+            }
+          }
+
+          try {
+            if (isPdf) {
+              const docPayload = mediaBuffer ? mediaBuffer : { url: media_url };
+              sentMsg = await currentSock.sendMessage(remote_jid, {
+                document: docPayload,
+                mimetype: 'application/pdf',
+                fileName: 'informe_cierre_auditoria.pdf',
+                caption: texto || '',
+              });
+            } else {
+              const imgPayload = mediaBuffer ? mediaBuffer : { url: media_url };
+              sentMsg = await currentSock.sendMessage(remote_jid, {
+                image: imgPayload,
+                caption: texto || '',
+              });
+            }
+          } catch (mediaErr) {
+            console.warn(`[OUTBOUND MEDIA FALLBACK] Error al enviar media (${mediaErr.message}), despachando solo texto...`);
+            sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });
           }
         } else {
           sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });

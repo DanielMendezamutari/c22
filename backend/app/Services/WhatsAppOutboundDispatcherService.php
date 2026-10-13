@@ -35,7 +35,8 @@ class WhatsAppOutboundDispatcherService
         ?string $mediaUrl = null,
         string $tipoMensaje = 'informe_cierre_ejecutivo',
         ?int $sucursalId = null,
-        ?int $turnoId = null
+        ?int $turnoId = null,
+        ?string $mediaPath = null
     ): array {
         $outbound = WhatsAppMensajeOutbound::create([
             'remote_jid' => $remoteJid,
@@ -48,16 +49,21 @@ class WhatsAppOutboundDispatcherService
         ]);
 
         try {
+            $payload = [
+                'remote_jid' => $remoteJid,
+                'texto' => $texto,
+                'media_url' => $mediaUrl,
+            ];
+            if ($mediaPath) {
+                $payload['media_path'] = $mediaPath;
+            }
+
             $response = Http::timeout(20)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
                     'X-Internal-Secret' => $this->internalSecret,
                 ])
-                ->post("{$this->botHttpUrl}/enviar-mensaje", [
-                    'remote_jid' => $remoteJid,
-                    'texto' => $texto,
-                    'media_url' => $mediaUrl,
-                ]);
+                ->post("{$this->botHttpUrl}/enviar-mensaje", $payload);
 
             if ($response->successful() && $response->json('success')) {
                 $msgId = $response->json('messageId');
@@ -99,6 +105,27 @@ class WhatsAppOutboundDispatcherService
                 'outbound_id' => $outbound->id,
                 'error' => $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Verifica el estado en tiempo real del microservicio Baileys local.
+     */
+    public function verificarEstadoBot(): array
+    {
+        try {
+            $response = Http::timeout(4)
+                ->withHeaders([
+                    'X-Internal-Secret' => $this->internalSecret,
+                ])
+                ->get("{$this->botHttpUrl}/status");
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+            return ['success' => false, 'conectado' => false, 'error' => 'HTTP ' . $response->status()];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'conectado' => false, 'error' => $e->getMessage()];
         }
     }
 

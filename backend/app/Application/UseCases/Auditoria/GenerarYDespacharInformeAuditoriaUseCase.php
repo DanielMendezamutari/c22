@@ -109,6 +109,7 @@ class GenerarYDespacharInformeAuditoriaUseCase
 
         $textoMensaje = implode("\n", $lineas);
         $mediaUrl = $planilla?->foto_url ? url($planilla->foto_url) : null;
+        $mediaPath = $planilla?->foto_url ?: null;
 
         $resultado = $this->dispatcher->enviarMensaje(
             $grupoDestino->remote_jid,
@@ -116,11 +117,13 @@ class GenerarYDespacharInformeAuditoriaUseCase
             $mediaUrl,
             'informe_cierre_ejecutivo',
             $sucursal->id,
-            $turnoId
+            $turnoId,
+            $mediaPath
         );
 
         return [
             'success' => $resultado['success'] ?? false,
+            'error' => $resultado['error'] ?? null,
             'sucursal' => $sucursal->nombre,
             'grupo_destino' => $grupoDestino->nombre_grupo,
             'remote_jid' => $grupoDestino->remote_jid,

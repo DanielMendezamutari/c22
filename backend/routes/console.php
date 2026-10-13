@@ -44,6 +44,18 @@ Artisan::command('whatsapp:auditar-hoy {--forzar : Forzar reenvío de informes y
     $this->line("• Planillas registradas para hoy: " . $planillas->count());
 
     $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+    $outboundService = app(\App\Services\WhatsAppOutboundDispatcherService::class);
+
+    // Diagnóstico en vivo de conexión del Bot Baileys
+    $estadoBot = $outboundService->verificarEstadoBot();
+    if (!empty($estadoBot['conectado'])) {
+        $this->info("• Estado del Bot WhatsApp: CONECTADO (+{$estadoBot['usuario']}) | Grupos monitoreados: {$estadoBot['grupos_registrados']}");
+    } else {
+        $motivo = $estadoBot['error'] ?? 'Sesión cerrada o esperando escaneo de QR';
+        $this->warn("• Estado del Bot WhatsApp: DESCONECTADO ({$motivo})");
+        $this->line("  💡 Tip: Verifica el log del bot con: tail -n 25 scripts/whatsapp_bot/bot_salida.log");
+    }
+
     $turnosDespachados = [];
 
     foreach ($planillas as $p) {
@@ -52,13 +64,26 @@ Artisan::command('whatsapp:auditar-hoy {--forzar : Forzar reenvío de informes y
         }
 
         try {
-            $this->comment("  -> Generando y enviando informe para Turno #{$p->turno_id} ({$p->sucursal?->nombre})...");
+            $this->comment("\n  -> Generando y enviando informe para Turno #{$p->turno_id} ({$p->sucursal?->nombre})...");
             $res = $despachador->ejecutar($p->turno_id, (bool) $this->option('forzar'));
             $turnosDespachados[] = $p->turno_id;
-            $this->info("     ✔ Informe despachado a WhatsApp: {$res['grupo_destino']} | Ventas: Bs {$res['ventas_pos']} | Sobre: Bs {$res['efectivo_sobre']}");
+            if (!empty($res['success'])) {
+                $this->info("     ✔ Informe despachado con éxito a WhatsApp:");
+                $this->line("        Grupo: {$res['grupo_destino']} | JID: {$res['remote_jid']}");
+                $this->line("        Ventas POS: Bs {$res['ventas_pos']} | Efectivo Sobre: Bs {$res['efectivo_sobre']}");
+            } else {
+                $this->error("     ❌ Falló el envío a WhatsApp: " . ($res['error'] ?? 'El bot no pudo entregar el mensaje'));
+                $this->line("        Grupo Destino: {$res['grupo_destino']} | JID: " . ($res['remote_jid'] ?? 'N/A'));
+            }
         } catch (\Throwable $e) {
-            $this->warn("     ⚠ No se pudo despachar para Turno #{$p->turno_id}: " . $e->getMessage());
+            $this->error("     ❌ Error procesando Turno #{$p->turno_id}: " . $e->getMessage());
         }
+    }
+
+    // Resumen de último mensaje outbound
+    $ultimoOutbound = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeOutbound::latest('id')->first();
+    if ($ultimoOutbound) {
+        $this->line("\n• Registro Outbound más reciente (#{$ultimoOutbound->id}): Destino={$ultimoOutbound->remote_jid} | Estado={$ultimoOutbound->estado_envio}" . ($ultimoOutbound->error_motivo ? " | Motivo={$ultimoOutbound->error_motivo}" : ""));
     }
 
     if (empty($turnosDespachados) && $inbounds->isEmpty()) {
@@ -68,7 +93,7 @@ Artisan::command('whatsapp:auditar-hoy {--forzar : Forzar reenvío de informes y
         $this->line("El bot las detectará en vivo y despachará el informe automáticamente en 20 segundos.");
     }
 
-    $this->info("==========================================================\n");
+    $this->info("\n==========================================================\n");
 })->purpose('Auditar y despachar automáticamente todos los comprobantes y planillas de cierre de hoy');
 
 Artisan::command('whatsapp:importar-zip {archivo : Ruta del archivo ZIP en el servidor} {--sucursal_id= : ID opcional de la sucursal asignada}', function () {
