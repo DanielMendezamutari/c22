@@ -59,53 +59,71 @@ class GenerarYDespacharInformeAuditoriaUseCase
         $cajera = $planilla?->cajero_nombre ?? $turno->barman?->nombre ?? 'Encargada';
         $tipoTurno = ucfirst($turno->tipo_turno ?? 'Día');
 
-        // Valores financieros
-        $ventasPlanilla = (float) ($planilla?->total_ventas_declaradas_bs ?? 0.00);
-        $egresosPlanilla = (float) ($planilla?->total_gastos_declarados_bs ?? 0.00);
-        $sobreEfectivo = (float) ($planilla?->monto_sobre_efectivo_bs ?? 0.00);
+        // Valores financieros extraídos de las fotos de planilla manuscrita y comprobantes de WhatsApp
+        $ventasDeclaradas = (float) ($planilla?->total_ventas_declaradas_bs ?? ($datosOcr['total_ventas_declaradas_bs'] ?? $datosOcr['ventas_pos'] ?? 0.00));
+        $qrCobrado = (float) ($datosOcr['qr_declarado_bs'] ?? ($datosOcr['ventas_qr_bs'] ?? 0.00));
+        $efectivoVentas = (float) ($datosOcr['ventas_efectivo_bs'] ?? max(0, $ventasDeclaradas - $qrCobrado));
+        $egresosTotales = (float) ($planilla?->total_gastos_declarados_bs ?? ($datosOcr['total_gastos_declarados_bs'] ?? 0.00));
+        $sobreEfectivo = (float) ($planilla?->monto_sobre_efectivo_bs ?? ($datosOcr['monto_sobre_efectivo_bs'] ?? 0.00));
 
-        // Si tenemos datos extraídos de tickets POS en datos_ocr_json
-        $ventasPos = (float) ($datosOcr['ventas_pos'] ?? $datosOcr['total_cobros_bs'] ?? $ventasPlanilla);
-        $qrPos = (float) ($datosOcr['ventas_qr_bs'] ?? $datosOcr['qr_pos'] ?? ($datosOcr['qr_declarado_bs'] ?? 0.00));
-        $efectivoPos = (float) ($datosOcr['ventas_efectivo_bs'] ?? 0.00);
-        $qrPlanilla = (float) ($datosOcr['qr_declarado_bs'] ?? $qrPos);
+        $pagoChicas = (float) ($datosOcr['pago_chicas_bs'] ?? 0.00);
+        $pagoPersonal = (float) ($datosOcr['pago_personal_bs'] ?? ($datosOcr['pago_garzones_bs'] ?? 0.00));
+        $gastosOperativos = (float) ($datosOcr['gastos_operativos_bs'] ?? 0.00);
 
-        // Alertas
+        // Conciliación matemática de Caja: (Ventas en Efectivo - Total Gastos = Sobre Esperado)
+        $sobreCalculado = $efectivoVentas - $egresosTotales;
+        $diferenciaSobre = $sobreEfectivo - $sobreCalculado;
+
+        // Alertas de cuadre
         $alertasTexto = "";
-        $diferenciaQr = abs($qrPos - $qrPlanilla);
-        if ($qrPos > 0 && $qrPlanilla > 0 && $diferenciaQr >= 1.00) {
-            $alertasTexto .= "\n🚨 *ALERTA:* Discrepancia en QR (POS: Bs " . number_format($qrPos, 2) . " vs Planilla: Bs " . number_format($qrPlanilla, 2) . ")";
+        if ($sobreEfectivo > 0 && abs($diferenciaSobre) >= 1.00) {
+            if ($diferenciaSobre > 0) {
+                $alertasTexto .= "\nℹ️ *Sobrante en Sobre:* +Bs " . number_format($diferenciaSobre, 2) . " respecto a ventas y gastos declarados.";
+            } else {
+                $alertasTexto .= "\n🚨 *ALERTA FALTANTE:* Faltan Bs " . number_format(abs($diferenciaSobre), 2) . " en el sobre respecto a ventas y egresos.";
+            }
+        } else {
+            $alertasTexto .= "\n✅ *Cuadre matemático de caja conforme.*";
         }
 
-        $diferenciaVentas = $ventasPlanilla - $ventasPos;
-        if (abs($diferenciaVentas) >= 1.00) {
-            $alertasTexto .= "\n⚠️ *OBSERVACIÓN:* Diferencia en ventas de Bs " . number_format($diferenciaVentas, 2) . " (Manual vs POS)";
-        }
-
-        if (empty($alertasTexto)) {
-            $alertasTexto = "\n✅ *Conciliación conforme sin discrepancias críticas.*";
-        }
-
-        // Construir mensaje estructurado
+        // Construir mensaje estructurado ejecutivo
         $lineas = [
-            "📊 *INFORME DE AUDITORÍA Y CIERRE DE TURNO*",
+            "📊 *INFORME DE AUDITORÍA Y CIERRE DE CAJA*",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━",
             "🏢 *Sede:* {$sucursal->nombre}",
             "📅 *Fecha:* {$fechaTurno} | ⏰ *Turno:* {$tipoTurno}",
-            "👤 *Cajera:* {$cajera}",
+            "👤 *Encargada:* {$cajera}",
             "",
-            "💰 *CONCILIACIÓN DE INGRESOS*",
-            "• *Ventas según POS:* Bs " . number_format($ventasPos, 2),
-            "• *Cobros por QR (POS):* Bs " . number_format($qrPos, 2),
-            "• *Venta Declarada en Planilla:* Bs " . number_format($ventasPlanilla, 2),
-            "• *Total Egresos Declarados:* Bs " . number_format($egresosPlanilla, 2),
-            "• *💵 Efectivo en Sobre Entregado:* Bs " . number_format($sobreEfectivo, 2),
+            "💰 *INGRESOS DECLARADOS*",
+            "• *Total Ventas:* Bs " . number_format($ventasDeclaradas, 2),
+            "• *Cobros por QR / Banco:* Bs " . number_format($qrCobrado, 2),
+            "• *Ventas en Efectivo:* Bs " . number_format($efectivoVentas, 2),
             "",
-            "📉 *ALERTAS Y AUDITORÍA IA*" . $alertasTexto,
-            "",
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            "🤖 _Auditoría automática generada por Sistema Casa22 24/7_",
+            "🧾 *EGRESOS / GASTOS DE CAJA CHICA*",
+            "• *Total Egresos Declarados:* Bs " . number_format($egresosTotales, 2),
         ];
+
+        if ($pagoChicas > 0) {
+            $lineas[] = "  ↳ _Pago Chicas:_ Bs " . number_format($pagoChicas, 2);
+        }
+        if ($pagoPersonal > 0) {
+            $lineas[] = "  ↳ _Pago Personal / Garzones:_ Bs " . number_format($pagoPersonal, 2);
+        }
+        if ($gastosOperativos > 0) {
+            $lineas[] = "  ↳ _Gastos Operativos / Taxis / Compras:_ Bs " . number_format($gastosOperativos, 2);
+        }
+
+        $lineas[] = "";
+        $lineas[] = "💵 *EFECTIVO A ENTREGAR*";
+        $lineas[] = "• *Sobre Físico Declarado:* Bs " . number_format($sobreEfectivo, 2);
+        if ($sobreCalculado > 0) {
+            $lineas[] = "• *Sobre Calculado (Efectivo - Gastos):* Bs " . number_format($sobreCalculado, 2);
+        }
+        $lineas[] = "";
+        $lineas[] = "📉 *AUDITORÍA Y CUADRE IA*" . $alertasTexto;
+        $lineas[] = "";
+        $lineas[] = "━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        $lineas[] = "🤖 _Auditoría automática generada desde comprobantes de WhatsApp 24/7_";
 
         $textoMensaje = implode("\n", $lineas);
         $mediaUrl = $planilla?->foto_url ? url($planilla->foto_url) : null;
