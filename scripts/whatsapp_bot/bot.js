@@ -196,8 +196,15 @@ async function startWhatsAppBot() {
       setTimeout(() => sincronizarGruposDescubiertos(sock), 25000);
 
       // Activar sondeo para escuchar si el usuario pide desconectar o sincronizar desde la Web
+      let pingContador = 0;
       monitorDesconexionTimer = setInterval(async () => {
         try {
+          pingContador++;
+          // Heartbeat periódico a Laravel cada 60 segundos para evitar que expire la caché
+          if (pingContador % 6 === 0) {
+            await reportarEstadoBot('conectado', null, telefono);
+          }
+
           const res = await axios.get(`${LARAVEL_API_URL}/whatsapp/bot-status`, {
             headers: { 'X-Webhook-Secret': WEBHOOK_SECRET },
             timeout: 5000,
