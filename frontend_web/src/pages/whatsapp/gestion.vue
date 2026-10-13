@@ -97,6 +97,25 @@ const dialogDespachoManual = ref(false)
 const turnoIdDespacho = ref('')
 const forzarReenvio = ref(false)
 const despachandoInforme = ref(false)
+const auditandoHoy = ref(false)
+
+const ejecutarAuditoriaHoy = async () => {
+  auditandoHoy.value = true
+  try {
+    const res = await axiosIns.post('/whatsapp/auditar-hoy', { forzar: true })
+    mostrarSnackbar(res.data?.message || 'Auditoría de hoy ejecutada con éxito.')
+    await Promise.all([
+      cargarAuditoriasCruce(),
+      cargarMensajesInbound(),
+      cargarConfigRecaudo(),
+    ])
+  } catch (err) {
+    console.error('Error al ejecutar auditoría de hoy:', err)
+    mostrarSnackbar('Error al ejecutar auditoría de hoy.', 'error')
+  } finally {
+    auditandoHoy.value = false
+  }
+}
 
 // Ingesta Inbound reciente
 const mensajesInbound = ref([])
@@ -929,15 +948,27 @@ onUnmounted(() => {
               Informes ejecutivos automáticos al cierre de turno directo a WhatsApp
             </VCardSubtitle>
             <template #append>
-              <VBtn
-                color="success"
-                variant="elevated"
-                size="small"
-                prepend-icon="tabler-paperplane"
-                @click="dialogDespachoManual = true"
-              >
-                Despachar Informe de Turno
-              </VBtn>
+              <div class="d-flex flex-wrap gap-2">
+                <VBtn
+                  color="primary"
+                  variant="tonal"
+                  size="small"
+                  prepend-icon="tabler-bolt"
+                  :loading="auditandoHoy"
+                  @click="ejecutarAuditoriaHoy"
+                >
+                  ⚡ Auditar Cierres de Hoy
+                </VBtn>
+                <VBtn
+                  color="success"
+                  variant="elevated"
+                  size="small"
+                  prepend-icon="tabler-paperplane"
+                  @click="dialogDespachoManual = true"
+                >
+                  Despacho Manual
+                </VBtn>
+              </div>
             </template>
           </VCardItem>
 

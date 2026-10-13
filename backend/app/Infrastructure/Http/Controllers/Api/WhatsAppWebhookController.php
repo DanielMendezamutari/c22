@@ -641,5 +641,23 @@ class WhatsAppWebhookController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Procesa y audita de forma forzada los mensajes y planillas recibidos hoy.
+     * POST /api/v1/whatsapp/auditar-hoy
+     */
+    public function auditarHoy(Request $request): JsonResponse
+    {
+        \Illuminate\Support\Facades\Artisan::call('whatsapp:auditar-hoy', [
+            '--forzar' => $request->boolean('forzar', false),
+        ]);
+        $output = \Illuminate\Support\Facades\Artisan::output();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Proceso de auditoría ejecutado exitosamente.',
+            'output' => $output,
+        ]);
+    }
 }
 

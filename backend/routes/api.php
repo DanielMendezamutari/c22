@@ -175,6 +175,7 @@ Route::prefix('v1')->group(function () {
     // Bot Autónomo 24/7 y Despacho de Informes a "Control de Recaudo" - User Story 38
     Route::post('/whatsapp/enviar-mensaje', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'enviarMensaje']);
     Route::post('/whatsapp/despachar-informe-cierre', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'despacharInformeCierre']);
+    Route::post('/whatsapp/auditar-hoy', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'auditarHoy']);
     Route::post('/whatsapp/reconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'reconectar']);
     Route::get('/whatsapp/config-control-recaudo', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'configControlRecaudo']);
 });

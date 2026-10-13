@@ -70,22 +70,48 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             $datos = $resultado['datos'] ?? [];
 
             // Si es planilla de caja, persistir o actualizar en planillas_caja para alimentar la Conciliación Triangulada
-            if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->turno_id) {
-                PlanillaCaja::updateOrCreate(
-                    ['turno_id' => $inbound->turno_id],
-                    [
-                        'sucursal_id' => $inbound->sucursal_id,
-                        'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
-                        'foto_url' => $inbound->media_path,
-                        'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
-                        'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
-                        'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
-                        'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
-                        'datos_ocr_json' => $datos,
-                        'estado_ocr' => 'procesado',
-                        'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
-                    ]
-                );
+            if ($inbound->clasificacion_ia === 'planilla_caja') {
+                if (!$inbound->turno_id && $inbound->sucursal_id) {
+                    $turno = Turno::where('sucursal_id', $inbound->sucursal_id)->latest('id')->first();
+                    if (!$turno) {
+                        $turno = Turno::create([
+                            'sucursal_id' => $inbound->sucursal_id,
+                            'tipo_turno' => 'noche',
+                            'estado' => 'cerrado',
+                            'fecha_apertura' => now(),
+                            'fecha_cierre' => now(),
+                        ]);
+                    }
+                    $inbound->turno_id = $turno->id;
+                    $inbound->save();
+                }
+
+                if ($inbound->turno_id) {
+                    PlanillaCaja::updateOrCreate(
+                        ['turno_id' => $inbound->turno_id],
+                        [
+                            'sucursal_id' => $inbound->sucursal_id,
+                            'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
+                            'foto_url' => $inbound->media_path,
+                            'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
+                            'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
+                            'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
+                            'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
+                            'datos_ocr_json' => $datos,
+                            'estado_ocr' => 'procesado',
+                            'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
+                        ]
+                    );
+
+                    // Auto-despacho autónomo del informe de auditoría a WhatsApp (Control de Recaudo)
+                    try {
+                        $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+                        $despachador->ejecutar($inbound->turno_id);
+                        Log::info("Informe de auditoría y cierre despachado automáticamente para Turno {$inbound->turno_id} a WhatsApp.");
+                    } catch (\Throwable $e) {
+                        Log::warning("No se pudo autodespachar informe de auditoría para Turno {$inbound->turno_id}: " . $e->getMessage());
+                    }
+                }
             }
 
             // Si es ticket_pos y hay turno, actualizar o enriquecer los datos OCR de la planilla con las ventas del POS
