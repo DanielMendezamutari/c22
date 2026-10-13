@@ -163,6 +163,71 @@ const procesarArchivoZip = async () => {
   }
 }
 
+// Asignación de Sucursal para Comprobantes Inbound
+const asignandoSucursalId = ref(null)
+const dialogAsignarLote = ref(false)
+const sucursalLoteId = ref(null)
+const asignandoLote = ref(false)
+
+const mensajesSinConfirmar = computed(() => {
+  return mensajesInbound.value.filter(m => !m.sucursal_id || m.estado === 'requiere_confirmacion')
+})
+
+const asignarSucursalMensaje = async (inboundId, sucursalId) => {
+  asignandoSucursalId.value = inboundId
+  try {
+    const res = await axiosIns.post('/whatsapp/confirmar-sucursal', {
+      inbound_id: inboundId,
+      sucursal_id: sucursalId,
+    })
+    mostrarSnackbar(res.data?.message || 'Casa vinculada y auditoría generada.', 'success')
+    await Promise.all([
+      cargarMensajesInbound(),
+      cargarAuditoriasCruce(),
+      cargarConfigRecaudo(),
+    ])
+  } catch (err) {
+    console.error('Error asignando sucursal:', err)
+    mostrarSnackbar(err.response?.data?.message || 'Error al asignar sucursal', 'error')
+  } finally {
+    asignandoSucursalId.value = null
+  }
+}
+
+const asignarTodoElLote = async () => {
+  if (!sucursalLoteId.value) {
+    mostrarSnackbar('Por favor selecciona una sucursal', 'warning')
+    return
+  }
+  asignandoLote.value = true
+  try {
+    const res = await axiosIns.post('/whatsapp/asignar-sucursal-lote', {
+      sucursal_id: sucursalLoteId.value,
+    })
+    dialogAsignarLote.value = false
+    mostrarSnackbar(res.data?.message || 'Comprobantes asignados y auditados exitosamente.', 'success')
+    await Promise.all([
+      cargarMensajesInbound(),
+      cargarAuditoriasCruce(),
+      cargarConfigRecaudo(),
+    ])
+  } catch (err) {
+    console.error('Error asignando lote:', err)
+    mostrarSnackbar(err.response?.data?.message || 'Error al asignar lote', 'error')
+  } finally {
+    asignandoLote.value = false
+  }
+}
+
+const despacharInformeTurno = (turnoId) => {
+  if (!turnoId) {
+    mostrarSnackbar('No hay turno asociado aún', 'warning')
+    return
+  }
+  turnoIdDespacho.value = turnoId
+  dialogDespachoManual.value = true
+}
+
 // Ingesta Inbound reciente
 const mensajesInbound = ref([])
 const loadingInbound = ref(false)
@@ -1215,6 +1280,27 @@ onUnmounted(() => {
             </template>
             <VCardTitle class="text-h6 font-weight-bold">Bandeja de Ingesta Inbound Reciente</VCardTitle>
             <VCardSubtitle>Planillas físicas, tickets POS, vouchers bancarios y recibos recibidos por WhatsApp</VCardSubtitle>
+            <template #append>
+              <div class="d-flex align-center gap-2">
+                <VBtn
+                  v-if="mensajesSinConfirmar.length > 0"
+                  color="warning"
+                  size="small"
+                  variant="elevated"
+                  prepend-icon="tabler-map-pin"
+                  @click="dialogAsignarLote = true"
+                >
+                  ⚡ Asignar Todo el Lote ({{ mensajesSinConfirmar.length }} pendientes)
+                </VBtn>
+                <VBtn
+                  icon="tabler-refresh"
+                  size="small"
+                  variant="text"
+                  :loading="loadingInbound"
+                  @click="cargarMensajesInbound"
+                />
+              </div>
+            </template>
           </VCardItem>
 
           <VCardText class="pa-4">
@@ -1228,17 +1314,18 @@ onUnmounted(() => {
                   <th class="font-weight-bold">Clasificación IA</th>
                   <th class="font-weight-bold">Estado</th>
                   <th class="font-weight-bold">Detalle OCR Extraído</th>
+                  <th class="font-weight-bold text-center" style="width: 130px;">Acción</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="loadingInbound">
-                  <td colspan="7" class="text-center pa-6">
+                  <td colspan="8" class="text-center pa-6">
                     <VProgressCircular indeterminate color="primary" class="me-2" />
                     Cargando historial de mensajes...
                   </td>
                 </tr>
                 <tr v-else-if="mensajesInbound.length === 0">
-                  <td colspan="7" class="text-center pa-6 text-medium-emphasis">
+                  <td colspan="8" class="text-center pa-6 text-medium-emphasis">
                     No se han recibido mensajes recientes en los grupos auditados.
                   </td>
                 </tr>
@@ -1260,12 +1347,36 @@ onUnmounted(() => {
                   </td>
                   <td>
                     <VChip
-                      :color="msg.sucursal_id ? 'primary' : 'warning'"
+                      v-if="msg.sucursal_id"
+                      color="primary"
                       size="small"
                       variant="tonal"
                     >
                       {{ msg.sucursal_nombre }}
                     </VChip>
+                    <VMenu v-else location="bottom start">
+                      <template #activator="{ props }">
+                        <VBtn
+                          v-bind="props"
+                          color="warning"
+                          size="small"
+                          variant="elevated"
+                          prepend-icon="tabler-map-pin"
+                          :loading="asignandoSucursalId === msg.id"
+                        >
+                          Asignar Casa
+                        </VBtn>
+                      </template>
+                      <VList density="compact">
+                        <VListItem
+                          v-for="s in sucursales"
+                          :key="s.id"
+                          :title="s.nombre"
+                          prepend-icon="tabler-building-store"
+                          @click="asignarSucursalMensaje(msg.id, s.id)"
+                        />
+                      </VList>
+                    </VMenu>
                   </td>
                   <td>
                     <div class="font-weight-medium text-body-2">{{ msg.sender_name || 'Encargada' }}</div>
@@ -1341,6 +1452,29 @@ onUnmounted(() => {
                     <span v-else class="text-caption text-medium-emphasis">
                       {{ msg.raw_text ? msg.raw_text.substring(0, 40) + '...' : 'Procesamiento en curso' }}
                     </span>
+                  </td>
+                  <td class="text-center">
+                    <div class="d-flex align-center justify-center gap-1">
+                      <VBtn
+                        v-if="msg.clasificacion_ia === 'planilla_caja' && msg.turno_id"
+                        color="primary"
+                        size="x-small"
+                        variant="tonal"
+                        prepend-icon="tabler-bolt"
+                        title="Despachar informe a WhatsApp"
+                        @click="despacharInformeTurno(msg.turno_id)"
+                      >
+                        Despachar
+                      </VBtn>
+                      <VBtn
+                        icon="tabler-eye"
+                        size="x-small"
+                        variant="text"
+                        color="secondary"
+                        title="Ver Comprobante"
+                        @click="abrirPreview(msg.media_path)"
+                      />
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -1506,6 +1640,38 @@ onUnmounted(() => {
       <VCard class="pa-2 text-center bg-black">
         <img :src="previewImageSrc" alt="Vista previa de comprobante" style="max-width: 100%; max-height: 80vh; object-fit: contain;" />
         <VBtn icon="tabler-x" variant="text" color="white" class="position-absolute top-0 right-0 ma-2" @click="dialogPreview = false" />
+      </VCard>
+    </VDialog>
+
+    <!-- Modal para Asignar Lote Completo a una Casa -->
+    <VDialog v-model="dialogAsignarLote" max-width="450">
+      <VCard>
+        <VCardTitle class="text-h6 font-weight-bold pa-4 border-b d-flex align-center gap-2">
+          <VIcon icon="tabler-building-store" color="warning" />
+          Asignar Todo el Lote a una Casa
+        </VCardTitle>
+        <VCardText class="pa-4">
+          <p class="text-caption text-medium-emphasis mb-3">
+            Selecciona la Casa a la que pertenecen las fotos y planillas subidas (hay {{ mensajesSinConfirmar.length }} comprobantes pendientes por confirmar). Al asignarlas, el sistema vinculará el turno y calculará la auditoría automáticamente.
+          </p>
+
+          <VSelect
+            v-model="sucursalLoteId"
+            :items="sucursales"
+            item-title="nombre"
+            item-value="id"
+            label="Seleccionar Casa / Sucursal"
+            density="compact"
+            variant="outlined"
+            placeholder="Ej: Casa Belén, Corona, Madan..."
+          />
+        </VCardText>
+        <VCardActions class="pa-4 border-t justify-end">
+          <VBtn variant="plain" :disabled="asignandoLote" @click="dialogAsignarLote = false">Cancelar</VBtn>
+          <VBtn color="warning" :loading="asignandoLote" @click="asignarTodoElLote">
+            Asignar y Auditar Todo
+          </VBtn>
+        </VCardActions>
       </VCard>
     </VDialog>
 

@@ -236,21 +236,103 @@ class WhatsAppWebhookController extends Controller
 
         $inbound = WhatsAppMensajeInbound::findOrFail($validated['inbound_id']);
         $inbound->sucursal_id = $validated['sucursal_id'];
+
+        $turno = null;
         if (!empty($validated['turno_id'])) {
-            $inbound->turno_id = $validated['turno_id'];
+            $turno = Turno::find($validated['turno_id']);
         } else {
-            $turno = Turno::where('sucursal_id', $validated['sucursal_id'])->latest('id')->first();
-            $inbound->turno_id = $turno?->id;
+            $turno = Turno::where('sucursal_id', $validated['sucursal_id'])->where('estado', 'abierto')->latest('id')->first();
+            if (!$turno) {
+                $turno = Turno::where('sucursal_id', $validated['sucursal_id'])->latest('id')->first();
+            }
+            if (!$turno) {
+                $turno = Turno::create([
+                    'sucursal_id' => $validated['sucursal_id'],
+                    'tipo_turno' => 'noche',
+                    'estado' => 'cerrado',
+                    'fecha_apertura' => now(),
+                    'fecha_cierre' => now(),
+                ]);
+            }
         }
 
+        $inbound->turno_id = $turno?->id;
         $inbound->estado = 'procesado';
         $inbound->score_confianza = 1.00;
         $inbound->save();
 
+        // Procesar y autodespachar auditoría inmediatamente
+        try {
+            if (class_exists(ProcesarMensajeWhatsAppJob::class)) {
+                ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Error procesando job tras confirmar sucursal: " . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
-            'message' => 'Sucursal vinculada y conciliación recalculada exitosamente.',
+            'message' => 'Sucursal vinculada y auditoría generada exitosamente.',
             'data' => $inbound,
+            'turno_id' => $turno?->id,
+        ]);
+    }
+
+    /**
+     * Asignar sucursal a múltiples mensajes pendientes o a todos los del lote.
+     * POST /api/v1/whatsapp/asignar-sucursal-lote
+     */
+    public function asignarSucursalLote(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'sucursal_id' => 'required|exists:sucursales,id',
+            'inbound_ids' => 'nullable|array',
+            'inbound_ids.*' => 'integer|exists:whatsapp_mensajes_inbound,id',
+        ]);
+
+        $sucursalId = $validated['sucursal_id'];
+        $turno = Turno::where('sucursal_id', $sucursalId)->where('estado', 'abierto')->latest('id')->first()
+            ?? Turno::where('sucursal_id', $sucursalId)->latest('id')->first()
+            ?? Turno::create([
+                'sucursal_id' => $sucursalId,
+                'tipo_turno' => 'noche',
+                'estado' => 'cerrado',
+                'fecha_apertura' => now(),
+                'fecha_cierre' => now(),
+            ]);
+
+        $query = WhatsAppMensajeInbound::query();
+        if (!empty($validated['inbound_ids'])) {
+            $query->whereIn('id', $validated['inbound_ids']);
+        } else {
+            // Asignar todos los que no tienen sucursal de las últimas 24h
+            $query->whereNull('sucursal_id')
+                ->where('created_at', '>=', now()->subHours(24));
+        }
+
+        $mensajes = $query->get();
+        $actualizados = 0;
+
+        foreach ($mensajes as $msg) {
+            $msg->sucursal_id = $sucursalId;
+            $msg->turno_id = $turno->id;
+            $msg->estado = 'procesado';
+            $msg->score_confianza = 1.00;
+            $msg->save();
+
+            try {
+                if (class_exists(ProcesarMensajeWhatsAppJob::class)) {
+                    ProcesarMensajeWhatsAppJob::dispatchSync($msg->id);
+                }
+            } catch (\Throwable $e) {}
+            $actualizados++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Se vinculó la sucursal y se auditaron {$actualizados} comprobantes exitosamente.",
+            'total_actualizados' => $actualizados,
+            'turno_id' => $turno->id,
         ]);
     }
 
@@ -499,6 +581,7 @@ class WhatsAppWebhookController extends Controller
                     'score_confianza' => (float) $msg->score_confianza,
                     'metadata_ia' => $msg->metadata_ia,
                     'estado' => $msg->estado,
+                    'turno_id' => $msg->turno_id,
                     'created_at' => $msg->created_at?->toDateTimeString(),
                 ];
             });

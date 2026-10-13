@@ -152,6 +152,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/whatsapp/grupos-auditables', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'gruposAuditables'])->middleware('webhook.secret');
     Route::post('/whatsapp/grupos', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'registrarGrupo']);
     Route::post('/whatsapp/confirmar-sucursal', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'confirmarSucursal']);
+    Route::post('/whatsapp/asignar-sucursal-lote', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'asignarSucursalLote']);
 
     // Panel Web de Gestión y Vinculación de WhatsApp - User Story 36
     Route::post('/whatsapp/bot-status', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'actualizarBotStatus'])->middleware('webhook.secret');
