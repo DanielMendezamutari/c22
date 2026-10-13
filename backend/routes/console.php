@@ -70,3 +70,66 @@ Artisan::command('whatsapp:auditar-hoy {--forzar : Forzar reenvío de informes y
 
     $this->info("==========================================================\n");
 })->purpose('Auditar y despachar automáticamente todos los comprobantes y planillas de cierre de hoy');
+
+Artisan::command('whatsapp:importar-zip {archivo : Ruta del archivo ZIP en el servidor} {--sucursal_id= : ID opcional de la sucursal asignada}', function () {
+    $archivo = $this->argument('archivo');
+    $sucursalId = $this->option('sucursal_id');
+
+    if (!file_exists($archivo)) {
+        $this->error("El archivo no existe: {$archivo}");
+        return 1;
+    }
+
+    $this->info("==========================================================");
+    $this->info(" [IMPORTADOR ZIP C22] Extrayendo comprobantes para Auditoría");
+    $this->info("==========================================================");
+
+    $zip = new \ZipArchive();
+    if ($zip->open($archivo) !== true) {
+        $this->error("No se pudo abrir el archivo ZIP.");
+        return 1;
+    }
+
+    $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+    $extraidas = 0;
+
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $fname = $zip->getNameIndex($i);
+        if (str_ends_with($fname, '/') || str_contains($fname, '__MACOSX') || str_starts_with(basename($fname), '.')) continue;
+        $ext = strtolower(pathinfo($fname, PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowedExts)) continue;
+
+        $content = $zip->getFromIndex($i);
+        if (!$content) continue;
+
+        $extractedName = 'cli_zip_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
+        \Illuminate\Support\Facades\Storage::disk('public')->put('comprobantes/whatsapp/' . $extractedName, $content);
+
+        $inbound = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::create([
+            'sucursal_id' => $sucursalId ?: null,
+            'remote_jid' => 'zip_cli@c22.ribersoft.com',
+            'sender_phone' => '00000000',
+            'sender_name' => 'Importación ZIP CLI (' . basename($fname) . ')',
+            'tipo_mensaje' => 'imagen',
+            'media_path' => 'storage/comprobantes/whatsapp/' . $extractedName,
+            'raw_text' => basename($fname),
+            'clasificacion_ia' => 'desconocido',
+            'score_confianza' => $sucursalId ? 1.00 : 0.00,
+            'estado' => $sucursalId ? 'pendiente_proceso' : 'requiere_confirmacion',
+        ]);
+
+        $this->comment("  -> Extraída imagen: " . basename($fname) . " (Inbound #{$inbound->id})");
+        try {
+            \App\Jobs\ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+            $this->info("     ✔ Procesada con Gemini Vision OCR");
+        } catch (\Throwable $e) {
+            $this->warn("     ⚠ Error en job: " . $e->getMessage());
+        }
+        $extraidas++;
+    }
+
+    $zip->close();
+    $this->info("\n✔ Extracción completa: {$extraidas} comprobantes analizados.");
+    $this->info("==========================================================\n");
+    return 0;
+})->purpose('Importar y auditar automáticamente un archivo ZIP con fotos o exportación de chat');

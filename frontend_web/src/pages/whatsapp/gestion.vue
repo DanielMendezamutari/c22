@@ -117,6 +117,52 @@ const ejecutarAuditoriaHoy = async () => {
   }
 }
 
+// Carga de Archivo ZIP
+const dialogCargarZip = ref(false)
+const archivoZipSeleccionado = ref(null)
+const sucursalZipSeleccionada = ref(0)
+const cargandoZip = ref(false)
+
+const procesarArchivoZip = async () => {
+  if (!archivoZipSeleccionado.value) {
+    mostrarSnackbar('Por favor selecciona un archivo .zip', 'warning')
+    return
+  }
+
+  cargandoZip.value = true
+  try {
+    const formData = new FormData()
+    const file = Array.isArray(archivoZipSeleccionado.value)
+      ? archivoZipSeleccionado.value[0]
+      : archivoZipSeleccionado.value
+
+    formData.append('archivo_zip', file)
+    if (sucursalZipSeleccionada.value) {
+      formData.append('sucursal_id', sucursalZipSeleccionada.value)
+    }
+
+    const res = await axiosIns.post('/whatsapp/cargar-zip', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+
+    dialogCargarZip.value = false
+    archivoZipSeleccionado.value = null
+    mostrarSnackbar(res.data?.message || `Archivo procesado: ${res.data?.total_imagenes} comprobantes extraídos`, 'success')
+    await Promise.all([
+      cargarMensajesInbound(),
+      cargarAuditoriasCruce(),
+      cargarConfigRecaudo(),
+    ])
+  } catch (err) {
+    console.error('Error cargando ZIP:', err)
+    mostrarSnackbar(err.response?.data?.error || err.response?.data?.message || 'Error al procesar el archivo ZIP', 'error')
+  } finally {
+    cargandoZip.value = false
+  }
+}
+
 // Ingesta Inbound reciente
 const mensajesInbound = ref([])
 const loadingInbound = ref(false)
@@ -950,6 +996,15 @@ onUnmounted(() => {
             <template #append>
               <div class="d-flex flex-wrap gap-2">
                 <VBtn
+                  color="warning"
+                  variant="tonal"
+                  size="small"
+                  prepend-icon="tabler-file-zip"
+                  @click="dialogCargarZip = true"
+                >
+                  📦 Subir Archivo ZIP
+                </VBtn>
+                <VBtn
                   color="primary"
                   variant="tonal"
                   size="small"
@@ -1379,6 +1434,50 @@ onUnmounted(() => {
           <VBtn variant="plain" @click="dialogDespachoManual = false">Cancelar</VBtn>
           <VBtn color="success" :loading="despachandoInforme" @click="despacharInformeManual">
             Enviar a WhatsApp
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Modal para Cargar Archivo ZIP de Comprobantes -->
+    <VDialog v-model="dialogCargarZip" max-width="500">
+      <VCard>
+        <VCardTitle class="text-h6 font-weight-bold pa-4 border-b d-flex align-center gap-2">
+          <VIcon icon="tabler-file-zip" color="warning" />
+          Subir Archivo ZIP de Comprobantes
+        </VCardTitle>
+        <VCardText class="pa-4">
+          <p class="text-caption text-medium-emphasis mb-3">
+            Puedes subir una exportación de chat de WhatsApp o un archivo <code>.zip</code> con fotos de planillas y gastos. El sistema extraerá cada foto y la procesará de inmediato con la IA (Gemini Vision).
+          </p>
+
+          <VFileInput
+            v-model="archivoZipSeleccionado"
+            label="Seleccionar archivo .zip"
+            accept=".zip,application/zip"
+            prepend-icon=""
+            prepend-inner-icon="tabler-upload"
+            density="compact"
+            variant="outlined"
+            show-size
+            class="mb-3"
+          />
+
+          <VSelect
+            v-model="sucursalZipSeleccionada"
+            :items="[{ id: 0, nombre: '🤖 Auto-detectar Casa con IA' }, ...sucursales]"
+            item-title="nombre"
+            item-value="id"
+            label="Casa / Sucursal asignada"
+            density="compact"
+            variant="outlined"
+            class="mb-2"
+          />
+        </VCardText>
+        <VCardActions class="pa-4 border-t justify-end">
+          <VBtn variant="plain" :disabled="cargandoZip" @click="dialogCargarZip = false">Cancelar</VBtn>
+          <VBtn color="warning" :loading="cargandoZip" @click="procesarArchivoZip">
+            Descomprimir y Auditar
           </VBtn>
         </VCardActions>
       </VCard>

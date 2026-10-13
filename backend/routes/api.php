@@ -176,6 +176,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/whatsapp/enviar-mensaje', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'enviarMensaje']);
     Route::post('/whatsapp/despachar-informe-cierre', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'despacharInformeCierre']);
     Route::post('/whatsapp/auditar-hoy', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'auditarHoy']);
+    Route::post('/whatsapp/cargar-zip', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'cargarZip']);
     Route::post('/whatsapp/reconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'reconectar']);
     Route::get('/whatsapp/config-control-recaudo', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'configControlRecaudo']);
 });

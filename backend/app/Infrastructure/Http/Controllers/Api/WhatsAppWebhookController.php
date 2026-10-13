@@ -132,6 +132,59 @@ class WhatsAppWebhookController extends Controller
             $mediaPath = $this->guardarArchivoBase64($mediaBase64, $mimetype);
         }
 
+        // Si es un archivo ZIP (ej. Exportación de chat de WhatsApp o lote de fotos)
+        if ($mediaPath && (str_contains($mimetype, 'zip') || str_ends_with(strtolower($mediaPath), '.zip') || str_ends_with(strtolower($caption), '.zip'))) {
+            $fullZipPath = public_path($mediaPath);
+            if (file_exists($fullZipPath)) {
+                $zip = new \ZipArchive();
+                if ($zip->open($fullZipPath) === true) {
+                    $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+                    $extraidas = 0;
+                    for ($i = 0; $i < $zip->numFiles; $i++) {
+                        $fname = $zip->getNameIndex($i);
+                        if (str_ends_with($fname, '/') || str_contains($fname, '__MACOSX') || str_starts_with(basename($fname), '.')) continue;
+                        $ext = strtolower(pathinfo($fname, PATHINFO_EXTENSION));
+                        if (!in_array($ext, $allowedExts)) continue;
+
+                        $content = $zip->getFromIndex($i);
+                        if (!$content) continue;
+
+                        $extractedName = 'whatsapp_zip_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
+                        \Illuminate\Support\Facades\Storage::disk('public')->put('comprobantes/whatsapp/' . $extractedName, $content);
+
+                        $subInbound = WhatsAppMensajeInbound::create([
+                            'sucursal_id' => $sucursalId,
+                            'remote_jid' => $remoteJid,
+                            'sender_phone' => $senderPhone,
+                            'sender_name' => $senderName . ' (ZIP: ' . basename($fname) . ')',
+                            'tipo_mensaje' => 'imagen',
+                            'media_path' => 'storage/comprobantes/whatsapp/' . $extractedName,
+                            'raw_text' => basename($fname),
+                            'clasificacion_ia' => 'desconocido',
+                            'score_confianza' => $sucursalId ? 1.00 : 0.00,
+                            'estado' => $sucursalId ? 'pendiente_proceso' : 'requiere_confirmacion',
+                            'turno_id' => $turnoId,
+                        ]);
+
+                        try {
+                            if (class_exists(ProcesarMensajeWhatsAppJob::class)) {
+                                ProcesarMensajeWhatsAppJob::dispatch($subInbound->id);
+                            }
+                        } catch (\Throwable $e) {}
+                        $extraidas++;
+                    }
+                    $zip->close();
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Archivo ZIP procesado exitosamente: se extrajeron {$extraidas} comprobantes para auditoría IA",
+                        'total_imagenes' => $extraidas,
+                        'sucursal_id' => $sucursalId,
+                    ]);
+                }
+            }
+        }
+
         // 4. Determinar estado inicial
         $estado = $sucursalId ? 'pendiente_proceso' : 'requiere_confirmacion';
 
@@ -657,6 +710,97 @@ class WhatsAppWebhookController extends Controller
             'success' => true,
             'message' => 'Proceso de auditoría ejecutado exitosamente.',
             'output' => $output,
+        ]);
+    }
+
+    /**
+     * Sube y procesa un archivo ZIP con comprobantes o exportación de WhatsApp.
+     * POST /api/v1/whatsapp/cargar-zip
+     */
+    public function cargarZip(Request $request): JsonResponse
+    {
+        $request->validate([
+            'archivo_zip' => 'required|file|max:102400', // Hasta 100MB
+            'sucursal_id' => 'nullable|integer',
+        ]);
+
+        $file = $request->file('archivo_zip');
+        $sucursalId = $request->input('sucursal_id');
+        if ($sucursalId == 0) {
+            $sucursalId = null;
+        }
+
+        $turnoId = null;
+        if ($sucursalId) {
+            $turno = Turno::where('sucursal_id', $sucursalId)->where('estado', 'abierto')->latest('id')->first();
+            if (!$turno) {
+                $turno = Turno::where('sucursal_id', $sucursalId)->latest('id')->first();
+            }
+            $turnoId = $turno?->id;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($file->getRealPath()) !== true) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo abrir el archivo ZIP. Verifique que no esté dañado o protegido con contraseña.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+        $extraidas = 0;
+        $inboundIds = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $fname = $zip->getNameIndex($i);
+            if (str_ends_with($fname, '/') || str_contains($fname, '__MACOSX') || str_starts_with(basename($fname), '.')) {
+                continue;
+            }
+            $ext = strtolower(pathinfo($fname, PATHINFO_EXTENSION));
+            if (!in_array($ext, $allowedExts)) {
+                continue;
+            }
+
+            $content = $zip->getFromIndex($i);
+            if (!$content) {
+                continue;
+            }
+
+            $extractedName = 'zip_upload_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
+            \Illuminate\Support\Facades\Storage::disk('public')->put('comprobantes/whatsapp/' . $extractedName, $content);
+
+            $inbound = WhatsAppMensajeInbound::create([
+                'sucursal_id' => $sucursalId,
+                'remote_jid' => 'zip_upload@c22.ribersoft.com',
+                'sender_phone' => '00000000',
+                'sender_name' => 'Importación ZIP (' . basename($fname) . ')',
+                'tipo_mensaje' => 'imagen',
+                'media_path' => 'storage/comprobantes/whatsapp/' . $extractedName,
+                'raw_text' => basename($fname),
+                'clasificacion_ia' => 'desconocido',
+                'score_confianza' => $sucursalId ? 1.00 : 0.00,
+                'estado' => $sucursalId ? 'pendiente_proceso' : 'requiere_confirmacion',
+                'turno_id' => $turnoId,
+            ]);
+
+            try {
+                if (class_exists(ProcesarMensajeWhatsAppJob::class)) {
+                    ProcesarMensajeWhatsAppJob::dispatch($inbound->id);
+                }
+            } catch (\Throwable $e) {}
+
+            $extraidas++;
+            $inboundIds[] = $inbound->id;
+        }
+
+        $zip->close();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Archivo ZIP analizado exitosamente: se extrajeron {$extraidas} comprobantes para procesamiento IA con Gemini Vision.",
+            'total_imagenes' => $extraidas,
+            'sucursal_id' => $sucursalId,
+            'inbound_ids' => array_slice($inboundIds, 0, 10),
         ]);
     }
 }
