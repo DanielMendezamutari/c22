@@ -64,4 +64,5 @@ echo "🚀 Levantando bot de WhatsApp..."
 echo "👉 El código QR se proyectará en la consola Y en https://c22.ribersoft.com/whatsapp/gestion"
 echo "-----------------------------------------------------------------"
 
-"$NODE_BIN" --experimental-global-webcrypto bot.js
+export UV_THREADPOOL_SIZE=2
+"$NODE_BIN" bot.js

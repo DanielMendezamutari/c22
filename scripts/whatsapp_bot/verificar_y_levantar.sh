@@ -60,7 +60,8 @@ else
 
     # El bot está caído: Levantarlo en segundo plano
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🤖 El bot C22 estaba apagado. Reiniciando con $NODE_BIN..." >> bot_watchdog.log
-    nohup "$NODE_BIN" --experimental-global-webcrypto bot.js >> bot_salida.log 2>&1 &
+    export UV_THREADPOOL_SIZE=2
+    nohup "$NODE_BIN" bot.js >> bot_salida.log 2>&1 &
     NUEVO_PID=$!
     echo "$NUEVO_PID" > "$PID_FILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Bot reiniciado con éxito 24/7 (PID: $NUEVO_PID)" >> bot_watchdog.log
