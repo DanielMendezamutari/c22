@@ -6,13 +6,20 @@ echo "=========================================================="
 echo " [C22 WHATSAPP] Reiniciando Sesión Criptográfica Corrupta"
 echo "=========================================================="
 
-echo "1. Deteniendo procesos activos del bot..."
-PID_ENCONTRADO=$(ps aux | grep -v grep | grep -E "node.*scripts/whatsapp_bot/bot\.js|node.*whatsapp_bot.*bot\.js" | awk '{print $2}')
-if [ -n "$PID_ENCONTRADO" ]; then
-    kill -9 $PID_ENCONTRADO 2>/dev/null
-    echo "   ✔ Proceso anterior terminado (PID: $PID_ENCONTRADO)."
+echo "1. Liberando puerto 3001 y deteniendo procesos activos del bot..."
+pkill -9 -f "bot\.js" 2>/dev/null
+fuser -k -9 3001/tcp 2>/dev/null
+if command -v lsof >/dev/null 2>&1; then
+    lsof -ti :3001 | xargs -r kill -9 2>/dev/null
 fi
-rm -f bot.pid
+
+if [ -f bot.pid ]; then
+    kill -9 $(cat bot.pid) 2>/dev/null
+    rm -f bot.pid
+fi
+
+sleep 1
+echo "   ✔ Puerto 3001 liberado y procesos detenidos."
 
 echo "2. Purgando credenciales de sesión corruptas (auth_info_baileys)..."
 rm -rf auth_info_baileys
