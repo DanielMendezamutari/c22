@@ -35,7 +35,7 @@ class GeminiVisionAuditorService
      *   datos: array
      * }
      */
-    public function auditarYClasificar(string $imagePathOrBase64, ?string $mimetype = 'image/jpeg'): array
+    public function auditarYClasificar(string $imagePathOrBase64, ?string $mimetype = 'image/jpeg', ?string $contextoTexto = null): array
     {
         $base64 = $this->obtenerBase64($imagePathOrBase64);
         if (!$base64) {
@@ -57,30 +57,35 @@ class GeminiVisionAuditorService
             return $this->simularClasificacion($imagePathOrBase64);
         }
 
+        $contextoMensajePrompt = !empty($contextoTexto)
+            ? "\nCONTEXTO / TEXTO ADJUNTO EN WHATSAPP POR EL REMITENTE:\n\"{$contextoTexto}\"\n(IMPORTANTE: Utiliza este texto para interpretar el motivo del gasto, el taxi, almuerzo, o la sucursal de origen si el remitente lo indica).\n"
+            : "";
+
         $prompt = <<<PROMPT
 Eres el Auditor Contable Senior con Inteligencia Artificial de Grupo Punto Frío (operando las casas comerciales: {$casasTexto} en Bolivia).
-Analiza esta imagen enviada por WhatsApp al grupo de recaudación y cierres de turno.
-
+Analiza esta imagen enviada por WhatsApp al grupo de recaudación, gastos de caja chica o cierres de turno.
+{$contextoMensajePrompt}
 Realiza las siguientes 3 tareas:
 1. CLASIFICACIÓN RIGUROSA DE DOCUMENTOS:
    - "planilla_caja": ÚNICAMENTE la hoja principal de rendición/cierre de caja del turno (hoja de cuaderno rayado/cuadriculado o formato impreso rellenado a mano donde se anotan las ventas totales de la noche, cobros QR, pagos a chicas, egresos y efectivo entregado en sobre).
    - "ticket_pos": Ticket térmico estrecho impreso de ventas o reporte de corte de máquina.
-   - "voucher_deposito": Capturas de pantalla de celular de transferencias bancarias o comprobantes de pago QR (BNB, Banco Unión, BCP, etc.). NUNCA clasifiques esto como planilla_caja.
-   - "recibo_gasto": Recibos pequeños de gastos menores de caja chica (recibos de taxi, compras de hielo, farmacia, notas de venta menores). NUNCA clasifiques un recibo de taxi o gasto menor como planilla_caja.
-   - "otro": Fotografías de personas, botellas, o imágenes no contables.
+   - "voucher_deposito": Capturas de transferencias o depósitos bancarios de RECAUDACIÓN a cuentas de la empresa (cuentas fiscales/gerencia).
+   - "recibo_gasto": Recibos físicos de gastos (taxis, hielo, insumos) O capturas de pantalla de pagos QR/transferencias de GASTOS menores de caja chica (ej. pago de taxi por QR, comisión de traslado, almuerzo del personal, compras de emergencia). NUNCA clasifiques un gasto como planilla_caja.
+   - "otro": Fotografías de personas, botellas, memes o imágenes no contables.
 
 2. DETECCIÓN INTELIGENTE DE CASA / SUCURSAL (REGLA CRÍTICA):
-En Grupo Punto Frío operan 4 casas comerciales. Como las encargadas envían fotos a un grupo común, DEBES identificar obligatoriamente a cuál de las 4 sedes pertenece el documento inspeccionando cada detalle:
+En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Como las encargadas o cajeros envían fotos de comprobantes de las diferentes casas, DEBES identificar obligatoriamente a cuál de las sedes pertenece el documento inspeccionando el texto del mensaje, remitente, membrete o notas:
    - "Casa Belén (C22)":
      * En tickets figura "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22" o "CASA22".
      * En planillas manuscritas aparece escrito arriba, en notas o márgenes "Belen", "Belén" o "C22".
      * En nombres de cajeros, meseros o firmas figuran "FANNY", "FANNY MORON", "CUEVAS" o "CUEVAS 25".
    - "Casa Corona":
-     * En tickets, sellos, membretes o notas aparece "CORONA", "CASA CORONA" o "CORON".
+     * En tickets, sellos, membretes, mensajes o notas aparece "CORONA", "CASA CORONA" o "CORON".
    - "Madan":
-     * En tickets, notas o membretes aparece "MADAN" o "MADAM".
+     * En tickets, mensajes, notas o membretes aparece "MADAN" o "MADAM".
    - "Cuarta Casa":
-     * En tickets o notas aparece "VIP", "C22VIP", "JOKER", "CASA 4", "CASA NUEVA" o "CUARTA CASA".
+     * En tickets, mensajes o notas aparece "VIP", "C22VIP", "JOKER", "CASA 4", "CASA NUEVA" o "CUARTA CASA".
+   - Si no hay suficiente información para determinar la sucursal, indica null en sucursal_sugerida.
 
 3. EXTRACCIÓN DE DATOS:
    - Si es "ticket_pos":
@@ -108,13 +113,13 @@ En Grupo Punto Frío operan 4 casas comerciales. Como las encargadas envían fot
      * fecha: fecha del turno.
      * turno: Día o Noche.
    - Si es "voucher_deposito": Extrae banco_nombre, monto_depositado_bs, nro_operacion, fecha_hora, titular_cuenta.
-   - Si es "recibo_gasto": Extrae concepto, monto_bs, proveedor, fecha.
+   - Si es "recibo_gasto": Extrae concepto (ej: "Comisión taxi", "Almuerzo", "Compra de hielo"), categoria ("taxi_personal", "hielo", "insumos_barra", "limpieza", "otros"), monto_bs, proveedor, fecha, nro_operacion, banco_nombre.
 
 Responde ÚNICAMENTE un JSON con este formato exacto:
 {
   "clasificacion": "planilla_caja" | "ticket_pos" | "voucher_deposito" | "recibo_gasto" | "otro",
   "score_confianza": 0.95,
-  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Cuarta Casa",
+  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Cuarta Casa" | null,
   "datos": { ...campos extraidos... }
 }
 PROMPT;

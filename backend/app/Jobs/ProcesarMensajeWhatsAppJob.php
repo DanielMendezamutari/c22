@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Application\UseCases\Auditoria\AuditoriaCruceCanalesUseCase;
+use App\Infrastructure\Persistence\Eloquent\Models\GastoCajaChica;
 use App\Infrastructure\Persistence\Eloquent\Models\PlanillaCaja;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
@@ -41,7 +42,13 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         }
 
         try {
-            $resultado = $visionAuditor->auditarYClasificar($inbound->media_path);
+            $contextoPartes = [];
+            if (!empty($inbound->sender_name)) $contextoPartes[] = "Remitente: {$inbound->sender_name}";
+            if (!empty($inbound->sender_phone)) $contextoPartes[] = "Tel: +{$inbound->sender_phone}";
+            if (!empty($inbound->raw_text)) $contextoPartes[] = "Texto adjunto: {$inbound->raw_text}";
+            $contextoTexto = implode(' | ', $contextoPartes);
+
+            $resultado = $visionAuditor->auditarYClasificar($inbound->media_path, 'image/jpeg', $contextoTexto);
 
             $inbound->clasificacion_ia = in_array($resultado['clasificacion'], [
                 'planilla_caja', 'voucher_deposito', 'recibo_gasto', 'ticket_pos', 'otro'
@@ -137,6 +144,31 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                     } catch (\Throwable $e) {
                         Log::warning("No se pudo re-despachar informe con datos POS: " . $e->getMessage());
                     }
+                }
+            }
+
+            // Si es recibo_gasto o voucher con motivo de gasto, persistir en gastos_caja_chica
+            if ($inbound->clasificacion_ia === 'recibo_gasto' && $inbound->sucursal_id) {
+                try {
+                    $montoGasto = (float) ($datos['monto_bs'] ?? $datos['monto_total_bs'] ?? 0.00);
+                    $conceptoGasto = $datos['concepto'] ?? ($inbound->raw_text ?: 'Gasto de Caja Chica vía WhatsApp');
+                    $categoriaGasto = $datos['categoria'] ?? 'otros';
+
+                    GastoCajaChica::create([
+                        'sucursal_id' => $inbound->sucursal_id,
+                        'turno_id' => $inbound->turno_id,
+                        'fecha' => now()->toDateString(),
+                        'concepto' => $conceptoGasto,
+                        'categoria' => $categoriaGasto,
+                        'monto_bs' => $montoGasto,
+                        'foto_comprobante_url' => $inbound->media_path,
+                        'estado_comprobante' => 'aprobado_con_foto',
+                        'emparejado_ocr' => true,
+                        'observaciones' => "Registrado vía WhatsApp Bot (" . ($inbound->sender_name ?: $inbound->sender_phone) . ")",
+                    ]);
+                    Log::info("ProcesarMensajeWhatsAppJob: Gasto de caja chica de {$montoGasto} Bs registrado para Sucursal {$inbound->sucursal_id}.");
+                } catch (\Throwable $e) {
+                    Log::warning("ProcesarMensajeWhatsAppJob: Error persistiendo GastoCajaChica: " . $e->getMessage());
                 }
             }
 

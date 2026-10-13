@@ -37,6 +37,7 @@ const palabrasClaveNegocio = [
   'c22', 'casa', 'casas', '22', 'belen', 'belén', 'corona', 'madan',
   'adm', 'admin', 'administrac', 'gerencia', 'central', 'general',
   'cierre', 'cierres', 'recaud', 'recaudacion', 'recaudaciones',
+  'comprobante', 'comprobantes', 'gasto', 'gastos',
   'arqueo', 'arqueos', 'taxi', 'taxis', 'rotacion', 'rotaciones',
   'turno', 'caja', 'joker', 'licoreria', 'ventas', 'venta', 'vip', 'sistema'
 ]
@@ -896,6 +897,7 @@ onUnmounted(() => {
               <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Madan')">Madan</VChip>
               <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Cierres')">Cierres</VChip>
               <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Recaudo')">Recaudo</VChip>
+              <VChip size="x-small" variant="tonal" color="error" class="cursor-pointer" @click="aplicarFiltroChip('Comprobantes')">🧾 Comprobantes</VChip>
               <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Taxi')">Taxis</VChip>
               <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Rotaciones')">Rotaciones</VChip>
               <VChip size="x-small" variant="tonal" color="info" class="cursor-pointer" @click="aplicarFiltroChip('Venta')">Ventas</VChip>
