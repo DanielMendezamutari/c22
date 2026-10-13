@@ -18,7 +18,7 @@ class CerrarTurnoUseCase
 
     public function ejecutar(int $turnoId, array $corteFinal, array $opciones = []): array
     {
-        return DB::transaction(function () use ($turnoId, $corteFinal, $opciones) {
+        $res = DB::transaction(function () use ($turnoId, $corteFinal, $opciones) {
             $turno = $this->turnoRepo->buscarPorId($turnoId);
             if (!$turno) {
                 throw new DomainException("Turno no encontrado.");
@@ -79,5 +79,16 @@ class CerrarTurnoUseCase
                 'es_suplencia' => (bool) ($actualizaciones['es_suplencia'] ?? $turno->es_suplencia),
             ];
         });
+
+        // Despacho autónomo inmediato al grupo de WhatsApp tras enterarse del cierre
+        try {
+            $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+            $despachador->ejecutar($turnoId, false);
+            \Illuminate\Support\Facades\Log::info("CerrarTurnoUseCase: Informe despachado automáticamente tras cierre de Turno #{$turnoId}.");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::info("CerrarTurnoUseCase: Turno #{$turnoId} cerrado. Pendiente de comprobantes ({$e->getMessage()})");
+        }
+
+        return $res;
     }
 }

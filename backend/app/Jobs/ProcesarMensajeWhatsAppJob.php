@@ -127,6 +127,17 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                     $planilla->foto_url = $inbound->media_path;
                 }
                 $planilla->save();
+
+                // Si ya tenemos la planilla física declarada, re-despachar el informe con la conciliación real contra POS
+                if (!empty($datosActuales['total_ventas_declaradas_bs']) || !empty($datosActuales['monto_sobre_efectivo_bs'])) {
+                    try {
+                        $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+                        $despachador->ejecutar($inbound->turno_id, true);
+                        Log::info("Informe de auditoría actualizado y re-despachado con datos reales del POS para Turno {$inbound->turno_id}.");
+                    } catch (\Throwable $e) {
+                        Log::warning("No se pudo re-despachar informe con datos POS: " . $e->getMessage());
+                    }
+                }
             }
 
             // Calcular SHA-256 de la imagen para deduplicación inter-canales
