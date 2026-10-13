@@ -31,18 +31,23 @@ const guardandoGrupoId = ref(null)
 const tabFiltroGrupos = ref('sugeridos') // 'vinculados' | 'sugeridos' | 'todos'
 const paginaActual = ref(1)
 const itemsPorPagina = ref(10)
+const solicitandoSync = ref(false)
 
 const palabrasClaveNegocio = [
-  'c22', 'casa 22', 'casa22', 'belen', 'belén', 'corona', 'madan',
+  'c22', 'casa', 'casas', '22', 'belen', 'belén', 'corona', 'madan',
+  'adm', 'admin', 'administrac', 'gerencia', 'central', 'general',
   'cierre', 'cierres', 'recaud', 'recaudacion', 'recaudaciones',
   'arqueo', 'arqueos', 'taxi', 'taxis', 'rotacion', 'rotaciones',
-  'turno', 'caja', 'joker', 'licoreria', 'ventas', 'vip', 'sistema'
+  'turno', 'caja', 'joker', 'licoreria', 'ventas', 'venta', 'vip', 'sistema'
 ]
 
 const esGrupoSugerido = (nombre) => {
   if (!nombre) return false
-  const lower = nombre.toLowerCase()
-  return palabrasClaveNegocio.some(kw => lower.includes(kw))
+  const lower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return palabrasClaveNegocio.some(kw => {
+    const kwNorm = kw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return lower.includes(kwNorm)
+  })
 }
 
 const gruposVinculadosCount = computed(() => grupos.value.filter(g => g.vinculado).length)
@@ -56,6 +61,23 @@ const aplicarFiltroChip = (texto) => {
 const limpiarFiltro = () => {
   filtroBusqueda.value = ''
   paginaActual.value = 1
+}
+
+const solicitarSyncGrupos = async () => {
+  solicitandoSync.value = true
+  try {
+    const res = await axiosIns.post('/whatsapp/solicitar-sync-grupos')
+    mostrarSnackbar(res.data?.message || 'Solicitud de re-escaneo enviada al bot de WhatsApp. Actualizando...')
+    // Reintentar lectura tras dar unos segundos al socket de Baileys
+    setTimeout(async () => {
+      await cargarGruposDisponibles()
+      solicitandoSync.value = false
+    }, 4000)
+  } catch (err) {
+    console.error('Error al solicitar sync de grupos:', err)
+    mostrarSnackbar('No se pudo enviar la solicitud de escaneo al bot.', 'error')
+    solicitandoSync.value = false
+  }
 }
 
 // Auditoría Cruzada Inter-Canales
@@ -343,11 +365,14 @@ const autoSugerirAsignaciones = () => {
 
     let asigno = false
     // 1. Auto-detectar Sucursal
-    if (lower.includes('corona')) {
+    if (lower.includes('adm') || lower.includes('central') || lower.includes('general') || (lower.includes('taxi') && !lower.includes('corona') && !lower.includes('madan'))) {
+      g.sucursal_id_edit = 0 // Global / Multi-sucursal
+      asigno = true
+    } else if (lower.includes('corona')) {
       if (idCorona) { g.sucursal_id_edit = idCorona; asigno = true; }
     } else if (lower.includes('madan')) {
       if (idMadan) { g.sucursal_id_edit = idMadan; asigno = true; }
-    } else if (lower.includes('c22') || lower.includes('casa 22') || lower.includes('casa22') || lower.includes('belen') || lower.includes('belén')) {
+    } else if (lower.includes('c22') || lower.includes('casa 22') || lower.includes('casa22') || lower.includes('casas') || lower.includes('belen') || lower.includes('belén')) {
       if (idBelen) { g.sucursal_id_edit = idBelen; asigno = true; }
     } else if (lower.includes('recaud') || lower.includes('todas')) {
       g.sucursal_id_edit = 0 // Global
@@ -355,10 +380,14 @@ const autoSugerirAsignaciones = () => {
     }
 
     // 2. Auto-detectar Tipo de Auditoría
-    if (lower.includes('recaud')) {
+    if (lower.includes('recaud') || lower.includes('control')) {
       g.tipo_auditoria_edit = 'control_recaudo_global'
     } else if (lower.includes('taxi') || lower.includes('rotacion')) {
       g.tipo_auditoria_edit = 'taxis_rotacion'
+      if (g.sucursal_id_edit === null || g.sucursal_id_edit === undefined) g.sucursal_id_edit = 0
+    } else if (lower.includes('adm') || lower.includes('general') || lower.includes('gerencia')) {
+      g.tipo_auditoria_edit = 'general'
+      if (g.sucursal_id_edit === null || g.sucursal_id_edit === undefined) g.sucursal_id_edit = 0
     } else if (lower.includes('gasto') || lower.includes('caja chica')) {
       g.tipo_auditoria_edit = 'gastos_caja_chica'
     } else if (lower.includes('cierre') || lower.includes('caja') || lower.includes('arqueo')) {
@@ -376,24 +405,24 @@ const autoSugerirAsignaciones = () => {
 const gruposFiltrados = computed(() => {
   let list = grupos.value
 
-  // 1. Filtro por Pestaña / Modo
-  if (tabFiltroGrupos.value === 'vinculados') {
-    list = list.filter(g => g.vinculado)
-  } else if (tabFiltroGrupos.value === 'sugeridos') {
-    list = list.filter(g => esGrupoSugerido(g.nombre_grupo) || g.vinculado)
-  }
-
-  // 2. Filtro por Búsqueda de Texto
-  if (filtroBusqueda.value.trim()) {
-    const query = filtroBusqueda.value.toLowerCase()
+  // Si hay término de búsqueda activo, buscar globalmente en TODOS los grupos para que NADA quede oculto
+  if (filtroBusqueda.value && filtroBusqueda.value.trim()) {
+    const query = filtroBusqueda.value.toLowerCase().trim()
     list = list.filter(g =>
       (g.nombre_grupo || '').toLowerCase().includes(query) ||
       (g.sucursal_nombre || '').toLowerCase().includes(query) ||
       (g.remote_jid || '').toLowerCase().includes(query)
     )
+  } else {
+    // Si no hay búsqueda, aplicar filtro por pestaña seleccionada
+    if (tabFiltroGrupos.value === 'vinculados') {
+      list = list.filter(g => g.vinculado)
+    } else if (tabFiltroGrupos.value === 'sugeridos') {
+      list = list.filter(g => esGrupoSugerido(g.nombre_grupo) || g.vinculado)
+    }
   }
 
-  // 3. Ordenar: los vinculados siempre primero
+  // Ordenar: los vinculados siempre primero, luego alfabético
   return [...list].sort((a, b) => {
     if (a.vinculado && !b.vinculado) return -1
     if (!a.vinculado && b.vinculado) return 1
@@ -654,15 +683,27 @@ onUnmounted(() => {
             <VCardTitle class="text-h6 font-weight-bold">Asignación de Grupos a Sucursales</VCardTitle>
             <VCardSubtitle>Mapea cada grupo de WhatsApp para auditoría automática</VCardSubtitle>
             <template #append>
-              <VBtn
-                color="primary"
-                variant="tonal"
-                size="small"
-                prepend-icon="tabler-wand"
-                @click="autoSugerirAsignaciones"
-              >
-                🪄 Auto-Detectar C22
-              </VBtn>
+              <div class="d-flex flex-wrap gap-2">
+                <VBtn
+                  color="secondary"
+                  variant="tonal"
+                  size="small"
+                  prepend-icon="tabler-refresh"
+                  :loading="solicitandoSync"
+                  @click="solicitarSyncGrupos"
+                >
+                  🔄 Re-Escanear WhatsApp
+                </VBtn>
+                <VBtn
+                  color="primary"
+                  variant="tonal"
+                  size="small"
+                  prepend-icon="tabler-wand"
+                  @click="autoSugerirAsignaciones"
+                >
+                  🪄 Auto-Detectar C22
+                </VBtn>
+              </div>
             </template>
           </VCardItem>
 
@@ -707,7 +748,7 @@ onUnmounted(() => {
                   v-model="filtroBusqueda"
                   density="compact"
                   variant="outlined"
-                  placeholder="Buscar grupo por nombre o sucursal..."
+                  placeholder="Buscar grupo por nombre o sucursal (ej. ADM, Corona, Taxi)..."
                   prepend-inner-icon="tabler-search"
                   hide-details
                   clearable
@@ -719,13 +760,15 @@ onUnmounted(() => {
             <!-- Chips de Atajos Rápidos -->
             <div class="d-flex flex-wrap gap-1 mb-3 align-center">
               <span class="text-caption text-medium-emphasis me-1">Atajos:</span>
-              <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Casa 22')">Casa 22</VChip>
+              <VChip size="x-small" variant="tonal" color="info" class="cursor-pointer" @click="aplicarFiltroChip('ADM')">ADM / Central</VChip>
+              <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Casa')">Casa 22</VChip>
               <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Corona')">Corona</VChip>
               <VChip size="x-small" variant="tonal" color="primary" class="cursor-pointer" @click="aplicarFiltroChip('Madan')">Madan</VChip>
               <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Cierres')">Cierres</VChip>
               <VChip size="x-small" variant="tonal" color="success" class="cursor-pointer" @click="aplicarFiltroChip('Recaudo')">Recaudo</VChip>
               <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Taxi')">Taxis</VChip>
               <VChip size="x-small" variant="tonal" color="warning" class="cursor-pointer" @click="aplicarFiltroChip('Rotaciones')">Rotaciones</VChip>
+              <VChip size="x-small" variant="tonal" color="info" class="cursor-pointer" @click="aplicarFiltroChip('Venta')">Ventas</VChip>
               <VChip v-if="filtroBusqueda" size="x-small" variant="text" color="error" class="cursor-pointer" @click="limpiarFiltro">✖️ Quitar filtro</VChip>
             </div>
 

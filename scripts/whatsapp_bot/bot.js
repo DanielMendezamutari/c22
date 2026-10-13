@@ -187,8 +187,10 @@ async function startWhatsAppBot() {
 
       // Sincronizar automáticamente grupos descubiertos a la base de datos
       await sincronizarGruposDescubiertos(sock);
+      setTimeout(() => sincronizarGruposDescubiertos(sock), 6000);
+      setTimeout(() => sincronizarGruposDescubiertos(sock), 25000);
 
-      // Activar sondeo para escuchar si el usuario pide desconectar desde la Web
+      // Activar sondeo para escuchar si el usuario pide desconectar o sincronizar desde la Web
       monitorDesconexionTimer = setInterval(async () => {
         try {
           const res = await axios.get(`${LARAVEL_API_URL}/whatsapp/bot-status`, {
@@ -208,8 +210,13 @@ async function startWhatsAppBot() {
             } catch (e) {}
             setTimeout(startWhatsAppBot, 3000);
           }
+
+          if (res.data?.data?.sync_grupos_solicitado === true) {
+            console.log('[COMANDO WEB] Re-escaneo de grupos solicitado desde la Web.');
+            await sincronizarGruposDescubiertos(sock);
+          }
         } catch (e) {}
-      }, 15000);
+      }, 10000);
 
       if (IS_LIST_GROUPS_MODE) {
         console.log('\n--- LISTADO DE GRUPOS DETECTADOS EN LA CUENTA ---');

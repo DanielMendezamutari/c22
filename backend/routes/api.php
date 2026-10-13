@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/whatsapp/bot-status', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'obtenerBotStatus']);
     Route::post('/whatsapp/grupos-descubiertos', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'sincronizarGruposDescubiertos'])->middleware('webhook.secret');
     Route::get('/whatsapp/grupos-disponibles', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'listarGruposDisponibles']);
+    Route::post('/whatsapp/solicitar-sync-grupos', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'solicitarSyncGrupos']);
     Route::post('/whatsapp/desconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'solicitarDesconexion']);
     Route::get('/whatsapp/mensajes-recientes', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'mensajesRecientes']);
 

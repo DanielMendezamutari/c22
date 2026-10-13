@@ -350,6 +350,7 @@ class WhatsAppWebhookController extends Controller
 
         foreach ($gruposDescubiertos as $gd) {
             $v = $gd->vinculacion;
+            $esGlobal = (bool) ($v?->es_global ?? false);
             $data[] = [
                 'remote_jid' => $gd->remote_jid,
                 'nombre_grupo' => $gd->nombre_grupo,
@@ -357,14 +358,16 @@ class WhatsAppWebhookController extends Controller
                 'ultima_deteccion_at' => $gd->ultima_deteccion_at?->toDateTimeString(),
                 'vinculado' => $v !== null,
                 'vinculacion_id' => $v?->id,
-                'sucursal_id' => $v?->sucursal_id,
-                'sucursal_nombre' => $v?->sucursal?->nombre,
+                'sucursal_id' => $esGlobal ? 0 : $v?->sucursal_id,
+                'sucursal_nombre' => $esGlobal ? '🌐 [Todas las Casas / Grupo Global]' : $v?->sucursal?->nombre,
+                'es_global' => $esGlobal,
                 'tipo_auditoria' => $v?->tipo_auditoria,
                 'activo' => (bool) ($v?->activo ?? false),
             ];
         }
 
         foreach ($otrosVinculados as $ov) {
+            $esGlobal = (bool) ($ov->es_global ?? false);
             $data[] = [
                 'remote_jid' => $ov->remote_jid,
                 'nombre_grupo' => $ov->nombre_grupo,
@@ -372,8 +375,9 @@ class WhatsAppWebhookController extends Controller
                 'ultima_deteccion_at' => $ov->updated_at?->toDateTimeString(),
                 'vinculado' => true,
                 'vinculacion_id' => $ov->id,
-                'sucursal_id' => $ov->sucursal_id,
-                'sucursal_nombre' => $ov->sucursal?->nombre,
+                'sucursal_id' => $esGlobal ? 0 : $ov->sucursal_id,
+                'sucursal_nombre' => $esGlobal ? '🌐 [Todas las Casas / Grupo Global]' : $ov->sucursal?->nombre,
+                'es_global' => $esGlobal,
                 'tipo_auditoria' => $ov->tipo_auditoria,
                 'activo' => (bool) $ov->activo,
             ];
@@ -382,6 +386,20 @@ class WhatsAppWebhookController extends Controller
         return response()->json([
             'success' => true,
             'data' => $data,
+        ]);
+    }
+
+    /**
+     * Solicitar al bot de WhatsApp que re-escanee todos los grupos activos
+     * POST /api/v1/whatsapp/solicitar-sync-grupos
+     */
+    public function solicitarSyncGrupos(): JsonResponse
+    {
+        \Illuminate\Support\Facades\Cache::put('whatsapp_bot_sync_grupos_solicitado', true, now()->addMinutes(2));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Solicitud de re-escaneo de grupos enviada al bot de WhatsApp.',
         ]);
     }
 

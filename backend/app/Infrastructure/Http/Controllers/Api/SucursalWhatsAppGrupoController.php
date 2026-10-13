@@ -33,19 +33,24 @@ class SucursalWhatsAppGrupoController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'sucursal_id' => 'required|exists:sucursales,id',
+            'sucursal_id' => 'nullable|exists:sucursales,id',
             'remote_jid' => 'required|string|max:100',
             'nombre_grupo' => 'required|string|max:150',
-            'tipo_auditoria' => 'required|in:cierre_recaudacion,gastos_caja_chica,taxis_rotacion,general',
+            'tipo_auditoria' => 'required|in:cierre_recaudacion,gastos_caja_chica,taxis_rotacion,general,control_recaudo_global',
+            'es_global' => 'nullable|boolean',
             'activo' => 'boolean',
         ]);
+
+        $esGlobal = (bool) ($request->input('es_global') || empty($validated['sucursal_id']));
+        $sucursalId = $esGlobal ? null : ($validated['sucursal_id'] ?? null);
 
         $grupo = SucursalWhatsAppGrupo::updateOrCreate(
             ['remote_jid' => $validated['remote_jid']],
             [
-                'sucursal_id' => $validated['sucursal_id'],
+                'sucursal_id' => $sucursalId,
                 'nombre_grupo' => $validated['nombre_grupo'],
                 'tipo_auditoria' => $validated['tipo_auditoria'],
+                'es_global' => $esGlobal,
                 'activo' => $validated['activo'] ?? true,
             ]
         );
@@ -54,7 +59,7 @@ class SucursalWhatsAppGrupoController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Grupo de WhatsApp vinculado exitosamente a la sucursal.',
+            'message' => 'Grupo de WhatsApp vinculado exitosamente.',
             'data' => $grupo,
         ], Response::HTTP_CREATED);
     }
@@ -68,11 +73,18 @@ class SucursalWhatsAppGrupoController extends Controller
         $grupo = SucursalWhatsAppGrupo::findOrFail($id);
 
         $validated = $request->validate([
-            'sucursal_id' => 'sometimes|exists:sucursales,id',
+            'sucursal_id' => 'nullable|exists:sucursales,id',
             'nombre_grupo' => 'sometimes|string|max:150',
-            'tipo_auditoria' => 'sometimes|in:cierre_recaudacion,gastos_caja_chica,taxis_rotacion,general',
+            'tipo_auditoria' => 'sometimes|in:cierre_recaudacion,gastos_caja_chica,taxis_rotacion,general,control_recaudo_global',
+            'es_global' => 'nullable|boolean',
             'activo' => 'sometimes|boolean',
         ]);
+
+        if (array_key_exists('sucursal_id', $validated)) {
+            $esGlobal = (bool) ($request->input('es_global') || empty($validated['sucursal_id']));
+            $validated['es_global'] = $esGlobal;
+            $validated['sucursal_id'] = $esGlobal ? null : $validated['sucursal_id'];
+        }
 
         $grupo->update($validated);
         $grupo->load('sucursal:id,nombre,codigo');
