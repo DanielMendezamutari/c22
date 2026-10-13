@@ -126,8 +126,26 @@ class GenerarYDespacharInformeAuditoriaUseCase
         $lineas[] = "🤖 _Auditoría automática generada desde comprobantes de WhatsApp 24/7_";
 
         $textoMensaje = implode("\n", $lineas);
-        $mediaUrl = $planilla?->foto_url ? url($planilla->foto_url) : null;
-        $mediaPath = $planilla?->foto_url ?: null;
+
+        // Localizar con máxima prioridad la foto auténtica de la PLANILLA DE CIERRE
+        $inboundCierre = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::where('turno_id', $turnoId)
+            ->where('clasificacion_ia', 'planilla_caja')
+            ->whereNotNull('media_path')
+            ->latest('id')
+            ->first();
+
+        // Si no hay planilla manuscrita, usar el ticket de corte
+        if (!$inboundCierre) {
+            $inboundCierre = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::where('turno_id', $turnoId)
+                ->where('clasificacion_ia', 'ticket_pos')
+                ->whereNotNull('media_path')
+                ->latest('id')
+                ->first();
+        }
+
+        $fotoCierrePath = $inboundCierre?->media_path ?: $planilla?->foto_url;
+        $mediaUrl = $fotoCierrePath ? url($fotoCierrePath) : null;
+        $mediaPath = $fotoCierrePath ?: null;
 
         $resultado = $this->dispatcher->enviarMensaje(
             $grupoDestino->remote_jid,
