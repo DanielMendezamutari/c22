@@ -6,6 +6,7 @@ use App\Infrastructure\Persistence\Eloquent\Models\PlanillaCaja;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
 use App\Infrastructure\Persistence\Eloquent\Models\SucursalWhatsAppGrupo;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
+use App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeOutbound;
 use App\Services\WhatsAppOutboundDispatcherService;
 use Carbon\Carbon;
 use DomainException;
@@ -32,6 +33,29 @@ class GenerarYDespacharInformeAuditoriaUseCase
         $turno = Turno::with(['sucursal', 'barman'])->findOrFail($turnoId);
         $sucursal = $turno->sucursal;
         $planilla = PlanillaCaja::where('turno_id', $turnoId)->latest('id')->first();
+
+        // Control Anti-Spam: Si ya se despachó hace menos de 5 minutos y no es forzado, omitir
+        if (!$forzarReenvio) {
+            $reciente = WhatsAppMensajeOutbound::where('turno_id', $turnoId)
+                ->where('tipo_mensaje', 'informe_cierre_ejecutivo')
+                ->where('estado_envio', 'enviado')
+                ->where('created_at', '>=', now()->subMinutes(5))
+                ->latest('id')
+                ->first();
+
+            if ($reciente) {
+                return [
+                    'success' => true,
+                    'omitido' => true,
+                    'motivo' => 'Informe ya entregado hace menos de 5 minutos para este turno',
+                    'sucursal' => $sucursal->nombre,
+                    'grupo_destino' => 'Control de recaudado',
+                    'remote_jid' => $reciente->remote_jid,
+                    'ventas_declaradas' => (float) ($planilla?->total_ventas_declaradas_bs ?? 0),
+                    'efectivo_sobre' => (float) ($planilla?->monto_sobre_efectivo_bs ?? 0),
+                ];
+            }
+        }
 
         // Localizar grupo de destino: primero 'control_recaudo_global', si no hay, grupo global o grupo de la sucursal
         $grupoDestino = SucursalWhatsAppGrupo::where('tipo_auditoria', 'control_recaudo_global')
