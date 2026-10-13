@@ -886,5 +886,49 @@ class WhatsAppWebhookController extends Controller
             'inbound_ids' => array_slice($inboundIds, 0, 10),
         ]);
     }
+
+    /**
+     * Diagnóstico remoto de los logs del microservicio de WhatsApp y de Laravel.
+     * GET /api/v1/whatsapp/bot-logs
+     */
+    public function obtenerBotLogs(): JsonResponse
+    {
+        $rutas = [
+            base_path('../scripts/whatsapp_bot/bot_salida.log'),
+            base_path('scripts/whatsapp_bot/bot_salida.log'),
+            base_path('../scripts/whatsapp_bot/bot_watchdog.log'),
+            '/home/vnplktsg/c22.ribersoft.com/scripts/whatsapp_bot/bot_salida.log',
+            '/home/vnplktsg/c22.ribersoft.com/scripts/whatsapp_bot/bot_watchdog.log',
+        ];
+
+        $botSalidaLineas = [];
+        $logEncontrado = null;
+        foreach ($rutas as $r) {
+            if (file_exists($r)) {
+                $contenido = @file($r);
+                if (!empty($contenido)) {
+                    $botSalidaLineas = array_slice($contenido, -80);
+                    $logEncontrado = $r;
+                    break;
+                }
+            }
+        }
+
+        $laravelLog = storage_path('logs/laravel.log');
+        $laravelLineas = [];
+        if (file_exists($laravelLog)) {
+            $c = @file($laravelLog);
+            if (!empty($c)) {
+                $laravelLineas = array_slice($c, -50);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'log_path' => $logEncontrado,
+            'bot_log' => $botSalidaLineas,
+            'laravel_log' => $laravelLineas,
+        ]);
+    }
 }
 

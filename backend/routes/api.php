@@ -180,6 +180,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/whatsapp/cargar-zip', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'cargarZip']);
     Route::post('/whatsapp/reconectar', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'reconectar']);
     Route::get('/whatsapp/config-control-recaudo', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'configControlRecaudo']);
+    Route::get('/whatsapp/bot-logs', [\App\Infrastructure\Http\Controllers\Api\WhatsAppWebhookController::class, 'obtenerBotLogs']);
 });
 
 
