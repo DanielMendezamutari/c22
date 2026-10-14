@@ -102,9 +102,14 @@ async function refrescarWhitelistGrupos() {
 /**
  * Sincroniza todos los grupos donde participa el WhatsApp hacia Laravel para visualización web
  */
-async function sincronizarGruposDescubiertos(sock) {
+async function sincronizarGruposDescubiertos(sock, groupMetadataCache = null) {
   try {
     const chats = await sock.groupFetchAllParticipating();
+    if (groupMetadataCache && chats) {
+      for (const [jid, groupData] of Object.entries(chats)) {
+        groupMetadataCache.set(jid, groupData);
+      }
+    }
     const groupList = Object.values(chats).map(g => ({
       jid: g.id,
       name: g.subject,
@@ -144,6 +149,7 @@ async function startWhatsAppBot() {
   const whitelistTimer = setInterval(refrescarWhitelistGrupos, SYNC_INTERVAL_MS);
 
   const msgRetryCounterCache = new Map();
+  const groupMetadataCache = new Map();
 
   const sock = makeWASocket({
     version,
@@ -155,6 +161,18 @@ async function startWhatsAppBot() {
     printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
     markOnlineOnConnect: true,
+    cachedGroupMetadata: async (jid) => {
+      if (groupMetadataCache.has(jid)) {
+        return groupMetadataCache.get(jid);
+      }
+      try {
+        const metadata = await sock.groupMetadata(jid);
+        groupMetadataCache.set(jid, metadata);
+        return metadata;
+      } catch (err) {
+        return undefined;
+      }
+    },
     msgRetryCounterCache: {
       get: (key) => msgRetryCounterCache.get(key),
       set: (key, val) => msgRetryCounterCache.set(key, val),
@@ -169,6 +187,24 @@ async function startWhatsAppBot() {
   });
 
   sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('groups.update', async ([event]) => {
+    if (event?.id) {
+      try {
+        const metadata = await sock.groupMetadata(event.id);
+        groupMetadataCache.set(event.id, metadata);
+      } catch (e) {}
+    }
+  });
+
+  sock.ev.on('group-participants.update', async (event) => {
+    if (event?.id) {
+      try {
+        const metadata = await sock.groupMetadata(event.id);
+        groupMetadataCache.set(event.id, metadata);
+      } catch (e) {}
+    }
+  });
 
   // Monitor para desconexión remota solicitada desde la web
   let monitorDesconexionTimer = null;
@@ -221,9 +257,9 @@ async function startWhatsAppBot() {
       await reportarEstadoBot('conectado', null, telefono);
 
       // Sincronizar automáticamente grupos descubiertos a la base de datos
-      await sincronizarGruposDescubiertos(sock);
-      setTimeout(() => sincronizarGruposDescubiertos(sock), 6000);
-      setTimeout(() => sincronizarGruposDescubiertos(sock), 25000);
+      await sincronizarGruposDescubiertos(sock, groupMetadataCache);
+      setTimeout(() => sincronizarGruposDescubiertos(sock, groupMetadataCache), 6000);
+      setTimeout(() => sincronizarGruposDescubiertos(sock, groupMetadataCache), 25000);
 
       // Activar sondeo para escuchar si el usuario pide desconectar o sincronizar desde la Web
       let pingContador = 0;
@@ -480,6 +516,45 @@ const httpServer = http.createServer((req, res) => {
       }
     });
     return;
+  }
+
+  if (req.method === 'POST' && req.url === '/purgar-sender-keys') {
+    const secret = req.headers['x-internal-secret'] || req.headers['x-webhook-secret'];
+    if (secret !== WEBHOOK_SECRET) {
+      res.writeHead(403);
+      return res.end(JSON.stringify({ success: false, error: 'Unauthorized secret' }));
+    }
+
+    try {
+      console.log('[PURGA SENDER KEYS] Purgando sender-key* de auth_info_baileys para regenerar claves grupales limpias...');
+      if (fs.existsSync(AUTH_DIR)) {
+        const files = fs.readdirSync(AUTH_DIR);
+        let purgedCount = 0;
+        for (const file of files) {
+          if (file.startsWith('sender-key')) {
+            try {
+              fs.unlinkSync(path.join(AUTH_DIR, file));
+              purgedCount++;
+            } catch (e) {}
+          }
+        }
+        console.log(`[PURGA SENDER KEYS] ${purgedCount} archivos sender-key eliminados.`);
+      }
+
+      if (currentSock) {
+        try { currentSock.end(new Error('Purga sender keys completada')); } catch (e) {}
+      }
+      setTimeout(startWhatsAppBot, 2000);
+
+      res.writeHead(200);
+      return res.end(JSON.stringify({
+        success: true,
+        message: 'Sender keys purgadas y reconexión limpia iniciada',
+      }));
+    } catch (e) {
+      res.writeHead(500);
+      return res.end(JSON.stringify({ success: false, error: e.message }));
+    }
   }
 
   if (req.method === 'POST' && req.url === '/reconectar') {
