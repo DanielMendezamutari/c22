@@ -88,16 +88,19 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Como las encar
    - Si no hay suficiente información para determinar la sucursal, indica null en sucursal_sugerida.
 
 3. EXTRACCIÓN DE DATOS:
+   - es_cierre_turno: true si la imagen representa el cierre de turno / corte final de caja (planilla de rendición de caja o corte general del POS). false si es un gasto menor o comprobante aislado.
    - Si es "ticket_pos":
      * ventas_efectivo_bs: monto cobrado en efectivo según el POS.
      * ventas_qr_bs: monto cobrado en QR / transferencias según el POS.
      * total_cobros_bs: total cobrado por el POS.
      * fecha_hora: fecha y hora de emisión del ticket.
-     * servidor_cajero: nombre del cajero o servidor (ej. FANNY, CUEVAS).
+     * servidor_cajero: nombre del cajero o servidor (ej. FANNY, CUEVAS, RICHARD).
      * items_vendidos_count: cantidad total de ítems.
+     * es_cierre_turno: true si es reporte de corte Z, cierre de caja o resumen diario; false si es comanda simple.
    - Si es "planilla_caja":
+     * es_cierre_turno: true (siempre representa el cierre del turno).
      * total_ingresos_bs: suma total de ingresos declarados.
-     * total_ventas_declaradas_bs: total ventas de la noche.
+     * total_ventas_declaradas_bs: total ventas de la noche/día.
      * ventas_bebidas_bs: total ventas bebidas.
      * shampagne_ingreso_bs: total ingreso por champagne.
      * caja_chica_inicial_bs: monto inicial de caja chica.
@@ -110,8 +113,8 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Como las encar
      * qr_declarado_bs: monto declarado como cobrado o pagado por QR.
      * monto_sobre_efectivo_bs: efectivo físico entregado en sobre.
      * cajero_nombre: nombre de la cajera que firma o entrega el sobre.
-     * fecha: fecha del turno.
-     * turno: Día o Noche.
+     * fecha: fecha del turno (formato YYYY-MM-DD).
+     * turno: "Día" o "Noche" (si dice "Noche" o se envía entre las 18:00 y las 06:00, asignar "Noche"; si es diurno asignar "Día").
    - Si es "voucher_deposito": Extrae banco_nombre, monto_depositado_bs, nro_operacion, fecha_hora, titular_cuenta.
    - Si es "recibo_gasto": Extrae concepto (ej: "Comisión taxi", "Almuerzo", "Compra de hielo"), categoria ("taxi_personal", "hielo", "insumos_barra", "limpieza", "otros"), monto_bs, proveedor, fecha, nro_operacion, banco_nombre.
 
@@ -119,7 +122,7 @@ Responde ÚNICAMENTE un JSON con este formato exacto:
 {
   "clasificacion": "planilla_caja" | "ticket_pos" | "voucher_deposito" | "recibo_gasto" | "otro",
   "score_confianza": 0.95,
-  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Cuarta Casa" | null,
+  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Casa 22 VIP" | "Cuarta Casa" | null,
   "datos": { ...campos extraidos... }
 }
 PROMPT;

@@ -246,8 +246,21 @@ class WhatsAppWebhookController extends Controller
                 $turno = Turno::where('sucursal_id', $validated['sucursal_id'])->latest('id')->first();
             }
             if (!$turno) {
+                $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::where('sucursal_actual_id', $validated['sucursal_id'])->first()
+                    ?? \App\Infrastructure\Persistence\Eloquent\Models\Usuario::first();
+                if (!$user) {
+                    $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::create([
+                        'nombre' => 'Sistema',
+                        'apellido' => 'Autónomo',
+                        'rol' => 'barman',
+                        'pin_hash' => bcrypt('0000'),
+                        'sucursal_actual_id' => $validated['sucursal_id'],
+                        'activo' => true,
+                    ]);
+                }
                 $turno = Turno::create([
                     'sucursal_id' => $validated['sucursal_id'],
+                    'barman_id' => $user->id,
                     'tipo_turno' => 'noche',
                     'estado' => 'cerrado',
                     'fecha_apertura' => now(),

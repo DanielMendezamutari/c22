@@ -65,58 +65,103 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                 }
             }
 
-            // Asociar turno si tenemos sucursal y aún no hay turno
-            if ($inbound->sucursal_id && !$inbound->turno_id) {
-                $turno = Turno::where('sucursal_id', $inbound->sucursal_id)
-                    ->latest('id')
-                    ->first();
-                $inbound->turno_id = $turno?->id;
-            }
-
             $datos = $resultado['datos'] ?? [];
 
-            // Si es planilla de caja, persistir o actualizar en planillas_caja para alimentar la Conciliación Triangulada
-            if ($inbound->clasificacion_ia === 'planilla_caja') {
-                if (!$inbound->turno_id && $inbound->sucursal_id) {
-                    $turno = Turno::where('sucursal_id', $inbound->sucursal_id)->latest('id')->first();
-                    if (!$turno) {
+            // Detectar si la imagen representa el evento de cierre de turno (Planilla de Rendición o Corte Z del POS)
+            $esCierreTurno = ($inbound->clasificacion_ia === 'planilla_caja') ||
+                             ($inbound->clasificacion_ia === 'ticket_pos' && !empty($datos['es_cierre_turno']));
+
+            if ($esCierreTurno && $inbound->sucursal_id) {
+                $tipoTurno = strtolower($datos['turno'] ?? (now()->hour >= 6 && now()->hour < 18 ? 'dia' : 'noche'));
+                $fechaOperativa = $datos['fecha'] ?? now()->toDateString();
+
+                // 1. Buscar turno abierto en la sucursal para cerrarlo formalmente
+                $turno = Turno::where('sucursal_id', $inbound->sucursal_id)
+                    ->where('estado', 'abierto')
+                    ->latest('id')
+                    ->first();
+
+                if ($turno) {
+                    $turno->estado = 'cerrado';
+                    $turno->fecha_cierre = now();
+                    $turno->save();
+                } else {
+                    // 2. Si no hay turno abierto en el sistema (offline/RestoTech sin API), verificar si ya se creó uno cerrado hace menos de 2 horas
+                    $reciente = Turno::where('sucursal_id', $inbound->sucursal_id)
+                        ->where('estado', 'cerrado')
+                        ->where('tipo_turno', $tipoTurno)
+                        ->where('fecha_cierre', '>=', now()->subHours(2))
+                        ->latest('id')
+                        ->first();
+
+                    if ($reciente) {
+                        $turno = $reciente;
+                    } else {
+                        // 3. Crear turno autónomo para este cierre de turno con barman_id válido
+                        $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::where('sucursal_actual_id', $inbound->sucursal_id)->first()
+                            ?? \App\Infrastructure\Persistence\Eloquent\Models\Usuario::first();
+                        if (!$user) {
+                            $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::create([
+                                'nombre' => 'Sistema',
+                                'apellido' => 'Autónomo',
+                                'rol' => 'barman',
+                                'pin_hash' => bcrypt('0000'),
+                                'sucursal_actual_id' => $inbound->sucursal_id,
+                                'activo' => true,
+                            ]);
+                        }
+
                         $turno = Turno::create([
                             'sucursal_id' => $inbound->sucursal_id,
-                            'tipo_turno' => 'noche',
+                            'barman_id' => $user->id,
+                            'tipo_turno' => $tipoTurno,
                             'estado' => 'cerrado',
-                            'fecha_apertura' => now(),
+                            'fecha_apertura' => \Carbon\Carbon::parse($fechaOperativa)->setTime($tipoTurno === 'dia' ? 8 : 20, 0),
                             'fecha_cierre' => now(),
                         ]);
                     }
-                    $inbound->turno_id = $turno->id;
-                    $inbound->save();
                 }
 
-                if ($inbound->turno_id) {
-                    PlanillaCaja::updateOrCreate(
-                        ['turno_id' => $inbound->turno_id],
-                        [
-                            'sucursal_id' => $inbound->sucursal_id,
-                            'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
-                            'foto_url' => $inbound->media_path,
-                            'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
-                            'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
-                            'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
-                            'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
-                            'datos_ocr_json' => $datos,
-                            'estado_ocr' => 'procesado',
-                            'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
-                        ]
-                    );
+                $inbound->turno_id = $turno->id;
+                $inbound->save();
+            } else if ($inbound->sucursal_id && !$inbound->turno_id) {
+                // Para gastos, vouchers o tickets previos al cierre, asociar al turno abierto o al más reciente (últimas 6h)
+                $turno = Turno::where('sucursal_id', $inbound->sucursal_id)
+                    ->where(function ($q) {
+                        $q->where('estado', 'abierto')
+                          ->orWhere('fecha_cierre', '>=', now()->subHours(6));
+                    })
+                    ->latest('id')
+                    ->first();
+                $inbound->turno_id = $turno?->id;
+                $inbound->save();
+            }
 
-                    // Auto-despacho autónomo del informe de auditoría a WhatsApp (Control de Recaudo)
-                    try {
-                        $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
-                        $despachador->ejecutar($inbound->turno_id);
-                        Log::info("Informe de auditoría y cierre despachado automáticamente para Turno {$inbound->turno_id} a WhatsApp.");
-                    } catch (\Throwable $e) {
-                        Log::warning("No se pudo autodespachar informe de auditoría para Turno {$inbound->turno_id}: " . $e->getMessage());
-                    }
+            // Si es planilla de caja, persistir o actualizar en planillas_caja para alimentar la Conciliación Triangulada
+            if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->turno_id) {
+                PlanillaCaja::updateOrCreate(
+                    ['turno_id' => $inbound->turno_id],
+                    [
+                        'sucursal_id' => $inbound->sucursal_id,
+                        'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
+                        'foto_url' => $inbound->media_path,
+                        'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
+                        'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
+                        'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
+                        'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
+                        'datos_ocr_json' => $datos,
+                        'estado_ocr' => 'procesado',
+                        'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
+                    ]
+                );
+
+                // Auto-despacho autónomo del informe de auditoría a WhatsApp (Control de Recaudo)
+                try {
+                    $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+                    $despachador->ejecutar($inbound->turno_id, true);
+                    Log::info("Informe de auditoría y cierre despachado automáticamente para Turno {$inbound->turno_id} a WhatsApp.");
+                } catch (\Throwable $e) {
+                    Log::warning("No se pudo autodespachar informe de auditoría para Turno {$inbound->turno_id}: " . $e->getMessage());
                 }
             }
 
@@ -259,16 +304,22 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             return 3;
         }
 
-        // 4. Cuarta Casa / VIP / Joker -> ID 4
+        // 4. Casa 22 VIP -> ID 5 (o búsqueda por código C22VIP)
+        if (str_contains($todoNorm, 'vip') || str_contains($todoNorm, 'c22vip') || str_contains($todoNorm, 'gareca')) {
+            $sucVip = Sucursal::where('codigo', 'C22VIP')->orWhere('nombre', 'like', '%vip%')->first();
+            return $sucVip ? $sucVip->id : 5;
+        }
+
+        // 5. Cuarta Casa / Casa Nueva / Joker -> ID 8 (o búsqueda por código CASA4)
         if (
-            str_contains($todoNorm, 'vip') ||
-            str_contains($todoNorm, 'joker') ||
             str_contains($todoNorm, 'cuarta') ||
             str_contains($todoNorm, 'casa 4') ||
             str_contains($todoNorm, 'casa4') ||
-            str_contains($todoNorm, 'nueva')
+            str_contains($todoNorm, 'nueva') ||
+            str_contains($todoNorm, 'joker')
         ) {
-            return 4;
+            $suc4 = Sucursal::where('codigo', 'CASA4')->orWhere('nombre', 'like', '%cuarta%')->orWhere('nombre', 'like', '%nueva%')->first();
+            return $suc4 ? $suc4->id : 8;
         }
 
         return null;
