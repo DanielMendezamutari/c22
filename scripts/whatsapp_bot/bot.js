@@ -315,93 +315,138 @@ async function startWhatsAppBot() {
     }
   });
 
-  // Escucha de mensajes entrantes
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+  // Registro de mensajes procesados para deduplicación
+  const processedMessageIds = new Set();
+  function yaFueProcesado(id) {
+    if (!id) return false;
+    if (processedMessageIds.has(id)) return true;
+    processedMessageIds.add(id);
+    if (processedMessageIds.size > 2000) {
+      const first = processedMessageIds.values().next().value;
+      processedMessageIds.delete(first);
+    }
+    return false;
+  }
 
-    for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+  /**
+   * Procesa y retransmite un mensaje auditado hacia el webhook de Laravel
+   */
+  async function procesarMensajeEntrante(msg) {
+    if (!msg?.message || msg?.key?.fromMe) return;
 
-      if (msg.key?.id && msg.message) {
-        guardarMensajeEnStore(msg.key.id, msg.message);
-      }
+    const messageId = msg.key?.id;
+    if (yaFueProcesado(messageId)) {
+      return;
+    }
 
-      const remoteJid = msg.key.remoteJid;
-      if (!remoteJid) continue;
+    if (messageId && msg.message) {
+      guardarMensajeEnStore(messageId, msg.message);
+    }
 
-      // =========================================================================
-      // ZERO-LEAKAGE PRIVACY GUARD:
-      // Descarte en memoria local. Si el JID no es un grupo registrado en Laravel,
-      // NUNCA se procesa, nunca se almacena, nunca se retransmite.
-      // Protege 100% los chats personales y familiares del administrador.
-      // =========================================================================
-      if (!auditableGroupsMap.has(remoteJid)) {
-        continue;
-      }
+    const remoteJid = msg.key.remoteJid;
+    if (!remoteJid) return;
 
-      const grupoConfig = auditableGroupsMap.get(remoteJid);
-      const senderPhone = (msg.key.participant || remoteJid).split('@')[0].replace(/\D/g, '');
-      const senderName = msg.pushName || 'Encargada';
-      const timestamp = msg.messageTimestamp || Math.floor(Date.now() / 1000);
+    // =========================================================================
+    // ZERO-LEAKAGE PRIVACY GUARD:
+    // Descarte en memoria local. Si el JID no es un grupo registrado en Laravel,
+    // NUNCA se procesa, nunca se almacena, nunca se retransmite.
+    // Protege 100% los chats personales y familiares del administrador.
+    // =========================================================================
+    if (!auditableGroupsMap.has(remoteJid)) {
+      return;
+    }
 
-      const messageContent = msg.message;
-      let tipoMensaje = 'texto';
-      let caption = '';
-      let mimetype = 'text/plain';
-      let buffer = null;
+    const grupoConfig = auditableGroupsMap.get(remoteJid);
+    const participantRaw = msg.key.participant || remoteJid;
+    const senderPhone = participantRaw.split('@')[0].replace(/\D/g, '');
+    const senderName = msg.pushName || 'Encargada';
+    const timestamp = msg.messageTimestamp ? Number(msg.messageTimestamp) : Math.floor(Date.now() / 1000);
 
-      if (messageContent.imageMessage) {
-        tipoMensaje = 'imagen';
-        caption = messageContent.imageMessage.caption || '';
-        mimetype = messageContent.imageMessage.mimetype || 'image/jpeg';
-        try {
-          buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
-        } catch (err) {
-          console.error(`[ERROR DESCARGA IMAGEN] ${err.message}`);
-        }
-      } else if (messageContent.documentMessage) {
-        tipoMensaje = 'documento';
-        caption = messageContent.documentMessage.caption || messageContent.documentMessage.fileName || '';
-        mimetype = messageContent.documentMessage.mimetype || 'application/pdf';
-        try {
-          buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
-        } catch (err) {
-          console.error(`[ERROR DESCARGA DOC] ${err.message}`);
-        }
-      } else if (messageContent.extendedTextMessage) {
-        tipoMensaje = 'texto';
-        caption = messageContent.extendedTextMessage.text || '';
-      } else if (messageContent.conversation) {
-        tipoMensaje = 'texto';
-        caption = messageContent.conversation || '';
-      }
+    const messageContent = msg.message;
+    let tipoMensaje = 'texto';
+    let caption = '';
+    let mimetype = 'text/plain';
+    let buffer = null;
 
-      console.log(`[AUDITABLE MSG] Grupo: "${grupoConfig.nombre_grupo}" (${grupoConfig.sucursal_nombre}) | Emisor: ${senderName} (+${senderPhone}) | Tipo: ${tipoMensaje}`);
-
-      // Retransmisión al webhook de Laravel
+    if (messageContent.imageMessage) {
+      tipoMensaje = 'imagen';
+      caption = messageContent.imageMessage.caption || '';
+      mimetype = messageContent.imageMessage.mimetype || 'image/jpeg';
       try {
-        const payload = {
-          remote_jid: remoteJid,
-          sender_phone: senderPhone,
-          sender_name: senderName,
-          message_timestamp: timestamp,
-          tipo: tipoMensaje,
-          caption: caption,
-          mimetype: mimetype,
-          media_base64: buffer ? `data:${mimetype};base64,${buffer.toString('base64')}` : null,
-        };
-
-        const response = await axios.post(`${LARAVEL_API_URL}/webhook/whatsapp`, payload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Webhook-Secret': WEBHOOK_SECRET,
-          },
-          timeout: 30000,
-        });
-
-        console.log(`[WEBHOOK RETRANSMITIDO] Inbound ID: ${response.data.inbound_id} | Sucursal ID: ${response.data.sucursal_id} | Estado: ${response.data.status}`);
+        buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
       } catch (err) {
-        console.error(`[ERROR WEBHOOK] Falló retransmisión a Laravel: ${err.response?.data?.error || err.message}`);
+        console.error(`[ERROR DESCARGA IMAGEN] ${err.message}`);
+      }
+    } else if (messageContent.documentMessage) {
+      tipoMensaje = 'documento';
+      caption = messageContent.documentMessage.caption || messageContent.documentMessage.fileName || '';
+      mimetype = messageContent.documentMessage.mimetype || 'application/pdf';
+      try {
+        buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
+      } catch (err) {
+        console.error(`[ERROR DESCARGA DOC] ${err.message}`);
+      }
+    } else if (messageContent.extendedTextMessage) {
+      tipoMensaje = 'texto';
+      caption = messageContent.extendedTextMessage.text || '';
+    } else if (messageContent.conversation) {
+      tipoMensaje = 'texto';
+      caption = messageContent.conversation || '';
+    }
+
+    console.log(`[AUDITABLE MSG] Grupo: "${grupoConfig.nombre_grupo}" (${grupoConfig.sucursal_nombre}) | Emisor: ${senderName} (+${senderPhone}) | Tipo: ${tipoMensaje}`);
+
+    // Retransmisión al webhook de Laravel
+    try {
+      const payload = {
+        remote_jid: remoteJid,
+        sender_phone: senderPhone,
+        sender_name: senderName,
+        message_timestamp: timestamp,
+        tipo: tipoMensaje,
+        caption: caption,
+        mimetype: mimetype,
+        media_base64: buffer ? `data:${mimetype};base64,${buffer.toString('base64')}` : null,
+      };
+
+      const response = await axios.post(`${LARAVEL_API_URL}/webhook/whatsapp`, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Webhook-Secret': WEBHOOK_SECRET,
+        },
+        timeout: 30000,
+      });
+
+      console.log(`[WEBHOOK RETRANSMITIDO] Inbound ID: ${response.data.inbound_id} | Sucursal ID: ${response.data.sucursal_id} | Estado: ${response.data.status}`);
+    } catch (err) {
+      console.error(`[ERROR WEBHOOK] Falló retransmisión a Laravel: ${err.response?.data?.error || err.message}`);
+    }
+  }
+
+  // Escucha de mensajes entrantes (en vivo y sincronizados recientes)
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const msg of messages) {
+      if (type === 'append') {
+        const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) : 0;
+        if (msgTime < nowSec - 7200) continue; // Ignorar historial viejo de más de 2h
+      }
+      await procesarMensajeEntrante(msg);
+    }
+  });
+
+  // Escucha de reintentos descifrados exitosamente (Fix para cuando llega tras Signal Handshake)
+  sock.ev.on('messages.update', async (updates) => {
+    for (const { key, update } of updates) {
+      if (update?.message && !key.fromMe) {
+        console.log(`[RETRY DECRYPTED] Mensaje ${key.id} descifrado post-reintento en ${key.remoteJid}`);
+        const reconstructedMsg = {
+          key,
+          message: update.message,
+          messageTimestamp: Math.floor(Date.now() / 1000),
+          pushName: update.pushName || 'Encargada',
+        };
+        await procesarMensajeEntrante(reconstructedMsg);
       }
     }
   });
