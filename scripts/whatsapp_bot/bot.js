@@ -35,6 +35,17 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'warn' });
 // Whitelist en memoria de grupos auditables (Zero-Leakage Guard)
 let auditableGroupsMap = new Map(); // remote_jid -> { sucursal_id, sucursal_nombre, tipo_auditoria }
 
+// Almacén en memoria de mensajes para resolver peticiones de reintento/cifrado (Fix: "Esperando mensaje. Esto puede tomar tiempo")
+const messageStore = new Map();
+function guardarMensajeEnStore(keyId, message) {
+  if (!keyId || !message) return;
+  messageStore.set(keyId, message);
+  if (messageStore.size > 1000) {
+    const firstKey = messageStore.keys().next().value;
+    messageStore.delete(firstKey);
+  }
+}
+
 /**
  * Notifica el estado del bot a Laravel (QR en base64, conexión o desconexión)
  */
@@ -143,12 +154,18 @@ async function startWhatsAppBot() {
     logger,
     printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
+    markOnlineOnConnect: true,
     msgRetryCounterCache: {
       get: (key) => msgRetryCounterCache.get(key),
       set: (key, val) => msgRetryCounterCache.set(key, val),
       del: (key) => msgRetryCounterCache.delete(key),
     },
-    getMessage: async () => undefined,
+    getMessage: async (key) => {
+      if (key?.id && messageStore.has(key.id)) {
+        return messageStore.get(key.id);
+      }
+      return undefined;
+    },
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -268,6 +285,10 @@ async function startWhatsAppBot() {
 
     for (const msg of messages) {
       if (!msg.message || msg.key.fromMe) continue;
+
+      if (msg.key?.id && msg.message) {
+        guardarMensajeEnStore(msg.key.id, msg.message);
+      }
 
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid) continue;
@@ -438,6 +459,10 @@ const httpServer = http.createServer((req, res) => {
           }
         } else {
           sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });
+        }
+
+        if (sentMsg?.key?.id && sentMsg?.message) {
+          guardarMensajeEnStore(sentMsg.key.id, sentMsg.message);
         }
 
         console.log(`[OUTBOUND ENVIADO] Mensaje despachado a ${remote_jid} (ID: ${sentMsg?.key?.id})`);
