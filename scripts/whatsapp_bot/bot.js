@@ -4,6 +4,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
+  proto,
 } from '@whiskeysockets/baileys';
 import terminalQr from 'qrcode-terminal';
 import QRCode from 'qrcode';
@@ -182,7 +183,7 @@ async function startWhatsAppBot() {
       if (key?.id && messageStore.has(key.id)) {
         return messageStore.get(key.id);
       }
-      return undefined;
+      return proto.Message.fromObject({});
     },
   });
 
@@ -332,7 +333,15 @@ async function startWhatsAppBot() {
    * Procesa y retransmite un mensaje auditado hacia el webhook de Laravel
    */
   async function procesarMensajeEntrante(msg) {
-    if (!msg?.message || msg?.key?.fromMe) return;
+    if (!msg?.message) return;
+
+    // Si viene de mi propia cuenta (fromMe: true), solo ignorar si es texto autogenerado por el bot
+    if (msg.key?.fromMe) {
+      const txt = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+      if (txt.includes('🤖 [C22 BOT AUDITOR]') || txt.includes('[AUDITORÍA FORENSE]') || txt.includes('Cifrado y sincronización')) {
+        return; // Ignorar informe o aviso emitido por el propio bot para evitar bucle
+      }
+    }
 
     const messageId = msg.key?.id;
     if (yaFueProcesado(messageId)) {

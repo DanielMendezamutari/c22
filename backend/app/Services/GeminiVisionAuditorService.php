@@ -73,28 +73,39 @@ Realiza las siguientes 3 tareas:
    - "recibo_gasto": Recibos físicos de gastos (taxis, hielo, insumos) O capturas de pantalla de pagos QR/transferencias de GASTOS menores de caja chica (ej. pago de taxi por QR, comisión de traslado, almuerzo del personal, compras de emergencia). NUNCA clasifiques un gasto como planilla_caja.
    - "otro": Fotografías de personas, botellas, memes o imágenes no contables.
 
-2. DETECCIÓN INTELIGENTE DE CASA / SUCURSAL (REGLA CRÍTICA):
-En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Como las encargadas o cajeros envían fotos de comprobantes de las diferentes casas, DEBES identificar obligatoriamente a cuál de las sedes pertenece el documento inspeccionando el texto del mensaje, remitente, membrete o notas:
+2. DETECCIÓN INTELIGENTE DE CASA / SUCURSAL Y PERSONAL (REGLA CRÍTICA):
+En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identificar a cuál de las sedes pertenece el documento inspeccionando membrete, notas manuscritas, cajeros y personal:
    - "Casa Belén (C22)":
-     * En tickets figura "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22" o "CASA22".
-     * En planillas manuscritas aparece escrito arriba, en notas o márgenes "Belen", "Belén" o "C22".
-     * En nombres de cajeros, meseros o firmas figuran "FANNY", "FANNY MORON", "CUEVAS" o "CUEVAS 25".
+     * Membrete: "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22" o "CASA22".
+     * Cajera Oficial de Cierre: "FANNY", "FANNY MORON", "FANNY MORÓN".
+     * Barmans y Garzones (NO cajeros): "SERGIO" (Barman), "CUEVAS" / "CUEVAS 25" (Garzón), "MARÍA ROXANA" (Barman).
    - "Casa Corona":
-     * En tickets, sellos, membretes, mensajes o notas aparece "CORONA", "CASA CORONA" o "CORON".
+     * Membrete: "CORONA", "CASA CORONA", "CORON".
+     * Cajera Oficial de Cierre: "SISIELE", "SISIELLA", "SISIELA".
+     * Garzones/Barmans: "JHON", "CORONA NOCHE".
    - "Madan":
-     * En tickets, mensajes, notas o membretes aparece "MADAN" o "MADAM".
+     * Membrete o notas: "MADAN", "MADAM", "MADAMES".
+   - "Casa 22 VIP":
+     * Membrete o notas: "VIP", "C22VIP", "ADM VIP", "PRIVADO".
+     * Cajera Oficial de Cierre: "MABEL".
+     * Barmans y Garzones: "RICHARD" (Barman), "GAEL" (Barman), "CUEVA".
    - "Cuarta Casa":
-     * En tickets, mensajes o notas aparece "VIP", "C22VIP", "JOKER", "CASA 4", "CASA NUEVA" o "CUARTA CASA".
+     * Membrete o notas: "CASA 4", "CASA NUEVA", "CIERRES DE INVENTARIO CASA NUEVA", "EL JEFE", "JOKER".
    - Si no hay suficiente información para determinar la sucursal, indica null en sucursal_sugerida.
 
-3. EXTRACCIÓN DE DATOS:
+3. EXTRACCIÓN DE DATOS Y REGLAS DE NEGOCIO:
    - es_cierre_turno: true si la imagen representa el cierre de turno / corte final de caja (planilla de rendición de caja o corte general del POS). false si es un gasto menor o comprobante aislado.
+   - DISTINCIÓN DE PERSONAL: NUNCA confundas a barmans o garzones con cajeros. Si figura "Sergio", "Richard", "Gael", "Jhon", son barmans/garzones; cualquier monto anotado a su nombre es un egreso (pago de turno, adelanto o comisión de barra), JAMÁS el total de ventas ni el nombre del cajero.
+   - REGLAS DE COMISIONES Y DEDUCCIONES:
+     * Pago a chicas: 50% de las bebidas de compañía, 60% si hay pieza (la casa se queda con el 40%).
+     * Deducción de limpieza: Si una chica genera >= 100 Bs, se le descuenta 10 Bs de limpieza, lo cual entra como ingreso de la casa.
+     * Ventas sin comandar: Si en la planilla o sobre figura notas como "Wisk 80 sin comandar" o bebidas no comandadas en POS, regístralo explícitamente y reporta la fuga.
    - Si es "ticket_pos":
      * ventas_efectivo_bs: monto cobrado en efectivo según el POS.
      * ventas_qr_bs: monto cobrado en QR / transferencias según el POS.
      * total_cobros_bs: total cobrado por el POS.
      * fecha_hora: fecha y hora de emisión del ticket.
-     * servidor_cajero: nombre del cajero o servidor (ej. FANNY, CUEVAS, RICHARD).
+     * servidor_cajero: nombre del cajero o servidor (ej. FANNY, SISIELLA, MABEL).
      * items_vendidos_count: cantidad total de ítems.
      * es_cierre_turno: true si es reporte de corte Z, cierre de caja o resumen diario; false si es comanda simple.
    - Si es "planilla_caja":
@@ -108,13 +119,14 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Como las encar
      * total_gastos_declarados_bs: suma de egresos.
      * pago_chicas_bs: total pagado a chicas.
      * pago_garzones_bs: total pagado a garzones.
-     * pago_personal_bs: total pagado a personal (caja, limpieza).
+     * pago_personal_bs: total pagado a personal (barmans, garzones, limpieza).
      * gastos_operativos_bs: suma de hielo, taxis, compras.
      * qr_declarado_bs: monto declarado como cobrado o pagado por QR.
      * monto_sobre_efectivo_bs: efectivo físico entregado en sobre.
-     * cajero_nombre: nombre de la cajera que firma o entrega el sobre.
+     * cajero_nombre: nombre de la cajera oficial que rinde ("Mabel", "Fanny Moron", "Sisiela").
      * fecha: fecha del turno (formato YYYY-MM-DD).
      * turno: "Día" o "Noche" (si dice "Noche" o se envía entre las 18:00 y las 06:00, asignar "Noche"; si es diurno asignar "Día").
+     * ventas_sin_comandar_bs: monto en Bs de bebidas sin comandar si está anotado en sobre/planilla (ej. 80 para whisky sin comandar).
    - Si es "voucher_deposito": Extrae banco_nombre, monto_depositado_bs, nro_operacion, fecha_hora, titular_cuenta.
    - Si es "recibo_gasto": Extrae concepto (ej: "Comisión taxi", "Almuerzo", "Compra de hielo"), categoria ("taxi_personal", "hielo", "insumos_barra", "limpieza", "otros"), monto_bs, proveedor, fecha, nro_operacion, banco_nombre.
 
