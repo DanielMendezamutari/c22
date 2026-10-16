@@ -10,7 +10,8 @@
 | [002-test-suite-e2e](002-test-suite-e2e/spec.md) | Suite E2E backend + Flutter + runner | 3 | ✅ Implementado (26 tests backend en verde) |
 | [003-seguridad-api-sanctum](003-seguridad-api-sanctum/spec.md) | Autenticación obligatoria, eliminación de puertas traseras y secretos, autorización por rol | 4 | 📋 Plan y tareas listos (35) |
 | [004-informes-cierre-encargadas](004-informes-cierre-encargadas/spec.md) | Informe de recaudo solo desde la planilla de la encargada; sin cifras inventadas; bot Baileys 7 (LID) sin "Esperando mensaje" | 4 | 🔧 Implementado en local, pendiente de despliegue |
-| 005 | _Próxima_: documentar trabajo post-US38 (ver deriva) | — | ⏳ Pendiente |
+| [005-conciliacion-cierre-ia](005-conciliacion-cierre-ia/spec.md) | Lote de cierre completo, extracción estructurada por documento, motor de conciliación determinista, reglas de pago, informe para administración, banco de precisión IA | 5 | 📝 Spec en revisión |
+| 006 | _Próxima_: documentar trabajo post-US38 (ver deriva) | — | ⏳ Pendiente |
 
 ## Módulos de 001 por área
 

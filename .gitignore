@@ -57,3 +57,7 @@ scripts/sync_agent/last_sync.json
 scripts/sync_agent/offline_buffer.json
 scripts/whatsapp_bot/outbound_store.json
 scripts/whatsapp_bot/outbound_store.json.tmp
+
+# Cierres reales usados como casos de prueba (datos personales y bancarios)
+specs/*/fixtures/
+backend/tests/fixtures/cierres_reales/
