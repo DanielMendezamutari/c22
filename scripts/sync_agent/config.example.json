@@ -1,0 +1,10 @@
+{
+    "api_url": "https://c22.ribersoft.com/api/v1",
+    "branch_token": "TOKEN_DE_LA_SUCURSAL",
+    "sql_server": "localhost\\SQLEXPRESS",
+    "database": "NOMBRE_BASE_DE_DATOS",
+    "db_user": "USUARIO_SQL",
+    "db_password": "CAMBIAR",
+    "poll_interval_seconds": 300,
+    "batch_size": 200
+}

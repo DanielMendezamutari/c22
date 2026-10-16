@@ -49,3 +49,9 @@ template_reference/
 scripts/whatsapp_bot/node_modules/
 scripts/whatsapp_bot/auth_info_baileys/
 scripts/whatsapp_bot/.env
+
+# Agente POS (credenciales locales de cada caja)
+scripts/sync_agent/config.json
+scripts/sync_agent/sync_log.txt
+scripts/sync_agent/last_sync.json
+scripts/sync_agent/offline_buffer.json
