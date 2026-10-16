@@ -5,6 +5,10 @@ import makeWASocket, {
   downloadMediaMessage,
   fetchLatestBaileysVersion,
   proto,
+  BufferJSON,
+  normalizeMessageContent,
+  isPnUser,
+  generateMessageIDV2,
 } from '@whiskeysockets/baileys';
 import terminalQr from 'qrcode-terminal';
 import QRCode from 'qrcode';
@@ -27,8 +31,47 @@ const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '300000', 10);
 const AUTH_DIR = process.env.AUTH_DIR || './auth_info_baileys';
 const IS_LIST_GROUPS_MODE = process.argv.includes('--list-groups');
 const BOT_HTTP_PORT = parseInt(process.env.BOT_HTTP_PORT || '3001', 10);
+const OUTBOUND_STORE_PATH = process.env.OUTBOUND_STORE_PATH || path.join(__dirname, 'outbound_store.json');
 
 let currentSock = null;
+let activeSock = null;
+let socketGeneration = 0;
+let restartTimer = null;
+let whitelistTimer = null;
+let monitorDesconexionTimer = null;
+
+function limpiarIntervals() {
+  clearInterval(whitelistTimer);
+  clearInterval(monitorDesconexionTimer);
+  whitelistTimer = null;
+  monitorDesconexionTimer = null;
+}
+
+function reiniciarBot(delayMs, motivo) {
+  if (restartTimer !== null) return;
+
+  const generation = ++socketGeneration;
+  limpiarIntervals();
+  const anterior = activeSock;
+  activeSock = null;
+  currentSock = null;
+  if (anterior) {
+    try { anterior.end(new Error(motivo)); } catch (err) {
+      console.warn(`[REINICIO WARN] No se pudo cerrar el socket anterior: ${err.message}`);
+    }
+    anterior.ev.removeAllListeners?.();
+  }
+
+  console.log(`[REINICIO] ${motivo}. Nueva conexión en ${delayMs} ms (generación ${generation}).`);
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    startWhatsAppBot(generation).catch((err) => {
+      if (generation !== socketGeneration) return;
+      console.error('[ERROR INICIANDO BOT]', err);
+      reiniciarBot(5000, 'Error al iniciar conexión');
+    });
+  }, delayMs);
+}
 
 // Logger silencioso
 const logger = pino({ level: process.env.LOG_LEVEL || 'warn' });
@@ -36,14 +79,42 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'warn' });
 // Whitelist en memoria de grupos auditables (Zero-Leakage Guard)
 let auditableGroupsMap = new Map(); // remote_jid -> { sucursal_id, sucursal_nombre, tipo_auditoria }
 
-// Almacén en memoria de mensajes para resolver peticiones de reintento/cifrado (Fix: "Esperando mensaje. Esto puede tomar tiempo")
+// Solo mensajes enviados: persisten entre reconexiones y reinicios del proceso.
 const messageStore = new Map();
+try {
+  const guardados = JSON.parse(fs.readFileSync(OUTBOUND_STORE_PATH, 'utf8'), BufferJSON.reviver);
+  for (const [id, message] of Object.entries(guardados).slice(-500)) {
+    messageStore.set(id, message);
+  }
+} catch (err) {
+  if (err.code !== 'ENOENT') console.warn(`[OUTBOUND STORE WARN] No se pudo cargar el almacén: ${err.message}`);
+}
+
+// IDs generados antes de enviar: Baileys emite el eco propio (process.nextTick) antes de que
+// sendMessage resuelva, así que el ID debe conocerse de antemano para no re-ingestar el informe.
+const idsPropios = new Set();
+function nuevoIdPropio() {
+  const id = generateMessageIDV2(currentSock?.user?.id);
+  idsPropios.add(id);
+  if (idsPropios.size > 1000) idsPropios.delete(idsPropios.values().next().value);
+  return id;
+}
+
 function guardarMensajeEnStore(keyId, message) {
   if (!keyId || !message) return;
+  messageStore.delete(keyId);
   messageStore.set(keyId, message);
-  if (messageStore.size > 1000) {
+  while (messageStore.size > 500) {
     const firstKey = messageStore.keys().next().value;
     messageStore.delete(firstKey);
+  }
+  // Escritura inmediata y atómica: el informe debe poder reenviarse aunque el proceso caiga
+  // justo después de responder "enviado" (los envíos son pocos, el costo es despreciable).
+  try {
+    fs.writeFileSync(`${OUTBOUND_STORE_PATH}.tmp`, JSON.stringify(Object.fromEntries(messageStore), BufferJSON.replacer));
+    fs.renameSync(`${OUTBOUND_STORE_PATH}.tmp`, OUTBOUND_STORE_PATH);
+  } catch (err) {
+    console.error(`[OUTBOUND STORE ERROR] No se pudo persistir el almacén: ${err.message}`);
   }
 }
 
@@ -136,7 +207,8 @@ async function sincronizarGruposDescubiertos(sock, groupMetadataCache = null) {
 /**
  * Conexión principal con Baileys
  */
-async function startWhatsAppBot() {
+async function startWhatsAppBot(generation) {
+  if (generation !== socketGeneration) return;
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
   }
@@ -147,7 +219,8 @@ async function startWhatsAppBot() {
 
   // Sincronizar whitelist inicial
   await refrescarWhitelistGrupos();
-  const whitelistTimer = setInterval(refrescarWhitelistGrupos, SYNC_INTERVAL_MS);
+  if (generation !== socketGeneration) return;
+  whitelistTimer = setInterval(refrescarWhitelistGrupos, SYNC_INTERVAL_MS);
 
   const msgRetryCounterCache = new Map();
   const groupMetadataCache = new Map();
@@ -181,11 +254,12 @@ async function startWhatsAppBot() {
     },
     getMessage: async (key) => {
       if (key?.id && messageStore.has(key.id)) {
-        return messageStore.get(key.id);
+        return proto.Message.fromObject(messageStore.get(key.id));
       }
-      return proto.Message.fromObject({});
+      return undefined;
     },
   });
+  activeSock = sock;
 
   sock.ev.on('creds.update', saveCreds);
 
@@ -208,9 +282,10 @@ async function startWhatsAppBot() {
   });
 
   // Monitor para desconexión remota solicitada desde la web
-  let monitorDesconexionTimer = null;
+  let desconexionSolicitada = false;
 
   sock.ev.on('connection.update', async (update) => {
+    if (generation !== socketGeneration) return;
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -227,26 +302,31 @@ async function startWhatsAppBot() {
       }
     }
 
+    if (generation !== socketGeneration) return;
     if (connection === 'close') {
       currentSock = null;
-      clearInterval(whitelistTimer);
-      if (monitorDesconexionTimer) clearInterval(monitorDesconexionTimer);
+      limpiarIntervals();
+      if (desconexionSolicitada) {
+        await reportarEstadoBot('desconectado', null, null);
+        return;
+      }
 
       const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`[CONEXIÓN CERRADA] Código: ${statusCode}. Reintentando reconexión: ${shouldReconnect}`);
+      console.log(`[CONEXIÓN CERRADA] Código: ${statusCode}.`);
 
-      await reportarEstadoBot('desconectado', null, null);
-
-      if (shouldReconnect) {
-        setTimeout(startWhatsAppBot, 5000);
-      } else {
+      if (statusCode === DisconnectReason.connectionReplaced) {
+        console.warn('[CONFLICTO] Otra instancia usa esta sesión');
+        reiniciarBot(60000, 'Conflicto de sesión; esperar 60 segundos');
+      } else if (statusCode === DisconnectReason.loggedOut) {
         console.warn('[SESIÓN CERRADA] Sesión invalidada. Limpiando credenciales para nuevo QR...');
         try {
           fs.rmSync(AUTH_DIR, { recursive: true, force: true });
         } catch (e) {}
-        setTimeout(startWhatsAppBot, 3000);
+        reiniciarBot(3000, 'Sesión cerrada; solicitar nuevo QR');
+      } else {
+        reiniciarBot(5000, 'Conexión cerrada');
       }
+      await reportarEstadoBot('desconectado', null, null);
     } else if (connection === 'open') {
       currentSock = sock;
       const telefono = (sock.user?.id || '').split(':')[0].split('@')[0] || 'Conectado';
@@ -256,38 +336,51 @@ async function startWhatsAppBot() {
 
       // Notificar conexión a Laravel con número
       await reportarEstadoBot('conectado', null, telefono);
+      if (generation !== socketGeneration) return;
 
       // Sincronizar automáticamente grupos descubiertos a la base de datos
       await sincronizarGruposDescubiertos(sock, groupMetadataCache);
-      setTimeout(() => sincronizarGruposDescubiertos(sock, groupMetadataCache), 6000);
-      setTimeout(() => sincronizarGruposDescubiertos(sock, groupMetadataCache), 25000);
+      if (generation !== socketGeneration) return;
+      setTimeout(() => {
+        if (generation === socketGeneration) sincronizarGruposDescubiertos(sock, groupMetadataCache);
+      }, 6000);
+      setTimeout(() => {
+        if (generation === socketGeneration) sincronizarGruposDescubiertos(sock, groupMetadataCache);
+      }, 25000);
 
       // Activar sondeo para escuchar si el usuario pide desconectar o sincronizar desde la Web
       let pingContador = 0;
+      clearInterval(monitorDesconexionTimer);
       monitorDesconexionTimer = setInterval(async () => {
+        if (generation !== socketGeneration || desconexionSolicitada) return;
         try {
           pingContador++;
           // Heartbeat periódico a Laravel cada 60 segundos para evitar que expire la caché
           if (pingContador % 6 === 0) {
             await reportarEstadoBot('conectado', null, telefono);
           }
+          if (generation !== socketGeneration) return;
 
           const res = await axios.get(`${LARAVEL_API_URL}/whatsapp/bot-status`, {
             headers: { 'X-Webhook-Secret': WEBHOOK_SECRET },
             timeout: 5000,
           });
+          if (generation !== socketGeneration || desconexionSolicitada) return;
           if (res.data?.data?.desconectar_solicitado === true) {
             console.log('[COMANDO WEB] Desconexión solicitada desde la Plataforma Web.');
-            clearInterval(monitorDesconexionTimer);
+            desconexionSolicitada = true;
+            limpiarIntervals();
             try {
               await sock.logout();
             } catch (e) {
-              sock.end(new Error('Logout forzado'));
+              console.warn(`[LOGOUT WARN] ${e.message}`);
             }
+            if (generation !== socketGeneration) return;
             try {
               fs.rmSync(AUTH_DIR, { recursive: true, force: true });
             } catch (e) {}
-            setTimeout(startWhatsAppBot, 3000);
+            reiniciarBot(3000, 'Desconexión solicitada desde la web');
+            return;
           }
 
           if (res.data?.data?.sync_grupos_solicitado === true) {
@@ -334,10 +427,13 @@ async function startWhatsAppBot() {
    */
   async function procesarMensajeEntrante(msg) {
     if (!msg?.message) return;
+    const content = normalizeMessageContent(msg.message);
+    if (!content) return;
 
-    // Si viene de mi propia cuenta (fromMe: true), solo ignorar si es texto autogenerado por el bot
+    // Ignorar envíos del bot por ID, conservando el filtro de textos existente.
     if (msg.key?.fromMe) {
-      const txt = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+      if (idsPropios.has(msg.key.id) || messageStore.has(msg.key.id)) return;
+      const txt = content.conversation || content.extendedTextMessage?.text || '';
       if (txt.includes('🤖 [C22 BOT AUDITOR]') || txt.includes('[AUDITORÍA FORENSE]') || txt.includes('Cifrado y sincronización')) {
         return; // Ignorar informe o aviso emitido por el propio bot para evitar bucle
       }
@@ -346,10 +442,6 @@ async function startWhatsAppBot() {
     const messageId = msg.key?.id;
     if (yaFueProcesado(messageId)) {
       return;
-    }
-
-    if (messageId && msg.message) {
-      guardarMensajeEnStore(messageId, msg.message);
     }
 
     const remoteJid = msg.key.remoteJid;
@@ -366,41 +458,42 @@ async function startWhatsAppBot() {
     }
 
     const grupoConfig = auditableGroupsMap.get(remoteJid);
-    const participantRaw = msg.key.participant || remoteJid;
-    const senderPhone = participantRaw.split('@')[0].replace(/\D/g, '');
+    const participantRaw = msg.key.participantAlt && isPnUser(msg.key.participantAlt)
+      ? msg.key.participantAlt
+      : msg.key.participant || remoteJid;
+    const senderPhone = participantRaw.split('@')[0].split(':')[0];
     const senderName = msg.pushName || 'Encargada';
     const timestamp = msg.messageTimestamp ? Number(msg.messageTimestamp) : Math.floor(Date.now() / 1000);
 
-    const messageContent = msg.message;
     let tipoMensaje = 'texto';
     let caption = '';
     let mimetype = 'text/plain';
     let buffer = null;
 
-    if (messageContent.imageMessage) {
+    if (content.imageMessage) {
       tipoMensaje = 'imagen';
-      caption = messageContent.imageMessage.caption || '';
-      mimetype = messageContent.imageMessage.mimetype || 'image/jpeg';
+      caption = content.imageMessage.caption || '';
+      mimetype = content.imageMessage.mimetype || 'image/jpeg';
       try {
         buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
       } catch (err) {
         console.error(`[ERROR DESCARGA IMAGEN] ${err.message}`);
       }
-    } else if (messageContent.documentMessage) {
+    } else if (content.documentMessage) {
       tipoMensaje = 'documento';
-      caption = messageContent.documentMessage.caption || messageContent.documentMessage.fileName || '';
-      mimetype = messageContent.documentMessage.mimetype || 'application/pdf';
+      caption = content.documentMessage.caption || content.documentMessage.fileName || '';
+      mimetype = content.documentMessage.mimetype || 'application/pdf';
       try {
         buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
       } catch (err) {
         console.error(`[ERROR DESCARGA DOC] ${err.message}`);
       }
-    } else if (messageContent.extendedTextMessage) {
+    } else if (content.extendedTextMessage) {
       tipoMensaje = 'texto';
-      caption = messageContent.extendedTextMessage.text || '';
-    } else if (messageContent.conversation) {
+      caption = content.extendedTextMessage.text || '';
+    } else if (content.conversation) {
       tipoMensaje = 'texto';
-      caption = messageContent.conversation || '';
+      caption = content.conversation || '';
     }
 
     console.log(`[AUDITABLE MSG] Grupo: "${grupoConfig.nombre_grupo}" (${grupoConfig.sucursal_nombre}) | Emisor: ${senderName} (+${senderPhone}) | Tipo: ${tipoMensaje}`);
@@ -535,20 +628,20 @@ const httpServer = http.createServer((req, res) => {
                 mimetype: 'application/pdf',
                 fileName: 'informe_cierre_auditoria.pdf',
                 caption: texto || '',
-              });
+              }, { messageId: nuevoIdPropio() });
             } else {
               const imgPayload = mediaBuffer ? mediaBuffer : { url: media_url };
               sentMsg = await currentSock.sendMessage(remote_jid, {
                 image: imgPayload,
                 caption: texto || '',
-              });
+              }, { messageId: nuevoIdPropio() });
             }
           } catch (mediaErr) {
             console.warn(`[OUTBOUND MEDIA FALLBACK] Error al enviar media (${mediaErr.message}), despachando solo texto...`);
-            sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });
+            sentMsg = await currentSock.sendMessage(remote_jid, { text: texto }, { messageId: nuevoIdPropio() });
           }
         } else {
-          sentMsg = await currentSock.sendMessage(remote_jid, { text: texto });
+          sentMsg = await currentSock.sendMessage(remote_jid, { text: texto }, { messageId: nuevoIdPropio() });
         }
 
         if (sentMsg?.key?.id && sentMsg?.message) {
@@ -595,10 +688,7 @@ const httpServer = http.createServer((req, res) => {
         console.log(`[PURGA SENDER KEYS] ${purgedCount} archivos sender-key eliminados.`);
       }
 
-      if (currentSock) {
-        try { currentSock.end(new Error('Purga sender keys completada')); } catch (e) {}
-      }
-      setTimeout(startWhatsAppBot, 2000);
+      reiniciarBot(2000, 'Purga sender keys completada');
 
       res.writeHead(200);
       return res.end(JSON.stringify({
@@ -620,10 +710,7 @@ const httpServer = http.createServer((req, res) => {
 
     try {
       console.log('[RECONEXIÓN MANUAL] Solicitada vía HTTP local');
-      if (currentSock) {
-        try { currentSock.end(new Error('Reconexión manual')); } catch (e) {}
-      }
-      setTimeout(startWhatsAppBot, 2000);
+      reiniciarBot(2000, 'Reconexión manual');
       res.writeHead(200);
       return res.end(JSON.stringify({ success: true, message: 'Reconexión iniciada' }));
     } catch (e) {
@@ -641,7 +728,5 @@ httpServer.listen(BOT_HTTP_PORT, '127.0.0.1', () => {
 });
 
 // Iniciar microservicio
-startWhatsAppBot().catch((err) => {
-  console.error('[FATAL ERROR IN BOT]', err);
-});
+reiniciarBot(0, 'Inicio del microservicio');
 

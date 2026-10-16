@@ -55,3 +55,5 @@ scripts/sync_agent/config.json
 scripts/sync_agent/sync_log.txt
 scripts/sync_agent/last_sync.json
 scripts/sync_agent/offline_buffer.json
+scripts/whatsapp_bot/outbound_store.json
+scripts/whatsapp_bot/outbound_store.json.tmp
