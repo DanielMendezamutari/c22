@@ -2,7 +2,7 @@
 
 **Feature Branch**: `005-conciliacion-cierre-ia`
 **Created**: 2026-10-16
-**Status**: Draft
+**Status**: Approved (clarificaciones del dueño 2026-10-16)
 **Input**: "Cada encargada pone su nombre en cada planilla; de ahí debe salir la información. Las encargadas envían a diferentes grupos y mezclan todo (taxis, pagos de chicas…). Quiero entrenar a la IA para un reporte 99–100% confiable y saber si hay pérdidas o alguien está robando, con un informe para administración bien estructurado." Análisis de dos cierres reales en [research.md](research.md).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -104,8 +104,17 @@ Como administrador, quiero un banco de cierres reales verificados para medir qu�
 - **SC-003**: ≥ 95% de campos leídos correctamente en el banco dorado (se medirá; meta 99% con más casos).
 - **SC-004**: El dueño entiende el estado de cada cierre en menos de 30 segundos de lectura del informe.
 
+## Clarifications
+
+### Session 2026-10-16
+- Q: Base de encargadas y bonos → A: Provisional 100 Bs día / 50 Bs noche hasta que administración aclare; el informe muestra siempre una alerta de "base provisional". Bonos sin configurar → alerta.
+- Q: Pago de garzones de día (Cuevas 127) → A: Se suman las ventas de bebidas de **todas las casas** del turno de día, se saca el 5% y se reparte entre **todos** los garzones/barmans de día (de todas las casas). Solo se verifica cuando cierran las 4.
+- Q: Umbral de limpieza → A: Se cobra cuando la chica genera **más de** 100 Bs (una vez por chica).
+- Q: Personal (garzón, seguridad, encargada) que cobra comisión de chica → A: Permitido, pero se marca como alerta.
+- Q: Cuenta del QR → A: Cuenta del dueño (configurable; no se versiona).
+
 ## Assumptions
-- Base de encargadas ≈ 100 Bs día / 50 Bs noche y montos de bonos: a confirmar; mientras tanto la regla de encargada se reporta como "pendiente de configurar", no como alerta.
-- Umbral de limpieza: a confirmar (≥ 100 o > 100; Susana generó 100 sin pagar limpieza).
 - El modelo de IA es Gemini (ya contratado); "entrenar" = esquemas + ejemplos verificados + evaluación + correcciones, no re-entrenamiento del modelo.
+- "Ventas" para el 3% de encargadas = bebidas + covers + shampagne de cada casa (sin limpieza ni ingresos fuera del POS).
+- Los pagos al personal se escriben en Bs enteros: lo esperado por reparto se redondea al boliviano.
 - Depende del spec 004 (informe solo desde planilla de encargada) desplegado.

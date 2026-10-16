@@ -133,6 +133,19 @@ class InformeCierreEncargadaTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_ticket_vip_alemana_casa22_se_asigna_a_casa_22_vip_y_no_a_belen(): void
+    {
+        $vip = Sucursal::create(['nombre' => 'casa22vip', 'codigo' => 'C22VIP', 'activo' => true]);
+        $inbound = $this->crearInbound('Fanny');
+
+        $id = ProcesarMensajeWhatsAppJob::inferirSucursalId(
+            ['sucursal_sugerida' => null, 'datos' => ['servidor_cajero' => 'VIP ALEMANA CASA22 - V.491']],
+            $inbound,
+        );
+
+        $this->assertSame($vip->id, $id);
+    }
+
     public function test_el_prompt_usa_el_personal_registrado_y_no_nombres_fijos(): void
     {
         // El rol 'cajera' se agrega con ALTER solo en MySQL; en SQLite de tests se omite el CHECK del enum

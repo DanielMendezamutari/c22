@@ -344,6 +344,12 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         $todo = strtolower(implode(' ', $textos));
         $todoNorm = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $todo);
 
+        // Casa 22 VIP primero: su POS dice "VIP ALEMANA CASA22" y caería en Casa22 (Belén) (spec 005 FR-004)
+        if (str_contains($todoNorm, 'vip')) {
+            $sucVip = Sucursal::where('codigo', 'C22VIP')->orWhere('nombre', 'like', '%vip%')->first();
+            return $sucVip ? $sucVip->id : 5;
+        }
+
         // 1. Casa Belén (C22) -> ID 1
         if (
             str_contains($todoNorm, 'belen') ||
@@ -362,12 +368,6 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         // 3. Madan / Madam -> ID 3
         if (str_contains($todoNorm, 'madan') || str_contains($todoNorm, 'madam')) {
             return 3;
-        }
-
-        // 4. Casa 22 VIP -> ID 5 (o búsqueda por código C22VIP)
-        if (str_contains($todoNorm, 'vip') || str_contains($todoNorm, 'c22vip')) {
-            $sucVip = Sucursal::where('codigo', 'C22VIP')->orWhere('nombre', 'like', '%vip%')->first();
-            return $sucVip ? $sucVip->id : 5;
         }
 
         // 5. Cuarta Casa / Casa Nueva / Joker -> ID 8 (o búsqueda por código CASA4)
