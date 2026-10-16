@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Infrastructure\AI\GeminiVisionService;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
+use App\Infrastructure\Persistence\Eloquent\Models\Usuario;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -17,8 +18,8 @@ class GeminiVisionAuditorService
     public function __construct(GeminiVisionService $baseVisionService)
     {
         $this->baseVisionService = $baseVisionService;
-        $this->apiKey = env('GEMINI_API_KEY', '');
-        $this->model = env('GEMINI_MODEL', 'gemini-3.5-flash-lite');
+        $this->apiKey = (string) config('services.gemini.api_key', '');
+        $this->model = (string) config('services.gemini.model', 'gemini-3.5-flash-lite');
         $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
     }
 
@@ -43,6 +44,7 @@ class GeminiVisionAuditorService
                 'clasificacion' => 'otro',
                 'score_confianza' => 0.00,
                 'sucursal_sugerida' => null,
+                'ia_disponible' => false,
                 'datos' => ['error' => 'No se pudo leer la imagen o archivo'],
             ];
         }
@@ -56,6 +58,8 @@ class GeminiVisionAuditorService
             Log::info("GeminiVisionAuditorService: Modo heurístico activo (sin GEMINI_API_KEY).");
             return $this->simularClasificacion($imagePathOrBase64);
         }
+
+        $personalTexto = $this->construirPersonalPorCasa();
 
         $contextoMensajePrompt = !empty($contextoTexto)
             ? "\nCONTEXTO / TEXTO ADJUNTO EN WHATSAPP POR EL REMITENTE:\n\"{$contextoTexto}\"\n(IMPORTANTE: Utiliza este texto para interpretar el motivo del gasto, el taxi, almuerzo, o la sucursal de origen si el remitente lo indica).\n"
@@ -71,31 +75,25 @@ Realiza las siguientes 3 tareas:
    - "ticket_pos": Ticket térmico estrecho impreso de ventas o reporte de corte de máquina.
    - "voucher_deposito": Capturas de transferencias o depósitos bancarios de RECAUDACIÓN a cuentas de la empresa (cuentas fiscales/gerencia).
    - "recibo_gasto": Recibos físicos de gastos (taxis, hielo, insumos) O capturas de pantalla de pagos QR/transferencias de GASTOS menores de caja chica (ej. pago de taxi por QR, comisión de traslado, almuerzo del personal, compras de emergencia). NUNCA clasifiques un gasto como planilla_caja.
+   - "cierre_barra": Conteo de productos / inventario del barman (lista de botellas, latas, unidades o stock, formulario de conteo de la app o acta de conteo). Es control de inventario: NUNCA es "planilla_caja" aunque diga "cierre".
    - "otro": Fotografías de personas, botellas, memes o imágenes no contables.
 
 2. DETECCIÓN INTELIGENTE DE CASA / SUCURSAL Y PERSONAL (REGLA CRÍTICA):
 En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identificar a cuál de las sedes pertenece el documento inspeccionando membrete, notas manuscritas, cajeros y personal:
-   - "Casa Belén (C22)":
-     * Membrete: "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22" o "CASA22".
-     * Cajera Oficial de Cierre: "FANNY", "FANNY MORON", "FANNY MORÓN".
-     * Barmans y Garzones (NO cajeros): "SERGIO" (Barman), "CUEVAS" / "CUEVAS 25" (Garzón), "MARÍA ROXANA" (Barman).
-   - "Casa Corona":
-     * Membrete: "CORONA", "CASA CORONA", "CORON".
-     * Cajera Oficial de Cierre: "SISIELE", "SISIELLA", "SISIELA".
-     * Garzones/Barmans: "JHON", "CORONA NOCHE".
-   - "Madan":
-     * Membrete o notas: "MADAN", "MADAM", "MADAMES".
-   - "Casa 22 VIP":
-     * Membrete o notas: "VIP", "C22VIP", "ADM VIP", "PRIVADO".
-     * Cajera Oficial de Cierre: "MABEL".
-     * Barmans y Garzones: "RICHARD" (Barman), "GAEL" (Barman), "CUEVA".
-   - "Cuarta Casa":
-     * Membrete o notas: "CASA 4", "CASA NUEVA", "CIERRES DE INVENTARIO CASA NUEVA", "EL JEFE", "JOKER".
+   - Pistas de membrete conocidas:
+     * "SERVIDOR: BELEN CASA22", "BELEN", "C22", "Casa 22", "CASA22" → casa Belén / Casa22.
+     * "CORONA", "CASA CORONA", "CORON" → casa Corona.
+     * "MADAN", "MADAM", "MADAMES" → Madan.
+     * "VIP", "C22VIP", "ADM VIP", "PRIVADO" → Casa 22 VIP.
+     * "CASA 4", "CASA NUEVA", "EL JEFE", "JOKER" → Cuarta Casa.
+   - PERSONAL REGISTRADO POR CASA (fuente oficial; el personal rota y hay varias encargadas por turno):
+{$personalTexto}
+   - Responde en sucursal_sugerida el NOMBRE EXACTO de una casa de la lista anterior.
    - Si no hay suficiente información para determinar la sucursal, indica null en sucursal_sugerida.
 
 3. EXTRACCIÓN DE DATOS Y REGLAS DE NEGOCIO:
    - es_cierre_turno: true si la imagen representa el cierre de turno / corte final de caja (planilla de rendición de caja o corte general del POS). false si es un gasto menor o comprobante aislado.
-   - DISTINCIÓN DE PERSONAL: NUNCA confundas a barmans o garzones con cajeros. Si figura "Sergio", "Richard", "Gael", "Jhon", son barmans/garzones; cualquier monto anotado a su nombre es un egreso (pago de turno, adelanto o comisión de barra), JAMÁS el total de ventas ni el nombre del cajero.
+   - DISTINCIÓN DE PERSONAL: NUNCA confundas a barmans o garzones con cajeros. Las personas listadas como barmans/garzones en PERSONAL REGISTRADO no son encargadas; cualquier monto anotado a su nombre es un egreso (pago de turno, adelanto o comisión de barra), JAMÁS el total de ventas ni el nombre del cajero.
    - REGLAS DE COMISIONES Y DEDUCCIONES:
      * Pago a chicas: 50% de las bebidas de compañía, 60% si hay pieza (la casa se queda con el 40%).
      * Deducción de limpieza: Si una chica genera >= 100 Bs, se le descuenta 10 Bs de limpieza, lo cual entra como ingreso de la casa.
@@ -105,7 +103,7 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identifi
      * ventas_qr_bs: monto cobrado en QR / transferencias según el POS.
      * total_cobros_bs: total cobrado por el POS.
      * fecha_hora: fecha y hora de emisión del ticket.
-     * servidor_cajero: nombre del cajero o servidor (ej. FANNY, SISIELLA, MABEL).
+     * servidor_cajero: nombre del cajero o servidor (preferir una encargada de PERSONAL REGISTRADO si coincide).
      * items_vendidos_count: cantidad total de ítems.
      * es_cierre_turno: true si es reporte de corte Z, cierre de caja o resumen diario; false si es comanda simple.
    - Si es "planilla_caja":
@@ -123,7 +121,7 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identifi
      * gastos_operativos_bs: suma de hielo, taxis, compras.
      * qr_declarado_bs: monto declarado como cobrado o pagado por QR.
      * monto_sobre_efectivo_bs: efectivo físico entregado en sobre.
-     * cajero_nombre: nombre de la cajera oficial que rinde ("Mabel", "Fanny Moron", "Sisiela").
+     * cajero_nombre: nombre de la encargada que rinde, tal como figura en la planilla (preferir la grafía de PERSONAL REGISTRADO si coincide).
      * fecha: fecha del turno (formato YYYY-MM-DD).
      * turno: "Día" o "Noche" (si dice "Noche" o se envía entre las 18:00 y las 06:00, asignar "Noche"; si es diurno asignar "Día").
      * ventas_sin_comandar_bs: monto en Bs de bebidas sin comandar si está anotado en sobre/planilla (ej. 80 para whisky sin comandar).
@@ -132,9 +130,9 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identifi
 
 Responde ÚNICAMENTE un JSON con este formato exacto:
 {
-  "clasificacion": "planilla_caja" | "ticket_pos" | "voucher_deposito" | "recibo_gasto" | "otro",
+  "clasificacion": "planilla_caja" | "ticket_pos" | "voucher_deposito" | "recibo_gasto" | "cierre_barra" | "otro",
   "score_confianza": 0.95,
-  "sucursal_sugerida": "Casa Belén (C22)" | "Casa Corona" | "Madan" | "Casa 22 VIP" | "Cuarta Casa" | null,
+  "sucursal_sugerida": "<nombre exacto de una casa de la lista>" | null,
   "datos": { ...campos extraidos... }
 }
 PROMPT;
@@ -365,21 +363,41 @@ PROMPT;
         return null;
     }
 
+    /**
+     * Respuesta cuando la IA no está disponible: nunca inventa cifras (spec 004 FR-006).
+     */
     private function simularClasificacion(string $pathOrData): array
     {
         return [
-            'clasificacion' => 'planilla_caja',
-            'score_confianza' => 0.90,
-            'sucursal_sugerida' => 'Casa Belén (C22)',
-            'datos' => [
-                'total_ventas_declaradas_bs' => 32690.00,
-                'total_gastos_declarados_bs' => 18732.00,
-                'monto_sobre_efectivo_bs' => 1510.00,
-                'qr_declarado_bs' => 12448.00,
-                'cajero_nombre' => 'Fanny Moron',
-                'fecha' => date('Y-m-d'),
-                'observaciones' => 'Extracción simulada con alta confianza (90%)',
-            ],
+            'clasificacion' => 'otro',
+            'score_confianza' => 0.00,
+            'sucursal_sugerida' => null,
+            'ia_disponible' => false,
+            'datos' => ['error' => 'IA no disponible o sin respuesta válida; requiere revisión manual'],
         ];
+    }
+
+    /**
+     * Personal activo por casa, para que la IA distinga encargadas de barmans sin nombres fijos en código.
+     */
+    private function construirPersonalPorCasa(): string
+    {
+        $personal = Usuario::where('activo', true)
+            ->whereIn('rol', ['cajera', 'barman', 'garzon'])
+            ->whereNotNull('sucursal_actual_id')
+            ->get(['nombre', 'apellido', 'rol', 'sucursal_actual_id'])
+            ->groupBy('sucursal_actual_id');
+
+        $lineas = [];
+        foreach (Sucursal::where('activo', true)->get(['id', 'nombre', 'codigo']) as $casa) {
+            $deCasa = $personal->get($casa->id, collect());
+            $nombres = fn (array $roles) => $deCasa->whereIn('rol', $roles)
+                ->map(fn ($u) => trim($u->nombre . ' ' . $u->apellido))->unique()->implode(', ');
+            $encargadas = $nombres(['cajera']) ?: 'sin registrar (leer de la planilla)';
+            $barra = $nombres(['barman', 'garzon']) ?: 'sin registrar';
+            $lineas[] = "     * \"{$casa->nombre}\" (código {$casa->codigo}): Encargadas/cajeras: {$encargadas}. Barmans/garzones (NO encargados): {$barra}.";
+        }
+
+        return $lineas ? implode("\n", $lineas) : '     * (sin personal registrado)';
     }
 }

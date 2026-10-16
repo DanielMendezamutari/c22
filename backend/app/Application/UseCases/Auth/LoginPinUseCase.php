@@ -25,7 +25,6 @@ class LoginPinUseCase
     {
         try {
             \Illuminate\Support\Facades\Log::info('LoginPinUseCase::ejecutar', [
-                'pin' => $pin,
                 'sucursal_id' => $sucursalId,
                 'usuario_id' => $usuarioId,
             ]);

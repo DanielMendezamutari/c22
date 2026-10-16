@@ -32,7 +32,13 @@ class GenerarYDespacharInformeAuditoriaUseCase
     {
         $turno = Turno::with(['sucursal', 'barman'])->findOrFail($turnoId);
         $sucursal = $turno->sucursal;
-        $planilla = PlanillaCaja::where('turno_id', $turnoId)->latest('id')->first();
+        $planilla = PlanillaCaja::where('turno_id', $turnoId)->oldest('id')->first();
+
+        // Sin la planilla de cierre de la encargada no hay informe de recaudo (spec 004 FR-002):
+        // el cierre del barman es solo conteo de inventario.
+        if (!$planilla) {
+            throw new DomainException("El turno #{$turnoId} aún no tiene la planilla de cierre de la encargada; no se despacha informe.");
+        }
 
         // Control Anti-Spam: Si ya se despachó hace menos de 5 minutos y no es forzado, omitir
         if (!$forzarReenvio) {
@@ -80,7 +86,12 @@ class GenerarYDespacharInformeAuditoriaUseCase
 
         $datosOcr = $planilla ? ($planilla->datos_ocr_json ?? []) : [];
         $fechaTurno = $planilla?->fecha_operativa ?? ($turno->fecha_cierre ? $turno->fecha_cierre->toDateString() : now()->toDateString());
-        $cajera = $planilla?->cajero_nombre ?? $turno->barman?->nombre ?? 'Encargada';
+        // La encargada sale de la planilla o de quien la envió; nunca del barman del turno (FR-003)
+        $remitentePlanilla = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::where('turno_id', $turnoId)
+            ->where('clasificacion_ia', 'planilla_caja')
+            ->oldest('id')
+            ->value('sender_name');
+        $cajera = $planilla->cajero_nombre ?: ($remitentePlanilla ?: 'Encargada (sin identificar)');
         $tipoTurno = ucfirst($turno->tipo_turno ?? 'Día');
 
         // Valores financieros extraídos de las fotos de planilla manuscrita y comprobantes de WhatsApp
@@ -155,7 +166,7 @@ class GenerarYDespacharInformeAuditoriaUseCase
         $inboundCierre = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::where('turno_id', $turnoId)
             ->where('clasificacion_ia', 'planilla_caja')
             ->whereNotNull('media_path')
-            ->latest('id')
+            ->oldest('id')
             ->first();
 
         // Si no hay planilla manuscrita, usar el ticket de corte

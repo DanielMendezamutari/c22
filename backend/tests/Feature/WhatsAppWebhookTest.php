@@ -7,6 +7,7 @@ use App\Infrastructure\Persistence\Eloquent\Models\SucursalWhatsAppGrupo;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
 use App\Infrastructure\Persistence\Eloquent\Models\Usuario;
 use App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound;
+use App\Services\GeminiVisionAuditorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -122,6 +123,16 @@ class WhatsAppWebhookTest extends TestCase
             'score_confianza' => 0.00,
             'estado' => 'requiere_confirmacion',
         ]);
+
+        // La IA responde un comprobante real; sin IA el mensaje quedaría en revisión (spec 004 FR-006)
+        $this->mock(GeminiVisionAuditorService::class, function ($mock) {
+            $mock->shouldReceive('auditarYClasificar')->andReturn([
+                'clasificacion' => 'voucher_deposito',
+                'score_confianza' => 0.92,
+                'sucursal_sugerida' => null,
+                'datos' => ['monto_depositado_bs' => 1500.00],
+            ]);
+        });
 
         $response = $this->postJson('/api/v1/whatsapp/confirmar-sucursal', [
             'inbound_id' => $inbound->id,

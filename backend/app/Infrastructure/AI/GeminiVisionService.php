@@ -14,8 +14,8 @@ class GeminiVisionService
 
     public function __construct()
     {
-        $this->apiKey = env('GEMINI_API_KEY', '');
-        $this->model = env('GEMINI_MODEL', 'gemini-flash-latest');
+        $this->apiKey = (string) config('services.gemini.api_key', '');
+        $this->model = (string) config('services.gemini.model', 'gemini-flash-latest');
         $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
     }
 
@@ -155,32 +155,35 @@ PROMPT;
         return $defaultMime ?: 'image/jpeg';
     }
 
+    /**
+     * Respuesta sin IA: nunca inventa montos (spec 004 FR-006); la carga queda para revisión manual.
+     */
     private function generarRespuestaSimulada(string $tipo, ?string $nota = null): array
     {
+        $observacion = 'IA no disponible: requiere revisión manual' . ($nota ? " ({$nota})" : '');
+
         if ($tipo === 'planilla') {
             return [
-                'total_ventas_declaradas_bs' => 5000.00,
-                'total_gastos_declarados_bs' => 300.00,
-                'monto_sobre_efectivo_bs' => 4700.00,
-                'cajero_nombre' => 'Cajero en Turno',
-                'gastos_desglosados' => [
-                    ['concepto' => 'Hielo bolsa', 'monto_bs' => 80.00],
-                    ['concepto' => 'Taxi rotacion chicas', 'monto_bs' => 120.00],
-                    ['concepto' => 'Limpieza insumos', 'monto_bs' => 100.00],
-                ],
-                'confianza_ocr' => 0.95,
-                'observaciones' => $nota ? "Modo simulado: $nota" : "Lectura OCR exitosa.",
+                'total_ventas_declaradas_bs' => 0.00,
+                'total_gastos_declarados_bs' => 0.00,
+                'monto_sobre_efectivo_bs' => 0.00,
+                'cajero_nombre' => null,
+                'gastos_desglosados' => [],
+                'confianza_ocr' => 0.00,
+                'ia_disponible' => false,
+                'observaciones' => $observacion,
             ];
         }
 
         return [
-            'banco_nombre' => 'Banco Unión S.A.',
-            'monto_depositado_bs' => 4700.00,
-            'nro_operacion' => 'DEP-' . rand(100000, 999999),
-            'fecha_hora' => date('Y-m-d H:i:s'),
-            'titular_cuenta' => 'Grupo Punto Frío',
-            'confianza_ocr' => 0.98,
-            'observaciones' => $nota ? "Modo simulado: $nota" : "Lectura de voucher conforme.",
+            'banco_nombre' => null,
+            'monto_depositado_bs' => 0.00,
+            'nro_operacion' => null,
+            'fecha_hora' => null,
+            'titular_cuenta' => null,
+            'confianza_ocr' => 0.00,
+            'ia_disponible' => false,
+            'observaciones' => $observacion,
         ];
     }
 }

@@ -80,14 +80,8 @@ class CerrarTurnoUseCase
             ];
         });
 
-        // Despacho autónomo inmediato al grupo de WhatsApp tras enterarse del cierre
-        try {
-            $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
-            $despachador->ejecutar($turnoId, false);
-            \Illuminate\Support\Facades\Log::info("CerrarTurnoUseCase: Informe despachado automáticamente tras cierre de Turno #{$turnoId}.");
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::info("CerrarTurnoUseCase: Turno #{$turnoId} cerrado. Pendiente de comprobantes ({$e->getMessage()})");
-        }
+        // El cierre del barman es control de inventario: el informe de recaudo nace solo
+        // de la planilla de la encargada (ProcesarMensajeWhatsAppJob), spec 004 FR-001.
 
         return $res;
     }

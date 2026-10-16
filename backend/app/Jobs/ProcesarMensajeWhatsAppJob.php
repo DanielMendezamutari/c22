@@ -8,12 +8,14 @@ use App\Infrastructure\Persistence\Eloquent\Models\PlanillaCaja;
 use App\Infrastructure\Persistence\Eloquent\Models\Sucursal;
 use App\Infrastructure\Persistence\Eloquent\Models\Turno;
 use App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound;
+use App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeOutbound;
 use App\Services\GeminiVisionAuditorService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ProcesarMensajeWhatsAppJob implements ShouldQueue
@@ -41,6 +43,8 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             return;
         }
 
+        $lockCierre = null;
+
         try {
             $contextoPartes = [];
             if (!empty($inbound->sender_name)) $contextoPartes[] = "Remitente: {$inbound->sender_name}";
@@ -50,11 +54,23 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
 
             $resultado = $visionAuditor->auditarYClasificar($inbound->media_path, 'image/jpeg', $contextoTexto);
 
+            // Sin IA no hay datos: el mensaje espera revisión humana sin efectos contables (spec 004 FR-006)
+            if (($resultado['ia_disponible'] ?? true) === false) {
+                $inbound->clasificacion_ia = 'desconocido';
+                $inbound->score_confianza = 0;
+                $inbound->metadata_ia = $resultado['datos'] ?? null;
+                $inbound->estado = 'requiere_revision';
+                $inbound->save();
+                Log::warning("ProcesarMensajeWhatsAppJob: IA no disponible para Inbound {$inbound->id}; queda en revisión.");
+                return;
+            }
+
             $inbound->clasificacion_ia = in_array($resultado['clasificacion'], [
-                'planilla_caja', 'voucher_deposito', 'recibo_gasto', 'ticket_pos', 'otro'
+                'planilla_caja', 'voucher_deposito', 'recibo_gasto', 'ticket_pos', 'cierre_barra', 'otro'
             ]) ? $resultado['clasificacion'] : 'otro';
             $inbound->score_confianza = $resultado['score_confianza'];
             $inbound->metadata_ia = $resultado['datos'];
+            $estadoFinal = null;
 
             // Inferencia y auto-detección inteligente de la sucursal por IA
             if (!$inbound->sucursal_id) {
@@ -67,21 +83,45 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
 
             $datos = $resultado['datos'] ?? [];
 
+            // Dos planillas de la misma casa procesándose a la vez no deben crear turnos ni informes duplicados
+            if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->sucursal_id) {
+                $lockCierre = Cache::lock("cierre-planilla-sucursal-{$inbound->sucursal_id}", 120);
+                $lockCierre->block(60);
+            }
+
             // Detectar si la imagen representa el evento de cierre de turno (Planilla de Rendición o Corte Z del POS)
             $esCierreTurno = ($inbound->clasificacion_ia === 'planilla_caja') ||
                              ($inbound->clasificacion_ia === 'ticket_pos' && !empty($datos['es_cierre_turno']));
 
             if ($esCierreTurno && $inbound->sucursal_id) {
-                $tipoTurno = strtolower($datos['turno'] ?? (now()->hour >= 6 && now()->hour < 18 ? 'dia' : 'noche'));
+                // La IA responde "Día"/"Noche"; la BD usa 'dia'/'noche'
+                $turnoIa = self::normalizar((string) ($datos['turno'] ?? ''));
+                $tipoTurno = $turnoIa !== ''
+                    ? (str_contains($turnoIa, 'noche') ? 'noche' : 'dia')
+                    : (now()->hour >= 6 && now()->hour < 18 ? 'dia' : 'noche');
                 $fechaOperativa = $datos['fecha'] ?? now()->toDateString();
 
                 // 1. Buscar turno abierto en la sucursal para cerrarlo formalmente
-                $turno = Turno::where('sucursal_id', $inbound->sucursal_id)
-                    ->where('estado', 'abierto')
-                    ->latest('id')
-                    ->first();
+                // 0. Mismo cierre ya registrado (misma fecha y tipo de turno): reutilizar su turno.
+                // Evita que una foto tardía cree otro turno o cierre el turno siguiente (spec 004 FR-004).
+                $turnoMismoCierre = !empty($datos['fecha'])
+                    ? PlanillaCaja::where('sucursal_id', $inbound->sucursal_id)
+                        ->whereDate('fecha_operativa', $fechaOperativa)
+                        ->whereIn('turno_id', Turno::where('sucursal_id', $inbound->sucursal_id)->where('tipo_turno', $tipoTurno)->select('id'))
+                        ->oldest('id')
+                        ->value('turno_id')
+                    : null;
 
-                if ($turno) {
+                $turno = $turnoMismoCierre
+                    ? null
+                    : Turno::where('sucursal_id', $inbound->sucursal_id)
+                        ->where('estado', 'abierto')
+                        ->latest('id')
+                        ->first();
+
+                if ($turnoMismoCierre) {
+                    $turno = Turno::find($turnoMismoCierre);
+                } elseif ($turno) {
                     $turno->estado = 'cerrado';
                     $turno->fecha_cierre = now();
                     $turno->save();
@@ -97,17 +137,17 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                     if ($reciente) {
                         $turno = $reciente;
                     } else {
-                        // 3. Crear turno autónomo para este cierre de turno con barman_id válido
-                        $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::where('sucursal_actual_id', $inbound->sucursal_id)->first()
-                            ?? \App\Infrastructure\Persistence\Eloquent\Models\Usuario::first();
+                        // 3. Crear turno autónomo para este cierre con un responsable de ESTA sucursal
+                        $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::where('sucursal_actual_id', $inbound->sucursal_id)->first();
                         if (!$user) {
+                            // Usuario técnico inactivo y sin PIN utilizable: solo satisface la FK del turno
                             $user = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::create([
                                 'nombre' => 'Sistema',
                                 'apellido' => 'Autónomo',
                                 'rol' => 'barman',
-                                'pin_hash' => bcrypt('0000'),
+                                'pin_hash' => bcrypt(\Illuminate\Support\Str::random(40)),
                                 'sucursal_actual_id' => $inbound->sucursal_id,
-                                'activo' => true,
+                                'activo' => false,
                             ]);
                         }
 
@@ -139,29 +179,49 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
 
             // Si es planilla de caja, persistir o actualizar en planillas_caja para alimentar la Conciliación Triangulada
             if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->turno_id) {
-                PlanillaCaja::updateOrCreate(
-                    ['turno_id' => $inbound->turno_id],
-                    [
-                        'sucursal_id' => $inbound->sucursal_id,
-                        'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
-                        'foto_url' => $inbound->media_path,
-                        'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
-                        'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
-                        'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
-                        'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
-                        'datos_ocr_json' => $datos,
-                        'estado_ocr' => 'procesado',
-                        'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
-                    ]
-                );
+                // Una planilla de encargada ya aceptada para el turno no se sobrescribe (spec 004 FR-004)
+                $yaTienePlanilla = WhatsAppMensajeInbound::where('turno_id', $inbound->turno_id)
+                    ->where('clasificacion_ia', 'planilla_caja')
+                    ->where('estado', 'procesado')
+                    ->where('id', '!=', $inbound->id)
+                    ->exists();
 
-                // Auto-despacho autónomo del informe de auditoría a WhatsApp (Control de Recaudo)
-                try {
-                    $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
-                    $despachador->ejecutar($inbound->turno_id, true);
-                    Log::info("Informe de auditoría y cierre despachado automáticamente para Turno {$inbound->turno_id} a WhatsApp.");
-                } catch (\Throwable $e) {
-                    Log::warning("No se pudo autodespachar informe de auditoría para Turno {$inbound->turno_id}: " . $e->getMessage());
+                if ($yaTienePlanilla) {
+                    $estadoFinal = 'requiere_revision';
+                    Log::info("ProcesarMensajeWhatsAppJob: Turno {$inbound->turno_id} ya tiene planilla; Inbound {$inbound->id} queda en revisión sin despacho.");
+                } else {
+                    // Conservar lo que haya aportado un ticket POS previo
+                    $existente = PlanillaCaja::where('turno_id', $inbound->turno_id)->first();
+                    PlanillaCaja::updateOrCreate(
+                        ['turno_id' => $inbound->turno_id],
+                        [
+                            'sucursal_id' => $inbound->sucursal_id,
+                            'fecha_operativa' => $datos['fecha'] ?? now()->toDateString(),
+                            'foto_url' => $inbound->media_path,
+                            'total_ventas_declaradas_bs' => $datos['total_ventas_declaradas_bs'] ?? 0.00,
+                            'total_gastos_declarados_bs' => $datos['total_gastos_declarados_bs'] ?? 0.00,
+                            'monto_sobre_efectivo_bs' => $datos['monto_sobre_efectivo_bs'] ?? 0.00,
+                            'cajero_nombre' => $datos['cajero_nombre'] ?? $inbound->sender_name,
+                            'datos_ocr_json' => array_merge($existente?->datos_ocr_json ?? [], $datos),
+                            'estado_ocr' => 'procesado',
+                            'observaciones' => $datos['observaciones'] ?? 'Procesado automáticamente vía WhatsApp Bot y Gemini Vision',
+                        ]
+                    );
+
+                    // Un solo informe automático por turno; los reenvíos son manuales desde la web
+                    $yaDespachado = WhatsAppMensajeOutbound::where('turno_id', $inbound->turno_id)
+                        ->where('tipo_mensaje', 'informe_cierre_ejecutivo')
+                        ->where('estado_envio', 'enviado')
+                        ->exists();
+                    if (!$yaDespachado) {
+                        try {
+                            $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
+                            $despachador->ejecutar($inbound->turno_id, false);
+                            Log::info("Informe de auditoría y cierre despachado automáticamente para Turno {$inbound->turno_id} a WhatsApp.");
+                        } catch (\Throwable $e) {
+                            Log::warning("No se pudo autodespachar informe de auditoría para Turno {$inbound->turno_id}: " . $e->getMessage());
+                        }
+                    }
                 }
             }
 
@@ -179,17 +239,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                     $planilla->foto_url = $inbound->media_path;
                 }
                 $planilla->save();
-
-                // Si ya tenemos la planilla física declarada, re-despachar el informe con la conciliación real contra POS
-                if (!empty($datosActuales['total_ventas_declaradas_bs']) || !empty($datosActuales['monto_sobre_efectivo_bs'])) {
-                    try {
-                        $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
-                        $despachador->ejecutar($inbound->turno_id, true);
-                        Log::info("Informe de auditoría actualizado y re-despachado con datos reales del POS para Turno {$inbound->turno_id}.");
-                    } catch (\Throwable $e) {
-                        Log::warning("No se pudo re-despachar informe con datos POS: " . $e->getMessage());
-                    }
-                }
+                // El ticket solo enriquece; no re-despacha para no duplicar informes en el grupo
             }
 
             // Si es recibo_gasto o voucher con motivo de gasto, persistir en gastos_caja_chica
@@ -253,7 +303,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                 }
             }
 
-            $inbound->estado = $inbound->sucursal_id ? 'procesado' : 'requiere_confirmacion';
+            $inbound->estado = $estadoFinal ?? ($inbound->sucursal_id ? 'procesado' : 'requiere_confirmacion');
             $inbound->save();
 
             Log::info("ProcesarMensajeWhatsAppJob: Inbound {$inbound->id} clasificado como {$inbound->clasificacion_ia} (confianza: {$inbound->score_confianza})");
@@ -261,6 +311,8 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             Log::error("ProcesarMensajeWhatsAppJob Error: " . $e->getMessage());
             $inbound->estado = 'error';
             $inbound->save();
+        } finally {
+            $lockCierre?->release();
         }
     }
 
@@ -269,6 +321,16 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
      */
     public static function inferirSucursalId(array $resultado, WhatsAppMensajeInbound $inbound): ?int
     {
+        // 0. La IA recibe la lista de casas de la BD: primero coincidencia exacta por nombre o código
+        $sugerida = self::normalizar((string) ($resultado['sucursal_sugerida'] ?? ''));
+        if ($sugerida !== '') {
+            foreach (Sucursal::where('activo', true)->get(['id', 'nombre', 'codigo']) as $casa) {
+                if (in_array($sugerida, [self::normalizar($casa->nombre), self::normalizar((string) $casa->codigo)], true)) {
+                    return $casa->id;
+                }
+            }
+        }
+
         $textos = [
             $resultado['sucursal_sugerida'] ?? '',
             $resultado['datos']['servidor_cajero'] ?? '',
@@ -287,9 +349,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             str_contains($todoNorm, 'belen') ||
             str_contains($todoNorm, 'c22') ||
             str_contains($todoNorm, 'casa22') ||
-            str_contains($todoNorm, 'casa 22') ||
-            str_contains($todoNorm, 'fanny') ||
-            str_contains($todoNorm, 'cuevas')
+            str_contains($todoNorm, 'casa 22')
         ) {
             return 1;
         }
@@ -305,7 +365,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         }
 
         // 4. Casa 22 VIP -> ID 5 (o búsqueda por código C22VIP)
-        if (str_contains($todoNorm, 'vip') || str_contains($todoNorm, 'c22vip') || str_contains($todoNorm, 'gareca')) {
+        if (str_contains($todoNorm, 'vip') || str_contains($todoNorm, 'c22vip')) {
             $sucVip = Sucursal::where('codigo', 'C22VIP')->orWhere('nombre', 'like', '%vip%')->first();
             return $sucVip ? $sucVip->id : 5;
         }
@@ -323,5 +383,12 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         }
 
         return null;
+    }
+
+    private static function normalizar(string $texto): string
+    {
+        $texto = mb_strtolower(trim($texto));
+
+        return str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $texto);
     }
 }

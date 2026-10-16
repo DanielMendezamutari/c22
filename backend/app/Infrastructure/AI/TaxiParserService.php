@@ -14,8 +14,8 @@ class TaxiParserService
 
     public function __construct()
     {
-        $this->apiKey = env('GEMINI_API_KEY', '');
-        $this->model = env('GEMINI_MODEL', 'gemini-flash-latest');
+        $this->apiKey = (string) config('services.gemini.api_key', '');
+        $this->model = (string) config('services.gemini.model', 'gemini-flash-latest');
     }
 
     /**

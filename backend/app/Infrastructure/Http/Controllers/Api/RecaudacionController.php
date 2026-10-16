@@ -64,6 +64,14 @@ class RecaudacionController extends Controller
             // Ejecutar extracción OCR con Gemini Vision si hay imagen
             $ocrData = !empty($imageForOcr) ? $this->geminiService->procesarPlanillaManuscrita($imageForOcr) : [];
 
+            // Sin IA no se registran montos que nadie leyó (spec 004 FR-006): exigir carga manual
+            if (($ocrData['ia_disponible'] ?? true) === false && !$request->filled('total_ventas_manual')) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'La IA no pudo leer la planilla. Ingrese los montos manualmente.',
+                ], 422);
+            }
+
             $totalVentas = $request->input('total_ventas_manual') ?? ($ocrData['total_ventas_declaradas_bs'] ?? 0.0);
             $totalGastos = $request->input('total_gastos_manual') ?? ($ocrData['total_gastos_declarados_bs'] ?? 0.0);
             $montoSobre = $request->input('monto_sobre_manual') ?? ($ocrData['monto_sobre_efectivo_bs'] ?? max(0, $totalVentas - $totalGastos));
@@ -146,6 +154,13 @@ class RecaudacionController extends Controller
 
             // Extracción con Gemini Vision
             $ocrData = !empty($imageForOcr) ? $this->geminiService->procesarVoucherBancario($imageForOcr) : [];
+
+            if (($ocrData['ia_disponible'] ?? true) === false && !$request->filled('monto_manual')) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'La IA no pudo leer el voucher. Ingrese el monto manualmente.',
+                ], 422);
+            }
 
             $montoDepositado = $request->input('monto_manual') ?? ($ocrData['monto_depositado_bs'] ?? 0.0);
             $nroOperacion = $request->input('nro_operacion') ?? ($ocrData['nro_operacion'] ?? 'OP-' . time());
