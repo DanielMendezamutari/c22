@@ -9,13 +9,14 @@
 | [001-control-inventario-transformaciones](001-control-inventario-transformaciones/spec.md) | Plataforma completa: inventario, turnos, comisiones, auditoría, web, IA, POS, WhatsApp | US1–US38 | ✅ Implementado (289/289 tareas). Cerrado: no agregar historias |
 | [002-test-suite-e2e](002-test-suite-e2e/spec.md) | Suite E2E backend + Flutter + runner | 3 | ✅ Implementado (26 tests backend en verde) |
 | [003-seguridad-api-sanctum](003-seguridad-api-sanctum/spec.md) | Autenticación obligatoria, eliminación de puertas traseras y secretos, autorización por rol | 4 | 📋 Plan y tareas listos (35) |
-| 004 | _Próxima_: documentar trabajo post-US38 (ver deriva) | — | ⏳ Pendiente |
+| [004-informes-cierre-encargadas](004-informes-cierre-encargadas/spec.md) | Informe de recaudo solo desde la planilla de la encargada; sin cifras inventadas; bot Baileys 7 (LID) sin "Esperando mensaje" | 4 | 🔧 Implementado en local, pendiente de despliegue |
+| 005 | _Próxima_: documentar trabajo post-US38 (ver deriva) | — | ⏳ Pendiente |
 
 ## Módulos de 001 por área
 
 | Área | Historias | Canal operativo hoy |
 |---|---|---|
-| Barra: rellenos, cortes, bajas, recepción, traspasos | US1–4, 10, 12–18, 21–25 | App Flutter (en espera) |
+| Barra: rellenos, cortes, bajas, recepción, traspasos | US1–4, 10, 12–18, 21–25 | App Flutter ✅ en uso por barmans (conteo de productos) |
 | Auditoría Ticket Z, ratios, liquidaciones, reconteo | US5, 6, 15, 20, 26, 35 | App Flutter / web |
 | Administración: catálogo, usuarios, sucursales, proveedores | US7–9, 11, 19 | App Flutter |
 | Web super admin en tiempo real + deploy cPanel | US27, 31 | Web ✅ activo |

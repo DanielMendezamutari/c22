@@ -7,7 +7,7 @@ Plataforma de auditoría de inventario, rellenos, comisiones y recaudación (ví
 - Datos: MySQL en prod (cPanel), SQLite en local y `:memory:` en tests. Multi-sucursal lógico por `sucursal_id`.
 - Inventario: fracciones `DECIMAL(8,2)` en múltiplos de 0.25 (`FraccionLicor`); toda mutación de stock en `DB::transaction()`; traspasos descuentan en origen y acreditan solo al confirmar recepción.
 - Web: Vue 3 + Vuetify (plantilla Materialize) en `frontend_web/`; el build sale a `backend/public/` y se commitea (así se despliega).
-- Móvil: Flutter + Riverpod + SQLite offline-first en `frontend/puntofrio_app/` (hoy en espera).
+- Móvil: Flutter + Riverpod + SQLite offline-first en `frontend/puntofrio_app/`, en uso por los barmans **solo para conteo de productos** (inventario). El recaudo lo rinden las encargadas (rol `cajera`) por WhatsApp.
 - IA: Gemini Vision (`GEMINI_MODEL`, fallback `gemini-3.5-flash-lite`) para planillas, vouchers y tickets POS.
 - WhatsApp: bot Node + Baileys silencioso con whitelist de grupos (`scripts/whatsapp_bot/`) → webhook `X-Webhook-Secret`; salida por HTTP local :3001.
 - POS: agente Windows `scripts/sync_agent/` empuja RestoTech con `X-Branch-Token`. Modo actual: "Solo WhatsApp".
@@ -26,7 +26,8 @@ cd backend && php artisan test         # si tocas transformación, cortes o comi
 - SDD: /speckit-specify → plan → tasks → implement. Feature nueva = spec nuevo (`specs/003-…`); marcar tareas `[X]`.
 - Código nuevo en su capa hexagonal; no extender `app/Models`, `app/Services`, `app/Jobs` ni los controladores gigantes. Ojo: los `Domain/Ports` hoy devuelven modelos Eloquent (hexagonal parcial); no copiar ese patrón.
 - Migraciones: nombres de índice/FK ≤ 64 caracteres (MySQL de cPanel).
-- Sin nombres de casas quemados: se leen de `sucursales`.
+- Sin nombres de casas ni de personal quemados: se leen de `sucursales` y `usuarios` (también en prompts de IA).
+- Nunca inventar datos: si la IA falla, el mensaje queda `requiere_revision` sin efectos contables. El informe de recaudo nace solo de la planilla de la encargada.
 - UI web: buscar el componente en `template_reference/admin-full-version` antes de crear uno.
 - Nunca commitear `.env`, `auth_info_baileys/`, `scripts/sync_agent/config.json`.
 
