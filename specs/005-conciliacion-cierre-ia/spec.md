@@ -112,6 +112,8 @@ Como administrador, quiero un banco de cierres reales verificados para medir qu�
 - Q: Umbral de limpieza → A: Se cobra cuando la chica genera **más de** 100 Bs (una vez por chica).
 - Q: Personal (garzón, seguridad, encargada) que cobra comisión de chica → A: Permitido, pero se marca como alerta.
 - Q: Cuenta del QR → A: Cuenta del dueño (configurable; no se versiona).
+- Q: ¿Qué casas son de Grupo Punto Frío? → A (2026-10-17): Casa22 (Belén), Corona, Casa 22 VIP, Cuarta Casa ("CIERRES DE INVENTARIO CASA NUEVA") y **Madan, que solo abre de noche de jueves a sábado**. Joker (billar), "Arqueo pocitos" y "Venta por QR licorería" son otros negocios: sus grupos quedan desactivados y la IA no debe asignarlos a ninguna casa.
+  → Las reglas entre casas (garzones de día, encargadas) no esperan "4 casas" fijas: esperan las casas que operan ese turno y ese día de la semana (calendario configurable). Pendiente: confirmar qué casas abren de día.
 
 ## Assumptions
 - El modelo de IA es Gemini (ya contratado); "entrenar" = esquemas + ejemplos verificados + evaluación + correcciones, no re-entrenamiento del modelo.

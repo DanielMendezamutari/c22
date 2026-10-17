@@ -24,6 +24,11 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'whatsapp' => [
+        // Pausado por defecto hasta corregir la fórmula del informe (auditoría spec 005 §9); envío manual desde la web
+        'informes_automaticos' => (bool) env('INFORMES_AUTOMATICOS', false),
+    ],
+
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),

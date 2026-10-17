@@ -35,7 +35,7 @@ class InformeCierreEncargadaTest extends TestCase
     {
         parent::setUp();
 
-        config(['services.whatsapp.webhook_secret' => 'test-secret']);
+        config(['services.whatsapp.webhook_secret' => 'test-secret', 'services.whatsapp.informes_automaticos' => true]);
         Http::fake([self::BOT_URL => Http::response(['success' => true, 'messageId' => 'BOT_MSG_1'], 200)]);
 
         $this->casa = Sucursal::create(['nombre' => 'Casa22', 'codigo' => 'C22', 'activo' => true]);
@@ -83,6 +83,18 @@ class InformeCierreEncargadaTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === self::BOT_URL
             && str_contains($r['texto'], 'Rosa Encargada')
             && !str_contains($r['texto'], 'Sergio'));
+    }
+
+    public function test_con_informes_automaticos_en_pausa_la_planilla_se_guarda_sin_despachar(): void
+    {
+        config(['services.whatsapp.informes_automaticos' => false]);
+        $this->simularIa($this->planillaIa('Rosa Encargada', 8500));
+        $inbound = $this->crearInbound('Rosa');
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+
+        $this->assertSame(8500.0, (float) PlanillaCaja::where('turno_id', $inbound->fresh()->turno_id)->value('total_ventas_declaradas_bs'));
+        Http::assertNothingSent();
     }
 
     public function test_segunda_planilla_del_turno_no_sobrescribe_ni_vuelve_a_despachar(): void

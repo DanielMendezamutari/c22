@@ -213,7 +213,9 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                         ->where('tipo_mensaje', 'informe_cierre_ejecutivo')
                         ->where('estado_envio', 'enviado')
                         ->exists();
-                    if (!$yaDespachado) {
+                    if (!config('services.whatsapp.informes_automaticos')) {
+                        Log::info("Informe automático en pausa (INFORMES_AUTOMATICOS=false): Turno {$inbound->turno_id} queda para envío manual.");
+                    } elseif (!$yaDespachado) {
                         try {
                             $despachador = app(\App\Application\UseCases\Auditoria\GenerarYDespacharInformeAuditoriaUseCase::class);
                             $despachador->ejecutar($inbound->turno_id, false);

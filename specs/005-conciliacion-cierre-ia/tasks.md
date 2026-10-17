@@ -28,4 +28,6 @@
 
 ## Phase 5: Polish
 - [X] T017 [P] Revisión cruzada con Codex (fase 1: 8 bugs de falso "conforme" corregidos con regresiones)
+- [ ] T019 [US3] Calendario de casas por turno y día de semana (Madan solo jue–sáb noche) en `ReglasPago`/`LiquidacionGlobalTurno` en lugar de `casasPorTurno = 4`
+- [ ] T020 Desactivar sucursales duplicadas (Madan 7 = Madam 3, Casa Corona 6 = corona 2, prueba 4) con confirmación del dueño
 - [ ] T018 Configuración `config/conciliacion.php` desde `.env` (cuenta QR oficial, bases, bonos)
