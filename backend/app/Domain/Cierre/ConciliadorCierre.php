@@ -124,7 +124,23 @@ final class ConciliadorCierre
             array_replace(['ventas_bebidas' => null, 'covers' => 0, 'shampagne' => 0, 'chupete' => 0, 'privados' => 0, 'chuflay' => 0], $ingresos),
             array_flip(['ventas_bebidas', 'covers', 'shampagne', 'chupete', 'privados', 'chuflay']),
         )));
-        $ventasPos = isset($pos['total_cobros']) ? $pos['total_cobros'] - ($pos['limpieza'] ?? 0) : null;
+        // El POS a veces cobra la limpieza dentro del total (Belén, Sisiela) y a veces no (Fanny), y la IA no
+        // siempre ve ese ítem. La planilla cuadra si coincide con el total, o con el total sin la limpieza leída en
+        // el POS o sin la declarada en la planilla. Si no coincide, se compara contra el total menos la MAYOR de esas
+        // limpiezas: solo hay faltante si declara menos aun en el caso más favorable para la encargada.
+        $totalPos = $pos['total_cobros'] ?? null;
+        $limpiezaPos = (float) ($pos['limpieza'] ?? 0);
+        $limpiezaPlanilla = (float) ($ingresos['comision_limpieza'] ?? 0);
+        $ventasPos = null;
+        if ($totalPos !== null) {
+            $candidatos = array_unique([(float) $totalPos, $totalPos - $limpiezaPos, $totalPos - $limpiezaPlanilla]);
+            $ventasPos = $totalPos - max($limpiezaPos, $limpiezaPlanilla);
+            foreach ($candidatos as $candidato) {
+                if ($ventasPlanilla !== null && Dinero::centavos($ventasPlanilla) === Dinero::centavos($candidato)) {
+                    $ventasPos = $candidato;
+                }
+            }
+        }
 
         $bebidaChicas = $pos['bebida_chicas'] ?? null;
         $shampagne = $pos['shampagne'] ?? $ingresos['shampagne'] ?? null;

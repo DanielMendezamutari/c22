@@ -263,6 +263,28 @@ class ConciliadorCierreTest extends TestCase
         $this->assertSame(ResultadoConciliacion::FALTANTE, $r->estado());
     }
 
+    public function test_pos_con_limpieza_adentro_que_la_ia_no_vio_no_es_faltante(): void
+    {
+        // Belén noche 16-10 (reprocesamiento real): POS 30.145 con 180 de limpieza dentro; la IA no leyó ese ítem.
+        // Planilla: ventas 29.975 + limpieza 180 = 30.155 → declara 10 Bs MÁS que el POS: REVISAR, no FALTANTE.
+        $lote = CasosDorados::sisiela();
+        $lote['pos']['total_cobros'] = 8750;   // ventas 8.700 + limpieza 60 = 8.760 → planilla declara 10 más
+        $lote['pos']['limpieza'] = 0;          // la IA no vio el ítem de limpieza
+
+        $r = $this->conciliador->conciliar($lote);
+
+        $this->assertSame(ResultadoRegla::NO_CUMPLE, $r->regla('POS')->estado);
+        $this->assertFalse($r->regla('POS')->esFaltante());
+    }
+
+    public function test_pos_con_limpieza_adentro_cuadra(): void
+    {
+        $lote = CasosDorados::sisiela();
+        $lote['pos']['limpieza'] = 0; // POS 8.760 = ventas 8.700 + limpieza 60 aunque la IA no vio el ítem
+
+        $this->assertSame(ResultadoRegla::CUMPLE, $this->conciliador->conciliar($lote)->regla('POS')->estado);
+    }
+
     public function test_qr_transferido_a_otra_cuenta_es_faltante(): void
     {
         $lote = CasosDorados::fanny();
