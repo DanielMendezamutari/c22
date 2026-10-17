@@ -182,6 +182,7 @@ final class ConciliadorCierre
 
         // Emparejar: primero coincidencia segura; luego aproximada única (queda como alerta para revisión humana)
         $pares = [];
+        $aproximados = [];
         $hojaLibre = array_keys($hojaBebidas);
         foreach (array_keys($esperadoPos) as $nombrePos) {
             $enHoja = NombrePersona::buscar($nombrePos, $hojaLibre);
@@ -194,6 +195,7 @@ final class ConciliadorCierre
             if (!isset($pares[$nombrePos]) && ($aprox = NombrePersona::buscarAproximado($nombrePos, $hojaLibre)) !== null) {
                 $pares[$nombrePos] = $aprox;
                 $hojaLibre = array_values(array_diff($hojaLibre, [$aprox]));
+                $aproximados[] = "\"{$aprox}\" = \"{$nombrePos}\"";
                 $alertas[] = "Nombre aproximado: \"{$aprox}\" (hoja) se tomó como \"{$nombrePos}\" (POS). Confirmar que es la misma persona.";
             }
         }
@@ -211,15 +213,20 @@ final class ConciliadorCierre
             }
         }
 
-        return new ResultadoRegla(
-            'CHP',
-            'Comisión de bebidas de cada chica = sus bebidas en el POS',
-            $diferencias === [] ? ResultadoRegla::CUMPLE : ResultadoRegla::NO_CUMPLE,
-            ResultadoRegla::CUADRE,
-            null,
-            null,
-            $diferencias === [] ? count($esperadoPos) . ' chicas verificadas' : implode('; ', $diferencias),
-        );
+        // Con nombres emparejados por aproximación no se da por verificado: es dinero de una persona concreta
+        // ("Ana" podría no ser "Anabel"); queda sin verificar hasta que una persona lo confirme.
+        $estado = match (true) {
+            $diferencias !== [] => ResultadoRegla::NO_CUMPLE,
+            $aproximados !== [] => ResultadoRegla::SIN_VERIFICAR,
+            default => ResultadoRegla::CUMPLE,
+        };
+        $detalle = match ($estado) {
+            ResultadoRegla::NO_CUMPLE => implode('; ', $diferencias),
+            ResultadoRegla::SIN_VERIFICAR => 'Montos coinciden; confirmar que son la misma persona: ' . implode(', ', $aproximados),
+            default => count($esperadoPos) . ' chicas verificadas',
+        };
+
+        return new ResultadoRegla('CHP', 'Comisión de bebidas de cada chica = sus bebidas en el POS', $estado, ResultadoRegla::CUADRE, null, null, $detalle);
     }
 
     private function reglasShampagne(array $control, array $hoja, array $ingresos): array

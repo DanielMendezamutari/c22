@@ -72,19 +72,21 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             $inbound->metadata_ia = $resultado['datos'];
             $estadoFinal = null;
 
-            // Inferencia y auto-detección inteligente de la sucursal por IA
-            if (!$inbound->sucursal_id) {
-                $autoSucursalId = self::inferirSucursalId($resultado, $inbound);
-                if ($autoSucursalId) {
-                    $inbound->sucursal_id = $autoSucursalId;
-                    Log::info("ProcesarMensajeWhatsAppJob: Sucursal auto-detectada por IA: ID {$autoSucursalId}");
+            // Casa por evidencia del documento. Si contradice al grupo (la encargada lo mandó al grupo de otra
+            // casa), manda el documento: el encabezado del POS dice de qué casa es.
+            $casaDocumento = self::inferirSucursalId($resultado, $inbound, soloEncabezado: (bool) $inbound->sucursal_id);
+            if ($casaDocumento && $casaDocumento !== $inbound->sucursal_id) {
+                if ($inbound->sucursal_id) {
+                    Log::warning("ProcesarMensajeWhatsAppJob: Inbound {$inbound->id} llegó por el grupo de la sucursal {$inbound->sucursal_id} pero el documento es de la sucursal {$casaDocumento}; se reasigna.");
+                    $inbound->turno_id = null;
                 }
+                $inbound->sucursal_id = $casaDocumento;
             }
 
             $datos = $resultado['datos'] ?? [];
 
             // Dos planillas de la misma casa procesándose a la vez no deben crear turnos ni informes duplicados
-            if ($inbound->clasificacion_ia === 'planilla_caja' && $inbound->sucursal_id) {
+            if (in_array($inbound->clasificacion_ia, ['planilla_caja', 'ticket_pos'], true) && $inbound->sucursal_id) {
                 $lockCierre = Cache::lock("cierre-planilla-sucursal-{$inbound->sucursal_id}", 120);
                 $lockCierre->block(60);
             }
@@ -208,6 +210,13 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                         ]
                     );
 
+                    $corte = self::cortePosDelTurno($inbound->turno_id, $inbound->sucursal_id);
+                    if ($corte) {
+                        $planillaTurno = PlanillaCaja::where('turno_id', $inbound->turno_id)->first();
+                        $planillaTurno->datos_ocr_json = array_merge(self::datosPos($corte->metadata_ia ?? [], $corte->media_path), $planillaTurno->datos_ocr_json ?? []);
+                        $planillaTurno->save();
+                    }
+
                     // Un solo informe automático por turno; los reenvíos son manuales desde la web
                     $yaDespachado = WhatsAppMensajeOutbound::where('turno_id', $inbound->turno_id)
                         ->where('tipo_mensaje', 'informe_cierre_ejecutivo')
@@ -227,21 +236,14 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                 }
             }
 
-            // Si es ticket_pos y hay turno, actualizar o enriquecer los datos OCR de la planilla con las ventas del POS
-            if ($inbound->clasificacion_ia === 'ticket_pos' && $inbound->turno_id) {
-                $planilla = PlanillaCaja::firstOrNew(['turno_id' => $inbound->turno_id]);
-                $datosActuales = $planilla->datos_ocr_json ?? [];
-                $datosActuales['ventas_pos'] = $datos['total_ticket_bs'] ?? 0.00;
-                $datosActuales['ventas_qr_bs'] = $datos['qr_pos_bs'] ?? 0.00;
-                $datosActuales['ticket_pos_foto_url'] = $inbound->media_path;
-                
-                $planilla->sucursal_id = $inbound->sucursal_id;
-                $planilla->datos_ocr_json = $datosActuales;
-                if (!$planilla->foto_url) {
-                    $planilla->foto_url = $inbound->media_path;
+            // El ticket POS solo enriquece una planilla de encargada ya existente. Si llega antes, queda en el
+            // mensaje y se incorpora cuando llegue la planilla (antes creaba una planilla sin fecha y fallaba).
+            if ($inbound->clasificacion_ia === 'ticket_pos' && $inbound->turno_id && !empty($datos['es_cierre_turno'])) {
+                $planilla = PlanillaCaja::where('turno_id', $inbound->turno_id)->first();
+                if ($planilla) {
+                    $planilla->datos_ocr_json = array_merge($planilla->datos_ocr_json ?? [], self::datosPos($datos, $inbound->media_path));
+                    $planilla->save();
                 }
-                $planilla->save();
-                // El ticket solo enriquece; no re-despacha para no duplicar informes en el grupo
             }
 
             // Si es recibo_gasto o voucher con motivo de gasto, persistir en gastos_caja_chica
@@ -319,71 +321,104 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
     }
 
     /**
-     * Infiere y auto-detecta la sucursal de Casa22 examinando pistas de IA, encabezados y cajeras.
+     * Casa del documento según evidencia escrita en él (spec 005 FR-004), nunca por suposición de la IA:
+     *  1. alias de la casa en el encabezado o textos del documento (sucursales.alias_documentos);
+     *     gana el alias más largo y debe identificar a una sola casa;
+     *  2. si no hay alias, la encargada registrada (rol cajera) cuyo nombre figura en la planilla.
+     * Sin evidencia devuelve null y el mensaje queda para confirmación manual.
      */
-    public static function inferirSucursalId(array $resultado, WhatsAppMensajeInbound $inbound): ?int
+    public static function inferirSucursalId(array $resultado, WhatsAppMensajeInbound $inbound, bool $soloEncabezado = false): ?int
     {
-        // 0. La IA recibe la lista de casas de la BD: primero coincidencia exacta por nombre o código
-        $sugerida = self::normalizar((string) ($resultado['sucursal_sugerida'] ?? ''));
-        if ($sugerida !== '') {
-            foreach (Sucursal::where('activo', true)->get(['id', 'nombre', 'codigo']) as $casa) {
-                if (in_array($sugerida, [self::normalizar($casa->nombre), self::normalizar((string) $casa->codigo)], true)) {
-                    return $casa->id;
-                }
+        // Las observaciones libres de la IA no cuentan ("20 whisky vip a la nueva casa" no hace VIP a la planilla)
+        $datos = $resultado['datos'] ?? [];
+        $encabezado = implode(' ', array_filter([$datos['servidor_cajero'] ?? null, $datos['encabezado'] ?? null], 'is_string'));
+
+        // El encabezado del documento manda; el texto adjunto solo cuenta si el documento no dice de qué casa es
+        $casa = self::casaPorAlias($encabezado);
+        if ($casa !== false || $soloEncabezado) {
+            return $casa ?: null;
+        }
+        $casa = self::casaPorAlias((string) $inbound->raw_text);
+        if ($casa !== false) {
+            return $casa;
+        }
+
+        $encargada = $datos['cajero_nombre'] ?? null;
+        if ($encargada) {
+            $candidatas = \App\Infrastructure\Persistence\Eloquent\Models\Usuario::where('activo', true)
+                ->where('rol', 'cajera')
+                ->whereNotNull('sucursal_actual_id')
+                ->get(['nombre', 'apellido', 'sucursal_actual_id'])
+                ->filter(fn ($u) => \App\Domain\Cierre\NombrePersona::mismaPersona(trim($u->nombre . ' ' . $u->apellido), $encargada))
+                ->pluck('sucursal_actual_id')
+                ->unique();
+            if ($candidatas->count() === 1) {
+                return (int) $candidatas->first();
             }
         }
 
-        $textos = [
-            $resultado['sucursal_sugerida'] ?? '',
-            $resultado['datos']['servidor_cajero'] ?? '',
-            $resultado['datos']['cajero_nombre'] ?? '',
-            $resultado['datos']['observaciones'] ?? '',
-            $inbound->raw_text ?? '',
-            $inbound->sender_name ?? '',
-            json_encode($resultado['datos'] ?? []),
-        ];
-
-        $todo = strtolower(implode(' ', $textos));
-        $todoNorm = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $todo);
-
-        // Casa 22 VIP primero: su POS dice "VIP ALEMANA CASA22" y caería en Casa22 (Belén) (spec 005 FR-004)
-        if (str_contains($todoNorm, 'vip')) {
-            $sucVip = Sucursal::where('codigo', 'C22VIP')->orWhere('nombre', 'like', '%vip%')->first();
-            return $sucVip ? $sucVip->id : 5;
-        }
-
-        // 1. Casa Belén (C22) -> ID 1
-        if (
-            str_contains($todoNorm, 'belen') ||
-            str_contains($todoNorm, 'c22') ||
-            str_contains($todoNorm, 'casa22') ||
-            str_contains($todoNorm, 'casa 22')
-        ) {
-            return 1;
-        }
-
-        // 2. Casa Corona -> ID 2
-        if (str_contains($todoNorm, 'corona') || str_contains($todoNorm, 'coron')) {
-            return 2;
-        }
-
-        // 3. Madan / Madam -> ID 3
-        if (str_contains($todoNorm, 'madan') || str_contains($todoNorm, 'madam')) {
-            return 3;
-        }
-
-        // 5. Cuarta Casa / Casa Nueva -> ID 8. "Joker" es otro negocio (billar), no una casa de Grupo Punto Frío.
-        if (
-            str_contains($todoNorm, 'cuarta') ||
-            str_contains($todoNorm, 'casa 4') ||
-            str_contains($todoNorm, 'casa4') ||
-            str_contains($todoNorm, 'nueva')
-        ) {
-            $suc4 = Sucursal::where('codigo', 'CASA4')->orWhere('nombre', 'like', '%cuarta%')->orWhere('nombre', 'like', '%nueva%')->first();
-            return $suc4 ? $suc4->id : 8;
-        }
-
         return null;
+    }
+
+    /**
+     * @return int|null|false id de la casa; null si dos casas empatan (decide una persona); false si no hay alias.
+     */
+    private static function casaPorAlias(string $textoOriginal): int|null|false
+    {
+        $texto = self::normalizar($textoOriginal);
+        if ($texto === '') {
+            return false;
+        }
+
+        $porCasa = [];
+        foreach (Sucursal::where('activo', true)->whereNotNull('alias_documentos')->get(['id', 'alias_documentos']) as $casa) {
+            foreach (explode(',', $casa->alias_documentos) as $alias) {
+                $alias = self::normalizar($alias);
+                if ($alias !== '' && preg_match('/\b' . preg_quote($alias, '/') . '\b/u', $texto)) {
+                    $porCasa[$casa->id] = max($porCasa[$casa->id] ?? 0, mb_strlen($alias));
+                }
+            }
+        }
+        if ($porCasa === []) {
+            return false;
+        }
+        arsort($porCasa);
+        $largos = array_values($porCasa);
+
+        return count($largos) === 1 || $largos[0] > $largos[1] ? (int) array_key_first($porCasa) : null;
+    }
+
+    /**
+     * Reporte de cierre del POS (no comandas) del turno, o de la misma casa sin turno en las últimas 16 h
+     * (tickets reasignados por encabezado). Si hay varios, el de mayor total cobrado. Lo vincula al turno.
+     */
+    private static function cortePosDelTurno(int $turnoId, int $sucursalId): ?WhatsAppMensajeInbound
+    {
+        $candidatos = WhatsAppMensajeInbound::where('clasificacion_ia', 'ticket_pos')
+            ->where(fn ($q) => $q->where('turno_id', $turnoId)
+                ->orWhere(fn ($q) => $q->whereNull('turno_id')->where('sucursal_id', $sucursalId)->where('created_at', '>=', now()->subHours(16))))
+            ->get()
+            ->filter(fn ($m) => !empty(($m->metadata_ia ?? [])['es_cierre_turno']))
+            ->sortByDesc(fn ($m) => (float) (($m->metadata_ia ?? [])['total_cobros_bs'] ?? 0));
+
+        $corte = $candidatos->first();
+        if ($corte && !$corte->turno_id) {
+            $corte->turno_id = $turnoId;
+            $corte->save();
+        }
+
+        return $corte;
+    }
+
+    /** Datos del reporte POS con las claves que devuelve la IA (antes se leían claves inexistentes y quedaban en 0). */
+    private static function datosPos(array $datos, ?string $foto): array
+    {
+        return array_filter([
+            'ventas_pos' => $datos['total_cobros_bs'] ?? $datos['total_ticket_bs'] ?? null,
+            'ventas_efectivo_pos_bs' => $datos['ventas_efectivo_bs'] ?? null,
+            'ventas_qr_bs' => $datos['ventas_qr_bs'] ?? $datos['qr_pos_bs'] ?? null,
+            'ticket_pos_foto_url' => $foto,
+        ], fn ($v) => $v !== null);
     }
 
     private static function normalizar(string $texto): string

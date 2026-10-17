@@ -147,7 +147,8 @@ class InformeCierreEncargadaTest extends TestCase
 
     public function test_ticket_vip_alemana_casa22_se_asigna_a_casa_22_vip_y_no_a_belen(): void
     {
-        $vip = Sucursal::create(['nombre' => 'casa22vip', 'codigo' => 'C22VIP', 'activo' => true]);
+        $vip = Sucursal::create(['nombre' => 'casa22vip', 'codigo' => 'C22VIP', 'alias_documentos' => 'vip,alemana', 'activo' => true]);
+        $this->casa->update(['alias_documentos' => 'belen']);
         $inbound = $this->crearInbound('Fanny');
 
         $id = ProcesarMensajeWhatsAppJob::inferirSucursalId(
@@ -156,6 +157,154 @@ class InformeCierreEncargadaTest extends TestCase
         );
 
         $this->assertSame($vip->id, $id);
+    }
+
+    public function test_ticket_pos_antes_de_la_planilla_no_falla_y_se_incorpora_despues(): void
+    {
+        // Producción 2026-10-17: el ticket llegaba primero y la planilla vacía sin fecha rompía en MySQL
+        $turno = $this->crearTurno('abierto');
+        $this->simularIa(
+            ['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => 'Casa22', 'datos' => ['total_cobros_bs' => 8500, 'ventas_efectivo_bs' => 6000, 'ventas_qr_bs' => 2500, 'es_cierre_turno' => true]],
+            $this->planillaIa('Rosa Encargada', 8500),
+        );
+        $ticket = $this->crearInbound('Rosa');
+        $ticket->update(['turno_id' => $turno->id]);
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($ticket->id);
+
+        $this->assertSame('procesado', $ticket->fresh()->estado);
+        $this->assertSame(0, PlanillaCaja::count());
+
+        $planilla = $this->crearInbound('Rosa');
+        ProcesarMensajeWhatsAppJob::dispatchSync($planilla->id);
+
+        $datos = PlanillaCaja::first()->datos_ocr_json;
+        $this->assertSame(8500, (int) $datos['ventas_pos']);
+        $this->assertSame(2500, (int) $datos['ventas_qr_bs']);
+    }
+
+    /**
+     * @dataProvider encabezadosPos
+     */
+    public function test_casa_por_encabezado_real_del_pos(string $encabezado, ?string $codigoEsperado): void
+    {
+        // Encabezados reales de la noche del 16-10-2026; todos dicen "CASA22"
+        $this->casa->update(['alias_documentos' => 'belen']);
+        foreach ([['corona', 'CR', 'corona'], ['casa22vip', 'C22VIP', 'vip,alemana'], ['Cuarta Casa', 'CASA4', 'hamacas,casa nueva,cuarta casa'], ['Madam', 'MD', 'madam,madan,madames']] as [$n, $c, $a]) {
+            Sucursal::create(['nombre' => $n, 'codigo' => $c, 'alias_documentos' => $a, 'activo' => true]);
+        }
+        $inbound = $this->crearInbound('Encargada');
+
+        $id = ProcesarMensajeWhatsAppJob::inferirSucursalId(['datos' => ['servidor_cajero' => $encabezado]], $inbound);
+
+        $this->assertSame($codigoEsperado ? Sucursal::where('codigo', $codigoEsperado)->value('id') : null, $id);
+    }
+
+    public static function encabezadosPos(): array
+    {
+        return [
+            'Corona' => ['CORONA CASA22 - V.491', 'CR'],
+            'Hamacas (Cuarta Casa)' => ['HAMACAS CASA22 - V.491', 'CASA4'],
+            'VIP' => ['VIP ALEMANA CASA22 - V.491', 'C22VIP'],
+            'Belén' => ['BELEN CASA22 - V.491', 'C22'],
+            'solo CASA22 no identifica' => ['CASA22', null],
+            'Joker no es casa' => ['JOKER ULTRA', null],
+        ];
+    }
+
+    public function test_pos_de_otra_casa_en_el_grupo_equivocado_se_reasigna_por_encabezado(): void
+    {
+        // Producción: el POS "CORONA CASA22" quedó asignado a Casa22 (Belén)
+        $corona = Sucursal::create(['nombre' => 'corona', 'codigo' => 'CR', 'alias_documentos' => 'corona', 'activo' => true]);
+        $this->simularIa(['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => null, 'datos' => ['servidor_cajero' => 'CORONA CASA22 - V.491', 'total_cobros_bs' => 9400, 'es_cierre_turno' => false]]);
+        $inbound = $this->crearInbound('Nancy'); // llegó por el grupo de Casa22
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+
+        $this->assertSame($corona->id, $inbound->fresh()->sucursal_id);
+    }
+
+    public function test_texto_libre_no_cambia_la_casa_del_grupo(): void
+    {
+        // Planilla de Hamacas con "20 whisky vip a la nueva casa" en Otros: sigue siendo de su grupo
+        Sucursal::create(['nombre' => 'casa22vip', 'codigo' => 'C22VIP', 'alias_documentos' => 'vip,alemana', 'activo' => true]);
+        $this->simularIa($this->planillaIa('Ariane Mercado', 880));
+        $inbound = $this->crearInbound('Ariane');
+        $inbound->update(['raw_text' => 'Otros: 20 wisky vip a la nueva casa']);
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+
+        $this->assertSame($this->casa->id, $inbound->fresh()->sucursal_id);
+    }
+
+    public function test_ticket_que_termina_antes_que_una_planilla_anterior_igual_se_incorpora(): void
+    {
+        // Codex #3: planilla (id menor) espera a la IA mientras el ticket (id mayor) termina primero
+        $turno = $this->crearTurno('abierto');
+        $planilla = $this->crearInbound('Rosa');
+        $ticket = $this->crearInbound('Rosa');
+        $ticket->update(['turno_id' => $turno->id]);
+        $this->simularIa(
+            ['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => null, 'datos' => ['total_cobros_bs' => 7700, 'es_cierre_turno' => true]],
+            $this->planillaIa('Rosa Encargada', 7700),
+        );
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($ticket->id);
+        ProcesarMensajeWhatsAppJob::dispatchSync($planilla->id);
+
+        $this->assertSame(7700, (int) PlanillaCaja::first()->datos_ocr_json['ventas_pos']);
+    }
+
+    public function test_una_comanda_no_reemplaza_al_corte_del_pos(): void
+    {
+        // Codex #4: corte Z de 8.500, luego una comanda de 30, luego la planilla
+        $turno = $this->crearTurno('abierto');
+        $this->simularIa(
+            ['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => null, 'datos' => ['total_cobros_bs' => 8500, 'es_cierre_turno' => true]],
+            ['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => null, 'datos' => ['total_cobros_bs' => 30, 'es_cierre_turno' => false]],
+            $this->planillaIa('Rosa Encargada', 8500),
+        );
+        foreach ([1, 2] as $_) {
+            $t = $this->crearInbound('Rosa');
+            $t->update(['turno_id' => $turno->id]);
+            ProcesarMensajeWhatsAppJob::dispatchSync($t->id);
+        }
+        ProcesarMensajeWhatsAppJob::dispatchSync($this->crearInbound('Rosa')->id);
+
+        $this->assertSame(8500, (int) PlanillaCaja::first()->datos_ocr_json['ventas_pos']);
+    }
+
+    public function test_ticket_reasignado_sin_turno_se_incorpora_a_la_planilla_de_su_casa(): void
+    {
+        // Codex #2: POS de Corona llegó por el grupo de Belén y quedó sin turno al reasignarse
+        $corona = Sucursal::create(['nombre' => 'corona', 'codigo' => 'CR', 'alias_documentos' => 'corona', 'activo' => true]);
+        $this->simularIa(
+            ['clasificacion' => 'ticket_pos', 'score_confianza' => 0.98, 'sucursal_sugerida' => null, 'datos' => ['servidor_cajero' => 'CORONA CASA22 - V.491', 'total_cobros_bs' => 9400, 'es_cierre_turno' => true]],
+            $this->planillaIa('Nancy Chura', 9400),
+        );
+        $ticket = $this->crearInbound('Nancy'); // grupo de Belén
+        ProcesarMensajeWhatsAppJob::dispatchSync($ticket->id);
+
+        $planilla = $this->crearInbound('Nancy');
+        $planilla->update(['sucursal_id' => $corona->id]);
+        ProcesarMensajeWhatsAppJob::dispatchSync($planilla->id);
+
+        $p = PlanillaCaja::where('sucursal_id', $corona->id)->first();
+        $this->assertSame(9400, (int) $p->datos_ocr_json['ventas_pos']);
+        $this->assertSame($p->turno_id, $ticket->fresh()->turno_id);
+    }
+
+    public function test_texto_adjunto_no_se_impone_al_encabezado_del_pos(): void
+    {
+        // Codex #1: "Reenvío del grupo Hamacas" no convierte un POS de Corona en Hamacas
+        $corona = Sucursal::create(['nombre' => 'corona', 'codigo' => 'CR', 'alias_documentos' => 'corona', 'activo' => true]);
+        Sucursal::create(['nombre' => 'Cuarta Casa', 'codigo' => 'CASA4', 'alias_documentos' => 'hamacas', 'activo' => true]);
+        $inbound = $this->crearInbound('Nancy');
+        $inbound->update(['sucursal_id' => null, 'raw_text' => 'Reenvío del grupo Hamacas']);
+
+        $id = ProcesarMensajeWhatsAppJob::inferirSucursalId(['datos' => ['servidor_cajero' => 'CORONA CASA22']], $inbound);
+
+        $this->assertSame($corona->id, $id);
     }
 
     public function test_joker_es_otro_negocio_y_no_se_asigna_a_ninguna_casa(): void

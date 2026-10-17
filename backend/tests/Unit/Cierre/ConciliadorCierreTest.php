@@ -40,14 +40,18 @@ class ConciliadorCierreTest extends TestCase
         $r = $this->conciliador->conciliar(CasosDorados::sisiela());
 
         $this->assertSame(ResultadoConciliacion::REVISAR, $r->estado());
-        $this->assertSame([], $r->conProblemas(), $this->problemas($r));
+        $this->assertSame(['CHP'], array_map(fn ($x) => $x->codigo, $r->conProblemas()), $this->problemas($r));
         $this->assertSame(['Comprobante de transferencia del QR'], $r->documentosFaltantes);
-        foreach (['ING', 'EGR', 'SAL', 'SOB', 'POS', 'COM', 'CHI', 'LIM', 'CHP', 'SHP', 'SHX', 'GNO'] as $codigo) {
+        foreach (['ING', 'EGR', 'SAL', 'SOB', 'POS', 'COM', 'CHI', 'LIM', 'SHP', 'SHX', 'GNO'] as $codigo) {
             $this->assertSame(ResultadoRegla::CUMPLE, $r->regla($codigo)?->estado, "Regla {$codigo}");
         }
+        // "Angy" (hoja) ~ "ANGIE" (POS): montos iguales, pero el nombre lo confirma una persona
+        $this->assertSame(ResultadoRegla::SIN_VERIFICAR, $r->regla('CHP')->estado);
+        $this->assertStringContainsString('"Angy" = "ANGIE"', $r->regla('CHP')->detalle);
 
         $lote = CasosDorados::sisiela();
         $lote['comprobantes_qr'] = [['monto' => 1266, 'cuenta_destino' => CasosDorados::CUENTA_OFICIAL]];
+        $lote['pago_chicas'][0]['nombre'] = 'Angie'; // nombre confirmado por una persona
         $this->assertSame(ResultadoConciliacion::CUADRA_PENDIENTE, $this->conciliador->conciliar($lote)->estado());
     }
 
@@ -177,6 +181,22 @@ class ConciliadorCierreTest extends TestCase
         $this->assertTrue(NombrePersona::mismaPersona('J. Pablo', 'Juan Pablo Perez'));
         $this->assertTrue(NombrePersona::mismaPersona('Fanny', 'Fanny Morón'));
         $this->assertTrue(NombrePersona::parecido('Angy', 'ANGIE'));
+        $this->assertTrue(NombrePersona::parecido('Nati', 'Natalia'));
+        $this->assertTrue(NombrePersona::parecido('Abi', 'ABY'));
+        $this->assertFalse(NombrePersona::parecido('Ana', 'Abi'));
+        $this->assertFalse(NombrePersona::parecido('Luz', 'Lia'));
+    }
+
+    public function test_nombre_aproximado_nunca_da_cumple(): void
+    {
+        // Codex: "Ana" (hoja) y "Anabel" (POS) podían emparejarse y dar CUMPLE
+        $lote = CasosDorados::fanny();
+        $lote['pago_chicas'][0]['nombre'] = 'Fio';
+
+        $r = $this->conciliador->conciliar($lote);
+
+        $this->assertSame(ResultadoRegla::SIN_VERIFICAR, $r->regla('CHP')->estado);
+        $this->assertSame(ResultadoConciliacion::REVISAR, $r->estado());
     }
 
     public function test_inicial_con_apellido_mantiene_la_alerta_de_personal(): void

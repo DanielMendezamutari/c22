@@ -104,7 +104,8 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identifi
      * ventas_qr_bs: monto cobrado en QR / transferencias según el POS.
      * total_cobros_bs: total cobrado por el POS.
      * fecha_hora: fecha y hora de emisión del ticket.
-     * servidor_cajero: nombre del cajero o servidor (preferir una encargada de PERSONAL REGISTRADO si coincide).
+     * servidor_cajero: texto COMPLETO de la línea SERVIDOR del encabezado, tal cual (ej. "CORONA CASA22 - V.491", "HAMACAS CASA22", "VIP ALEMANA CASA22").
+     * encargada_turno: nombre que figura en "Turno N - NOMBRE".
      * items_vendidos_count: cantidad total de ítems.
      * es_cierre_turno: true si es reporte de corte Z, cierre de caja o resumen diario; false si es comanda simple.
    - Si es "planilla_caja":

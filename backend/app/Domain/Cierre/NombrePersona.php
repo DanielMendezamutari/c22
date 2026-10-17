@@ -6,7 +6,8 @@ namespace App\Domain\Cierre;
  * Compara nombres escritos a mano y en el POS.
  *  - Coincidencia segura (mismaPersona): "Fanny" = "Fanny Morón", "J. Pablo" = "JUAN PABLO" = "Juan Pablo Perez".
  *    Nunca une nombres completos distintos ("Juan Perez" ≠ "Jose Perez", "Maria Perez" ≠ "Mario Lopez").
- *  - Coincidencia aproximada (parecido): solo errores de escritura en un nombre suelto ("Angy" ~ "ANGIE");
+ *  - Coincidencia aproximada (parecido): errores de escritura o diminutivos de un nombre suelto
+ *    ("Angy" ~ "ANGIE", "Abi" ~ "ABY", "Nati" ~ "Natalia");
  *    quien la use debe exigir que sea única y dejarla como alerta para revisión humana.
  */
 final class NombrePersona
@@ -45,11 +46,19 @@ final class NombrePersona
     {
         $ta = self::tokens($a);
         $tb = self::tokens($b);
+        if (count($ta) !== 1 || count($tb) !== 1 || $ta[0][0] !== $tb[0][0]) {
+            return false;
+        }
+        [$x, $y] = [$ta[0], $tb[0]];
+        $corto = min(strlen($x), strlen($y));
 
-        return count($ta) === 1 && count($tb) === 1
-            && strlen($ta[0]) >= 4 && strlen($tb[0]) >= 4
-            && $ta[0][0] === $tb[0][0]
-            && levenshtein($ta[0], $tb[0]) <= 2;
+        // Diminutivo: el nombre corto (≤ 4 letras) comparte las 3 primeras con el largo ("Nati" ~ "Natalia", "Fio" ~ "Fiorella")
+        if ($corto >= 3 && $corto <= 4 && strlen($x) !== strlen($y) && strncmp($x, $y, 3) === 0) {
+            return true;
+        }
+
+        // Error de escritura: 1 letra en nombres de 3 ("Abi" ~ "Aby"), hasta 2 desde 4 letras ("Angy" ~ "Angie")
+        return $corto >= 3 && levenshtein($x, $y) <= ($corto >= 4 ? 2 : 1);
     }
 
     /**
