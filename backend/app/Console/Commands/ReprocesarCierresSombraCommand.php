@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 
 class ReprocesarCierresSombraCommand extends Command
 {
-    protected $signature = 'cierres:reprocesar-sombra {--desde=} {--hasta=} {--limite=200}';
+    protected $signature = 'cierres:reprocesar-sombra {--desde=} {--hasta=} {--limite=2000}';
 
     protected $description = 'Registra y concilia evidencia histórica sin modificar el flujo contable ni enviar mensajes.';
 
@@ -39,6 +39,9 @@ class ReprocesarCierresSombraCommand extends Command
             return self::INVALID;
         }
         $ids = $consulta->orderBy('created_at')->orderBy('id')->limit($limite)->pluck('id');
+        if ($ids->count() === $limite) {
+            $this->warn("Se alcanzó el límite de {$limite} mensajes: puede haber más en el rango. Vuelve a correrlo (lo ya procesado se salta).");
+        }
         foreach ($ids as $id) {
             $registrar->ejecutar($id);
         }

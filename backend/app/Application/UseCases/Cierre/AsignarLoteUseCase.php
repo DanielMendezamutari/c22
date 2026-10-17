@@ -111,6 +111,10 @@ class AsignarLoteUseCase
         $turno = $local->hour >= 17 || $local->hour < 14 ? 'noche' : 'dia';
         if ($doc->tipo === 'reporte_pos' && ! empty($datos['desde'])) {
             $inicio = self::fechaBoliviana((string) $datos['desde']);
+            // Igual que la planilla: una fecha a más de 2 días del envío es un error de lectura (17-10: "2024")
+            if ($inicio && abs($inicio->copy()->startOfDay()->diffInDays($local->copy()->startOfDay())) > 2) {
+                $inicio = null;
+            }
             if ($inicio) {
                 return [$inicio->toDateString(), $inicio->hour >= 17 || $inicio->hour < 5 ? 'noche' : 'dia', true, true];
             }
