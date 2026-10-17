@@ -411,6 +411,30 @@ class ConciliadorCierreTest extends TestCase
         }
     }
 
+    public function test_de_noche_el_3_por_ciento_se_reparte_entre_cajeros_y_adm(): void
+    {
+        // Noche 16-10 (planillas reales): VIP 2 cajeras, Belén Adm + cajero, Corona y Hamacas 1 cajera = 6 personas
+        $casa = fn (string $n, array $ingresos, array $personal) => ['casa' => $n, 'planilla' => ['ingresos' => $ingresos, 'personal' => $personal]];
+        $cierres = [
+            $casa('VIP', ['ventas_bebidas' => 15620, 'covers' => 400, 'shampagne' => 2000, 'chuflay' => 25], [
+                ['nombre' => 'Fabiana', 'cargo' => 'Limp', 'pagado' => 60], ['nombre' => 'Mabel', 'cargo' => 'Caja', 'pagado' => 395], ['nombre' => 'Heidy', 'cargo' => 'Caja', 'pagado' => 375]]),
+            $casa('Belén', ['ventas_bebidas' => 22030, 'covers' => 1080, 'shampagne' => 5850, 'privados' => 1015], [
+                ['nombre' => 'Juan Pablo', 'cargo' => 'Guardia', 'pagado' => 74], ['nombre' => 'Sisiela', 'cargo' => 'Adm', 'pagado' => 495], ['nombre' => 'Alvaro', 'cargo' => 'Caja', 'pagado' => 495]]),
+            $casa('Corona', ['ventas_bebidas' => 7120, 'shampagne' => 2200], [
+                ['nombre' => 'Nancy', 'cargo' => 'Limpieza', 'pagado' => 30], ['nombre' => 'Nancy', 'cargo' => 'Cajera', 'pagado' => 375]]),
+            $casa('Hamacas', ['ventas_bebidas' => 880], [['nombre' => 'Ariane', 'cargo' => 'Caja', 'pagado' => 375]]),
+        ];
+
+        $r = (new LiquidacionGlobalTurno())->verificar($cierres, 'noche');
+        $personas = array_values(array_filter($r, fn ($x) => $x->codigo === 'ENC'));
+
+        // Ventas 18.045 + 29.975 + 9.320 + 880 = 58.220 → 3% = 1.746,60 / 6 = 291,10 + base noche 50 = 341,10
+        $this->assertCount(6, $personas);
+        $this->assertSame(34110, $personas[0]->esperadoCentavos);
+        $this->assertStringContainsString('entre 6 cajeros y Adm', $personas[0]->detalle);
+        $this->assertSame(['Mabel', 'Heidy', 'Sisiela', 'Alvaro', 'Nancy', 'Ariane'], array_map(fn ($x) => explode(' ', $x->descripcion)[1], $personas));
+    }
+
     private function cuatroCasasDia(array $planillaFanny): array
     {
         $casa = fn (string $nombre, float $bebidas, array $garzones, string $encargada) => [

@@ -73,35 +73,52 @@ final class LiquidacionGlobalTurno
 
     private function encargadas(array $cierres, string $turno): array
     {
+        // Ventas registradas en el POS de todas las casas (mismos conceptos que la regla POS del conciliador)
         $ventas = Dinero::suma(array_map(fn ($c) => Dinero::suma([
             $c['planilla']['ingresos']['ventas_bebidas'] ?? null,
             $c['planilla']['ingresos']['covers'] ?? 0,
             $c['planilla']['ingresos']['shampagne'] ?? 0,
+            $c['planilla']['ingresos']['chupete'] ?? 0,
+            $c['planilla']['ingresos']['privados'] ?? 0,
+            $c['planilla']['ingresos']['chuflay'] ?? 0,
         ]), $cierres));
 
-        $encargadas = array_values(array_filter(array_map(fn ($c) => ['casa' => $c['casa'], 'nombre' => $c['planilla']['encargada'] ?? null, 'personal' => $c['planilla']['personal'] ?? []], $cierres), fn ($e) => $e['nombre']));
-        if ($encargadas === []) {
+        // Participan del 3% los cajeros y los Adm de cada casa (dueño, 17-10: de noche hay Adm y cajeros).
+        // Si una planilla no tiene renglón de caja/Adm, queda la encargada de la planilla sin pago verificable.
+        $participantes = [];
+        foreach ($cierres as $c) {
+            $deCasa = array_values(array_filter(
+                $c['planilla']['personal'] ?? [],
+                fn ($x) => self::esCajaOAdm((string) ($x['cargo'] ?? '')),
+            ));
+            if ($deCasa === [] && !empty($c['planilla']['encargada'])) {
+                $deCasa = [['nombre' => $c['planilla']['encargada'], 'cargo' => 'Caja', 'pagado' => null]];
+            }
+            foreach ($deCasa as $x) {
+                $participantes[] = ['casa' => $c['casa'], 'nombre' => $x['nombre'], 'cargo' => $x['cargo'] ?? null, 'pagado' => $x['pagado'] ?? null];
+            }
+        }
+        if ($participantes === []) {
             return [];
         }
         if ($ventas === null) {
-            return [new ResultadoRegla('ENT', 'Fondo de encargadas', ResultadoRegla::SIN_VERIFICAR, ResultadoRegla::CUADRE, null, null, 'Falta la venta de alguna casa')];
+            return [new ResultadoRegla('ENT', 'Fondo de cajeros y Adm', ResultadoRegla::SIN_VERIFICAR, ResultadoRegla::CUADRE, null, null, 'Falta la venta de alguna casa')];
         }
 
         $base = $this->reglas->baseEncargada($turno);
         $comision = Dinero::porcentaje($ventas, $this->reglas->pctEncargadas);
-        $detalle = "base {$base} + {$this->reglas->pctEncargadas}% de Bs " . Dinero::formato($ventas) . ' entre ' . count($encargadas) . ' encargadas'
+        $detalle = "base {$base} + {$this->reglas->pctEncargadas}% de Bs " . Dinero::formato($ventas) . ' entre ' . count($participantes) . ' cajeros y Adm'
             . ($this->reglas->baseEncargadaProvisional ? ' (base provisional)' : '')
             . ($this->reglas->bonosEncargada === [] ? '; bonos no configurados' : '');
 
-        // El pago de la encargada es el renglón de cargo "cajera/caja" a su nombre
-        $pagado = function ($e) {
-            $pagos = array_filter($e['personal'], fn ($x) => NombrePersona::mismaPersona($x['nombre'], $e['nombre'])
-                && str_starts_with(NombrePersona::normalizar((string) ($x['cargo'] ?? '')), 'ca'));
+        return $this->repartir('ENC', 'ENT', 'Cajero/Adm', 'Fondo de cajeros y Adm', $participantes, fn ($p) => $p['pagado'], $comision, $base, $detalle);
+    }
 
-            return $pagos === [] ? null : Dinero::suma(array_map(fn ($x) => $x['pagado'] ?? null, $pagos));
-        };
+    private static function esCajaOAdm(string $cargo): bool
+    {
+        $c = NombrePersona::normalizar($cargo);
 
-        return $this->repartir('ENC', 'ENT', 'Encargada', 'Fondo de encargadas', $encargadas, $pagado, $comision, $base, $detalle);
+        return str_starts_with($c, 'caj') || $c === 'caja' || str_starts_with($c, 'adm');
     }
 
     /**
