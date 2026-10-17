@@ -435,6 +435,17 @@ async function startWhatsAppBot(generation) {
   /**
    * Procesa y retransmite un mensaje auditado hacia el webhook de Laravel
    */
+  // Remitente de cada mensaje según su primer aviso. Muchos mensajes de grupo llegan primero sin poder
+  // descifrarse y se descifran después por 'messages.update', cuya clave no trae participante ni nombre:
+  // sin esto el remitente quedaba como el número del GRUPO y el nombre como "Encargada".
+  const remitentesPorMensaje = new Map();
+  function recordarRemitente(msg) {
+    const k = msg?.key;
+    if (!k?.id || !k.remoteJid?.endsWith('@g.us') || !(k.participant || k.participantAlt)) return;
+    remitentesPorMensaje.set(k.id, { participant: k.participant, participantAlt: k.participantAlt, pushName: msg.pushName });
+    if (remitentesPorMensaje.size > 5000) remitentesPorMensaje.delete(remitentesPorMensaje.keys().next().value);
+  }
+
   async function procesarMensajeEntrante(msg) {
     if (!msg?.message) return;
     const content = normalizeMessageContent(msg.message);
@@ -468,11 +479,13 @@ async function startWhatsAppBot(generation) {
     }
 
     const grupoConfig = auditableGroupsMap.get(remoteJid);
-    const participantRaw = msg.key.participantAlt && isPnUser(msg.key.participantAlt)
-      ? msg.key.participantAlt
-      : msg.key.participant || remoteJid;
+    const conocido = remitentesPorMensaje.get(msg.key.id) || {};
+    const participant = msg.key.participant || conocido.participant;
+    const participantAlt = msg.key.participantAlt || conocido.participantAlt;
+    // Nunca el número del grupo como remitente: si no se conoce, va vacío
+    const participantRaw = participantAlt && isPnUser(participantAlt) ? participantAlt : participant || '';
     const senderPhone = participantRaw.split('@')[0].split(':')[0];
-    const senderName = msg.pushName || 'Encargada';
+    const senderName = msg.pushName || conocido.pushName || '';
     const timestamp = msg.messageTimestamp ? Number(msg.messageTimestamp) : Math.floor(Date.now() / 1000);
 
     let tipoMensaje = 'texto';
@@ -539,6 +552,7 @@ async function startWhatsAppBot(generation) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     const nowSec = Math.floor(Date.now() / 1000);
     for (const msg of messages) {
+      recordarRemitente(msg); // también los que todavía no se pudieron descifrar
       if (type === 'append') {
         const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) : 0;
         if (msgTime < nowSec - 7200) continue; // Ignorar historial viejo de más de 2h
@@ -556,7 +570,7 @@ async function startWhatsAppBot(generation) {
           key,
           message: update.message,
           messageTimestamp: Math.floor(Date.now() / 1000),
-          pushName: update.pushName || 'Encargada',
+          pushName: update.pushName,
         };
         await procesarMensajeEntrante(reconstructedMsg);
       }

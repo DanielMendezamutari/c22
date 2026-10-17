@@ -667,4 +667,18 @@ class LotesCierreSombraTest extends TestCase
         $this->assertSame('2026-10-17', $f::fechaBoliviana('2026-10-17')->format('Y-m-d'));
         $this->assertNull($f::fechaBoliviana('ayer en la noche'));
     }
+
+    public function test_remitente_igual_al_numero_del_grupo_no_agrupa_cierres_de_distintas_encargadas(): void
+    {
+        // Producción 17-10: todo lo que llegó a "ADM casas 22" tenía como remitente el número del grupo,
+        // y la planilla de Belén terminó en el lote de Corona por el POS de Corona "del mismo remitente".
+        $inbound = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::create([
+            'remote_jid' => '120363429038207722@g.us', 'sender_phone' => '120363429038207722', 'sender_name' => 'Encargada',
+            'tipo_mensaje' => 'texto', 'raw_text' => 'Venta total: 100', 'estado' => 'procesado',
+        ]);
+
+        app(\App\Application\UseCases\Cierre\RegistrarDocumentosUseCase::class)->ejecutar($inbound->id);
+
+        $this->assertSame('', $inbound->fresh()->sender_phone);
+    }
 }

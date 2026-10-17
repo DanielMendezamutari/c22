@@ -22,6 +22,13 @@ class RegistrarDocumentosUseCase
             if (! $inbound || $inbound->estado === 'duplicado') {
                 return;
             }
+            // Bot con Baileys 7 (hasta el 17-10): en mensajes descifrados por reintento el remitente quedaba como el
+            // número del GRUPO. Ese dato no identifica a nadie y mezclaría los cierres de todas las encargadas.
+            $numeroGrupo = strstr((string) $inbound->remote_jid, '@', true);
+            if ($numeroGrupo && $inbound->sender_phone === $numeroGrupo) {
+                $inbound->sender_phone = '';
+                $inbound->save();
+            }
             $this->calcularHuella($inbound);
             $existentes = DocumentoCierre::where('inbound_id', $inboundId)->get();
             if ($existentes->isNotEmpty()) {
