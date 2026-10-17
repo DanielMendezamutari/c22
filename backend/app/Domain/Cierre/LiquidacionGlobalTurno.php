@@ -142,6 +142,7 @@ final class LiquidacionGlobalTurno
             Dinero::centavos($totalEsperado),
             Dinero::centavos($totalPagado),
             "Máximo aceptable por redondeo a Bs enteros: " . Dinero::formato($maximo),
+            ResultadoRegla::FALTA_SI_MAYOR,
         );
 
         return $resultados;

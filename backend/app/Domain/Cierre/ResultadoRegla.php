@@ -12,8 +12,13 @@ final class ResultadoRegla
     public const SIN_VERIFICAR = 'sin_verificar';
     public const PENDIENTE_GLOBAL = 'pendiente_global';
 
-    /** Una diferencia en esta categoría significa dinero que falta o sobra. */
+    /** Compara lo declarado contra evidencia independiente del dinero (sobre, comprobantes, POS, cuenta destino). */
     public const DINERO = 'dinero';
+
+    /** Hay faltante cuando lo comprobado es MENOR que lo esperado (sobre con menos efectivo, ventas bajo el POS). */
+    public const FALTA_SI_MENOR = 'menor';
+    /** Hay faltante cuando lo comprobado es MAYOR que lo que corresponde (se pagó de más del fondo). */
+    public const FALTA_SI_MAYOR = 'mayor';
     public const CUADRE = 'cuadre';
 
     public function __construct(
@@ -24,19 +29,37 @@ final class ResultadoRegla
         public readonly ?int $esperadoCentavos = null,
         public readonly ?int $declaradoCentavos = null,
         public readonly ?string $detalle = null,
+        public readonly string $faltaSi = self::FALTA_SI_MENOR,
     ) {
     }
 
-    public static function comparar(string $codigo, string $descripcion, ?float $esperado, ?float $declarado, string $categoria = self::CUADRE, ?string $detalle = null): self
+    public static function comparar(string $codigo, string $descripcion, ?float $esperado, ?float $declarado, string $categoria = self::CUADRE, ?string $detalle = null, string $faltaSi = self::FALTA_SI_MENOR): self
     {
         if ($esperado === null || $declarado === null) {
-            return new self($codigo, $descripcion, self::SIN_VERIFICAR, $categoria, Dinero::centavos($esperado), Dinero::centavos($declarado), $detalle ?? 'Falta un dato para verificar');
+            return new self($codigo, $descripcion, self::SIN_VERIFICAR, $categoria, Dinero::centavos($esperado), Dinero::centavos($declarado), $detalle ?? 'Falta un dato para verificar', $faltaSi);
         }
 
         $e = Dinero::centavos($esperado);
         $d = Dinero::centavos($declarado);
 
-        return new self($codigo, $descripcion, $e === $d ? self::CUMPLE : self::NO_CUMPLE, $categoria, $e, $d, $detalle);
+        return new self($codigo, $descripcion, $e === $d ? self::CUMPLE : self::NO_CUMPLE, $categoria, $e, $d, $detalle, $faltaSi);
+    }
+
+    /**
+     * Solo es faltante una diferencia contra evidencia del dinero y en la dirección de la pérdida.
+     * Un sobrante o una planilla que no cuadra consigo misma se revisan, pero no acusan a nadie.
+     */
+    public function esFaltante(): bool
+    {
+        if ($this->estado !== self::NO_CUMPLE || $this->categoria !== self::DINERO) {
+            return false;
+        }
+        $diferencia = $this->diferencia();
+        if ($diferencia === null) {
+            return true; // sin montos: p. ej. transferencia a una cuenta que no es la oficial
+        }
+
+        return $this->faltaSi === self::FALTA_SI_MAYOR ? $diferencia > 0 : $diferencia < 0;
     }
 
     public function diferencia(): ?float
@@ -61,6 +84,7 @@ final class ResultadoRegla
             'esperado' => $this->esperadoCentavos === null ? null : $this->esperadoCentavos / 100,
             'declarado' => $this->declaradoCentavos === null ? null : $this->declaradoCentavos / 100,
             'diferencia' => $this->diferencia(),
+            'faltante' => $this->esFaltante(),
             'detalle' => $this->detalle,
         ];
     }

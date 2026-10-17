@@ -58,7 +58,8 @@ final class ConciliadorCierre
 
         $saldo = isset($p['total_ingresos'], $p['total_egresos']) ? $p['total_ingresos'] - $p['total_egresos'] : null;
         $entregado = Dinero::suma([$p['qr'] ?? null, $p['linkser'] ?? 0, $p['efectivo'] ?? null]);
-        $reglas[] = ResultadoRegla::comparar('SAL', 'Ingresos − egresos = QR + Linkser + efectivo', $saldo, $entregado, ResultadoRegla::DINERO);
+        // Cuadre interno de la planilla: si no cuadra puede ser error de lectura o de anotación, no prueba un faltante
+        $reglas[] = ResultadoRegla::comparar('SAL', 'Ingresos − egresos = QR + Linkser + efectivo', $saldo, $entregado);
 
         // El sobre solo se acredita con el documento del sobre, nunca con lo que dice la propia planilla
         $reglas[] = ResultadoRegla::comparar('SOB', 'Efectivo declarado = efectivo en el sobre', $p['efectivo'] ?? null, $lote['sobre']['monto'] ?? null, ResultadoRegla::DINERO);
@@ -272,7 +273,7 @@ final class ConciliadorCierre
             return [];
         }
 
-        $reglas = [ResultadoRegla::comparar('QRC', 'Comprobantes de transferencia = QR declarado', Dinero::suma(array_map(fn ($c) => $c['monto'] ?? null, $comprobantes)), $p['qr'] ?? null, ResultadoRegla::DINERO)];
+        $reglas = [ResultadoRegla::comparar('QRC', 'Comprobantes de transferencia = QR declarado', $p['qr'] ?? null, Dinero::suma(array_map(fn ($c) => $c['monto'] ?? null, $comprobantes)), ResultadoRegla::DINERO)];
 
         if ($this->reglasPago->cuentasQrOficiales === []) {
             $reglas[] = new ResultadoRegla('QRD', 'El QR se transfirió a la cuenta oficial', ResultadoRegla::SIN_VERIFICAR, ResultadoRegla::DINERO, null, null, 'Cuenta oficial no configurada');

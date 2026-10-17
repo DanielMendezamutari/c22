@@ -25,7 +25,7 @@ final class ResultadoConciliacion
     public function estado(): string
     {
         foreach ($this->reglas as $r) {
-            if ($r->estado === ResultadoRegla::NO_CUMPLE && $r->categoria === ResultadoRegla::DINERO) {
+            if ($r->esFaltante()) {
                 return self::FALTANTE;
             }
         }

@@ -220,6 +220,46 @@ class ConciliadorCierreTest extends TestCase
         $this->assertSame(ResultadoConciliacion::REVISAR, $this->conciliador->conciliar($lote)->estado());
     }
 
+    public function test_sobrante_en_el_sobre_se_revisa_pero_no_es_faltante(): void
+    {
+        // VIP noche 16-10: sobre 1580 con efectivo declarado 1569 (+11)
+        $lote = CasosDorados::sisiela();
+        $lote['sobre']['monto'] = 2848;
+
+        $r = $this->conciliador->conciliar($lote);
+
+        $this->assertSame(ResultadoRegla::NO_CUMPLE, $r->regla('SOB')->estado);
+        $this->assertFalse($r->regla('SOB')->esFaltante());
+        $this->assertSame(ResultadoConciliacion::REVISAR, $r->estado());
+    }
+
+    public function test_planilla_que_no_cuadra_consigo_misma_se_revisa_pero_no_acusa(): void
+    {
+        // Corona noche 16-10: si la IA lee Linkser 0 en vez de 2638, la planilla deja de cuadrar consigo misma.
+        // Eso puede ser un error de lectura: REVISAR, nunca FALTANTE.
+        $lote = CasosDorados::sisiela();
+        $lote['planilla']['qr'] = 0;
+        $lote['comprobantes_qr'] = [['monto' => 1266, 'cuenta_destino' => CasosDorados::CUENTA_OFICIAL]];
+        $lote['pago_chicas'][0]['nombre'] = 'Angie';
+
+        $r = $this->conciliador->conciliar($lote);
+
+        $this->assertSame(ResultadoRegla::NO_CUMPLE, $r->regla('SAL')->estado);
+        $this->assertSame(ResultadoConciliacion::REVISAR, $r->estado());
+    }
+
+    public function test_ventas_declaradas_bajo_el_pos_si_es_faltante(): void
+    {
+        $lote = CasosDorados::fanny();
+        $lote['planilla']['ingresos']['ventas_bebidas'] = 400;
+        $lote['planilla']['total_ingresos'] = 1420;
+
+        $r = $this->conciliador->conciliar($lote);
+
+        $this->assertTrue($r->regla('POS')->esFaltante());
+        $this->assertSame(ResultadoConciliacion::FALTANTE, $r->estado());
+    }
+
     public function test_qr_transferido_a_otra_cuenta_es_faltante(): void
     {
         $lote = CasosDorados::fanny();
