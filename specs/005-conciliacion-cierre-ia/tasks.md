@@ -33,6 +33,7 @@
 ## Phase 6: Evidencia de otros grupos (US6)
 - [ ] T021 [US6] Extraer de cada comprobante: beneficiario, monto, hora, concepto, cuenta destino; guardar como evidencia sin efectos contables hasta vincularse
 - [ ] T022 [US6] `CruceEvidencia` en `backend/app/Domain/Cierre/`: vincular comprobantes a renglones de planilla (persona + monto exacto + noche; coincidencia única) y reportar pagos sin comprobante / comprobantes sin planilla
+- [ ] T022a [US6] Casa por remitente: la encargada que envió el cierre de una casa esa noche identifica la casa de sus comprobantes, gastos y pedidos de taxi en los grupos generales (dueño 17-10: las encargadas mandan todo; en TAXI OFICIAL y en ADM casas 22 escriben la casa)
 - [ ] T023 [US6] Hielo y gastos de "ADM casas 22" ↔ egresos de la planilla de la casa
 - [ ] T024 [US6] Pedidos de móviles del grupo de taxis ↔ egreso de taxis por casa
 - [ ] T025 [US6] Caso dorado: noche 16-10 de Hamacas (planilla + hoja + POS + "NATI 40" + "26")
