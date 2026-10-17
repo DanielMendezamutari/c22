@@ -31,6 +31,8 @@ return [
 
     'conciliacion' => [
         'modo' => env('CONCILIACION_V2', 'off'),
+        'aviso_grupo_jid' => env('CIERRES_AVISO_GRUPO_JID'),
+        'aviso_desde' => env('CIERRES_AVISO_DESDE'), // fecha operativa mínima: evita avisar cierres viejos al activar
         'cuentas_qr_oficiales' => array_values(array_filter(array_map('trim', explode(',', (string) env('CUENTAS_QR_OFICIALES', ''))))),
         'minutos_espera' => (int) env('CONCILIACION_MINUTOS_ESPERA', 10),
     ],

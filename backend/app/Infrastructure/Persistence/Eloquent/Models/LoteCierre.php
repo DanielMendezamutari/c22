@@ -14,6 +14,7 @@ class LoteCierre extends Model
     protected $fillable = [
         'sucursal_id', 'fecha_operativa', 'tipo_turno', 'encargada', 'remitentes',
         'estado', 'ultimo_documento_at', 'resultado', 'conciliado_at',
+        'aviso_enviado_at', 'aviso_huella',
     ];
 
     protected $casts = [
@@ -22,6 +23,8 @@ class LoteCierre extends Model
         'resultado' => 'array',
         'ultimo_documento_at' => 'datetime',
         'conciliado_at' => 'datetime',
+        'aviso_enviado_at' => 'datetime',
+        'aviso_huella' => 'string',
     ];
 
     public function setFechaOperativaAttribute($fecha): void
