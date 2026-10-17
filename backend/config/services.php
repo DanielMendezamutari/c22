@@ -37,7 +37,7 @@ return [
 
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+        'model' => env('GEMINI_MODEL', 'gemini-flash-latest'), // flash-lite devuelve documentos vacíos y obliga a reintentar (medido 17-10)
     ],
 
     'slack' => [

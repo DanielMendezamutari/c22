@@ -88,7 +88,7 @@ class ExtractorDocumentosCierreTest extends TestCase
         $this->assertStringNotContainsString('clave-de-prueba', $resultado['error']);
         Http::assertSentCount(3);
         $urls = Http::recorded()->map(fn (array $par) => $par[0]->url())->all();
-        foreach (['modelo-configurado', 'gemini-3.5-flash-lite', 'gemini-flash-latest'] as $indice => $modelo) {
+        foreach (['modelo-configurado', 'gemini-flash-latest', 'gemini-3.5-flash-lite'] as $indice => $modelo) {
             $this->assertStringContainsString('/models/'.$modelo.':generateContent?', $urls[$indice]);
         }
     }

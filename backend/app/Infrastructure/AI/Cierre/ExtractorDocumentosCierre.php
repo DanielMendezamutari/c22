@@ -31,7 +31,7 @@ class ExtractorDocumentosCierre
         }
 
         $esquema = EsquemaDocumentosCierre::responseSchema();
-        $modelos = array_unique(array_filter([$this->modelo, 'gemini-3.5-flash-lite', 'gemini-flash-latest']));
+        $modelos = array_unique(array_filter([$this->modelo, 'gemini-flash-latest', 'gemini-3.5-flash-lite']));
         $error = 'Ningún modelo devolvió documentos válidos.';
 
         foreach ($modelos as $modelo) {

@@ -681,4 +681,19 @@ class LotesCierreSombraTest extends TestCase
 
         $this->assertSame('', $inbound->fresh()->sender_phone);
     }
+
+    public function test_reasignar_no_llama_a_la_ia(): void
+    {
+        // 17-10: cuatro reprocesamientos de la misma noche gastaron ~1.000 lecturas de IA
+        $this->mock(\App\Infrastructure\AI\Cierre\ExtractorDocumentosCierre::class, fn ($m) => $m->shouldNotReceive('extraer'));
+        $inbound = \App\Infrastructure\Persistence\Eloquent\Models\WhatsAppMensajeInbound::create([
+            'remote_jid' => '120363999@g.us', 'sender_phone' => '59170000001', 'tipo_mensaje' => 'imagen',
+            'media_path' => 'storage/x.jpg', 'estado' => 'procesado',
+        ]);
+        \App\Infrastructure\Persistence\Eloquent\Models\DocumentoCierre::create([
+            'inbound_id' => $inbound->id, 'tipo' => 'sobre', 'datos' => ['monto' => 100], 'confianza' => 0.9,
+        ]);
+
+        $this->artisan('cierres:reprocesar-sombra', ['--reasignar' => true])->assertSuccessful();
+    }
 }

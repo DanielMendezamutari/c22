@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 
 class ReprocesarCierresSombraCommand extends Command
 {
-    protected $signature = 'cierres:reprocesar-sombra {--desde=} {--hasta=} {--limite=2000}';
+    protected $signature = 'cierres:reprocesar-sombra {--desde=} {--hasta=} {--limite=2000} {--reasignar : Rearma y concilia con los documentos ya leídos, sin llamar a la IA}';
 
     protected $description = 'Registra y concilia evidencia histórica sin modificar el flujo contable ni enviar mensajes.';
 
@@ -42,8 +42,21 @@ class ReprocesarCierresSombraCommand extends Command
         if ($ids->count() === $limite) {
             $this->warn("Se alcanzó el límite de {$limite} mensajes: puede haber más en el rango. Vuelve a correrlo (lo ya procesado se salta).");
         }
-        foreach ($ids as $id) {
-            $registrar->ejecutar($id);
+        if ($this->option('reasignar')) {
+            // Costo 0 de IA: se conservan las lecturas guardadas; solo se rehacen la asignación y los lotes
+            $lotesPrevios = \App\Infrastructure\Persistence\Eloquent\Models\DocumentoCierre::whereIn('inbound_id', $ids)->whereNotNull('lote_id')->pluck('lote_id')->unique();
+            \App\Infrastructure\Persistence\Eloquent\Models\DocumentoCierre::whereIn('inbound_id', $ids)
+                ->update(['lote_id' => null, 'sucursal_id' => null, 'evidencia_casa' => null, 'fecha_operativa' => null, 'tipo_turno' => null]);
+            LoteCierre::whereIn('id', $lotesPrevios)->whereDoesntHave('documentos')->delete();
+            $sinLeer = $ids->diff(\App\Infrastructure\Persistence\Eloquent\Models\DocumentoCierre::whereIn('inbound_id', $ids)->pluck('inbound_id'));
+            $this->info("Reasignando sin IA. Mensajes sin lectura guardada (no se leen ahora): {$sinLeer->count()}.");
+            foreach ($ids->diff($sinLeer) as $id) {
+                $registrar->ejecutar($id); // con documentos existentes solo reasigna; no llama a la IA
+            }
+        } else {
+            foreach ($ids as $id) {
+                $registrar->ejecutar($id);
+            }
         }
         $espera = config('services.conciliacion.minutos_espera');
         try {
