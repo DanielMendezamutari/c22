@@ -146,6 +146,20 @@ class InformeCierreEncargadaTest extends TestCase
         $this->assertSame($vip->id, $id);
     }
 
+    public function test_joker_es_otro_negocio_y_no_se_asigna_a_ninguna_casa(): void
+    {
+        Sucursal::create(['nombre' => 'Cuarta Casa', 'codigo' => 'CASA4', 'activo' => true]);
+        $inbound = $this->crearInbound('Anabel');
+        $inbound->update(['sucursal_id' => null, 'raw_text' => 'JOKER ULTRA 16-10-26 ANABEL']);
+
+        $id = ProcesarMensajeWhatsAppJob::inferirSucursalId(
+            ['sucursal_sugerida' => null, 'datos' => ['cajero_nombre' => 'Joker']],
+            $inbound,
+        );
+
+        $this->assertNull($id);
+    }
+
     public function test_el_prompt_usa_el_personal_registrado_y_no_nombres_fijos(): void
     {
         // El rol 'cajera' se agrega con ALTER solo en MySQL; en SQLite de tests se omite el CHECK del enum

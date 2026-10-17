@@ -85,7 +85,8 @@ En Grupo Punto Frío operan las casas comerciales: {$casasTexto}. Debes identifi
      * "CORONA", "CASA CORONA", "CORON" → casa Corona.
      * "MADAN", "MADAM", "MADAMES" → Madan.
      * "VIP", "C22VIP", "ADM VIP", "PRIVADO" → Casa 22 VIP.
-     * "CASA 4", "CASA NUEVA", "EL JEFE", "JOKER" → Cuarta Casa.
+     * "CASA 4", "CASA NUEVA" → Cuarta Casa.
+   - "JOKER" / "JOKER ULTRA" / "JOKER EXPRESS" (billar) es OTRO negocio, no es de Grupo Punto Frío: responder sucursal_sugerida null.
    - PERSONAL REGISTRADO POR CASA (fuente oficial; el personal rota y hay varias encargadas por turno):
 {$personalTexto}
    - Responde en sucursal_sugerida el NOMBRE EXACTO de una casa de la lista anterior.

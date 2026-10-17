@@ -370,13 +370,12 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             return 3;
         }
 
-        // 5. Cuarta Casa / Casa Nueva / Joker -> ID 8 (o búsqueda por código CASA4)
+        // 5. Cuarta Casa / Casa Nueva -> ID 8. "Joker" es otro negocio (billar), no una casa de Grupo Punto Frío.
         if (
             str_contains($todoNorm, 'cuarta') ||
             str_contains($todoNorm, 'casa 4') ||
             str_contains($todoNorm, 'casa4') ||
-            str_contains($todoNorm, 'nueva') ||
-            str_contains($todoNorm, 'joker')
+            str_contains($todoNorm, 'nueva')
         ) {
             $suc4 = Sucursal::where('codigo', 'CASA4')->orWhere('nombre', 'like', '%cuarta%')->orWhere('nombre', 'like', '%nueva%')->first();
             return $suc4 ? $suc4->id : 8;

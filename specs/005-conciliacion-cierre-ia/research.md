@@ -98,3 +98,20 @@ Documentos: planilla VENTAS, PAGO DE CHICAS, CONTROL DE SHAMPAGNE, Reporte de Ve
 ## 8. Bugs encontrados en el código actual
 - `inferirSucursalId` revisa "casa22" antes que "vip": el ticket "VIP ALEMANA CASA22" se asigna a Casa22 (Belén) en vez de Casa 22 VIP.
 - Un cierre de noche llega a la mañana siguiente (POS 14/10 09:00, planilla 13-10 Noche): la fecha operativa debe ser la de **inicio** del turno, y la hora del mensaje no sirve para inferir día/noche.
+
+## 9. Auditoría de los primeros informes en producción (2026-10-17, 01:55–02:15 UTC)
+
+Fuente: log de Laravel y mensajes vía API (solo lectura) + lectura manual de las fotos originales.
+Resultado: **0 de 3 informes correctos.**
+
+| Informe | Qué era en realidad | Qué leyó la IA | Qué dijo el informe | Causa |
+|---|---|---|---|---|
+| Turno 58 (Casa 22 VIP, Día 16-10, Fanny) | Planilla que **cuadra**: 9010 − 5283 = 3727 = Linkser 930 + QR 194 + efectivo 2603; POS 8910 = ventas; chicas 4160 = 50% de 8320 | 12 de 13 campos bien; **no lee Linkser** (no existe en el esquema) | **Falsa alerta "Faltan Bs 830"** | La fórmula del informe ignora tarjeta/Linkser y la comisión de limpieza: (8910 − 194) − 5283 = 3433 ≠ 2603 |
+| Turno 60 (mismo cierre de Fanny) | Foto del **sobre** "Fanny 16-10-26 · 2603 efectivo · VIP T/D" | Clasificado como **planilla**, turno "Noche", año **2024** | Segundo informe del mismo cierre, ventas 0, "Sobrante +2603" | Falta la categoría "sobre"; el turno de cada foto lo decide la IA por separado → turno duplicado |
+| Turno 62 (Cuarta Casa, "Joker") | Hoja de **mesas de billar** de un turno (responsable Jorge): EF 195+20 = 215, QR 110+16 = 126, total 341 | Planilla; encargada "Joker" (es el local); fecha **2023**; QR 130 / efectivo 211 (total bien, reparto mal) | Informe "conforme" con datos falsos | Cuarta Casa (Joker Ultra, billar) tiene otro formato: mesas + producto + guantes, sin chicas ni garzones |
+| — (no salió) | Cierre real de Joker, Anabel, "Tarde": EF 1621 + QR 844 = 2465 | Bien leído | **Bloqueado** como "segunda planilla" del turno 62 | Dos responsables el mismo día caen en el mismo turno |
+
+Otros errores de clasificación: hoja de pago de chicas → "planilla" (311); sobre → "planilla" (308, 316).
+Lectura de cifras: buena cuando la foto es la planilla VENTAS (Fanny 16-10: 12/13 campos exactos).
+
+**Conclusiones**: el problema principal no es la lectura sino (1) la fórmula del informe, (2) categorías faltantes (sobre, hoja de chicas, control de shampagne, hoja de billar), (3) un turno por foto en vez de un lote por cierre, (4) fechas sin validar contra la fecha del mensaje, (5) Cuarta Casa con formato propio.
