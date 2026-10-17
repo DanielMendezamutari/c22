@@ -17,9 +17,9 @@
 - [X] T010 [US5] Comando `cierres:evaluar-ia` que corre las fotos de `specs/005-.../fixtures/` y reporta % de campos correctos contra los casos dorados
 
 ## Phase 3: Lote de cierre (US1)
-- [ ] T011 [US1] Migración y modelo `lotes_cierre` (casa, fecha operativa, turno, encargada, estado, resultado JSON)
-- [ ] T012 [US1] Agrupar mensajes por encargada + casa + ventana de 10 min entre grupos; deduplicar por hash; fecha operativa desde planilla/POS
-- [ ] T013 [US1] Job que concilia el lote al llegar la planilla + 10 min sin mensajes; reemplaza el despacho por foto individual del spec 004
+- [X] T011 [US1] Migración y modelo `lotes_cierre` (casa, fecha operativa, turno, encargada, estado, resultado JSON)
+- [X] T012 [US1] Agrupar mensajes por encargada + casa + ventana de 10 min entre grupos; deduplicar por hash; fecha operativa desde planilla/POS
+- [X] T013 [US1] Registro en cola y comando `cierres:conciliar-pendientes`: concilia lotes con planilla + 10 min sin documentos, guarda resultado en modo sombra. El reemplazo del despacho del spec 004 queda para fase 4
 
 ## Phase 4: Informe para administración (US4)
 - [ ] T014 [US4] Formateador de informe WhatsApp (estado, ingresos vs POS, egresos verificados, entrega, documentos, alertas)
@@ -33,7 +33,7 @@
 ## Phase 6: Evidencia de otros grupos (US6)
 - [ ] T021 [US6] Extraer de cada comprobante: beneficiario, monto, hora, concepto, cuenta destino; guardar como evidencia sin efectos contables hasta vincularse
 - [ ] T022 [US6] `CruceEvidencia` en `backend/app/Domain/Cierre/`: vincular comprobantes a renglones de planilla (persona + monto exacto + noche; coincidencia única) y reportar pagos sin comprobante / comprobantes sin planilla
-- [ ] T022a [US6] Casa por remitente: la encargada que envió el cierre de una casa esa noche identifica la casa de sus comprobantes, gastos y pedidos de taxi en los grupos generales (dueño 17-10: las encargadas mandan todo; en TAXI OFICIAL y en ADM casas 22 escriben la casa)
+- [X] T022a [US6] Casa por remitente: la encargada que envió el cierre de una casa esa noche identifica la casa de sus comprobantes, gastos y pedidos de taxi en los grupos generales (dueño 17-10: las encargadas mandan todo; en TAXI OFICIAL y en ADM casas 22 escriben la casa)
 - [ ] T023 [US6] Hielo y gastos de "ADM casas 22" ↔ egresos de la planilla de la casa
 - [ ] T024 [US6] Pedidos de móviles del grupo de taxis ↔ egreso de taxis por casa
 - [ ] T025 [US6] Caso dorado: noche 16-10 de Hamacas (planilla + hoja + POS + "NATI 40" + "26")
@@ -49,3 +49,11 @@
 - Gemini a veces devuelve solo {"tipo"} sin datos: se reintenta con otro modelo; nunca cuenta como leído.
 - Fallas del informe de Belén del 17-10 (Sede corona, 2023-10-26, Día): foto duplicada en grupo de otra casa, turno #2 abierto
   desde septiembre, fecha de la IA sin validar, fórmula vieja del informe. Corregidas las tres primeras; la cuarta es la fase 4.
+
+## Notas fase 3: modo sombra
+- Configuración en `services.conciliacion`: `off` por defecto; `sombra` y `activo` solo guardan evidencia y conciliación en esta fase.
+- Casos de uso `RegistrarDocumentos`, `AsignarLote` y `ConciliarLotesListos`; comandos de conciliación, reprocesamiento histórico y consulta.
+- Ventana de remitente de 16 h relativa al envío; al llegar evidencia de grupo/encabezado se recuperan documentos anteriores pendientes.
+- El nuevo despacho se agrega únicamente al final de `handle()`: los retornos anticipados del job previo se conservan (incluido texto sin media). El comando de reprocesamiento sí registra textos.
+- Migración adicional para tipo `texto`; no ejecutada sobre bases reales. Fechas operativas persistidas como `Y-m-d` para compatibilidad SQLite/MySQL.
+- T018 continúa pendiente para bases/bonos; cuentas QR y modo ya disponibles en `services.conciliacion`.

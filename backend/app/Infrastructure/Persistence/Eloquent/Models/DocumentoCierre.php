@@ -2,6 +2,7 @@
 
 namespace App\Infrastructure\Persistence\Eloquent\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -19,6 +20,11 @@ class DocumentoCierre extends Model
         'confianza' => 'float',
         'fecha_operativa' => 'date',
     ];
+
+    public function setFechaOperativaAttribute($fecha): void
+    {
+        $this->attributes['fecha_operativa'] = $fecha === null ? null : Carbon::parse($fecha)->toDateString();
+    }
 
     public function lote(): BelongsTo
     {

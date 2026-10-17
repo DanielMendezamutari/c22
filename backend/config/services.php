@@ -29,6 +29,12 @@ return [
         'informes_automaticos' => (bool) env('INFORMES_AUTOMATICOS', false),
     ],
 
+    'conciliacion' => [
+        'modo' => env('CONCILIACION_V2', 'off'),
+        'cuentas_qr_oficiales' => array_values(array_filter(array_map('trim', explode(',', (string) env('CUENTAS_QR_OFICIALES', ''))))),
+        'minutos_espera' => (int) env('CONCILIACION_MINUTOS_ESPERA', 10),
+    ],
+
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
-final class ExtractorDocumentosCierre
+class ExtractorDocumentosCierre
 {
     private readonly string $apiKey;
     private readonly string $modelo;

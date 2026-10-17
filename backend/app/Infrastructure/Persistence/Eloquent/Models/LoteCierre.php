@@ -2,6 +2,7 @@
 
 namespace App\Infrastructure\Persistence\Eloquent\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,11 @@ class LoteCierre extends Model
         'ultimo_documento_at' => 'datetime',
         'conciliado_at' => 'datetime',
     ];
+
+    public function setFechaOperativaAttribute($fecha): void
+    {
+        $this->attributes['fecha_operativa'] = $fecha === null ? null : Carbon::parse($fecha)->toDateString();
+    }
 
     public function documentos(): HasMany
     {

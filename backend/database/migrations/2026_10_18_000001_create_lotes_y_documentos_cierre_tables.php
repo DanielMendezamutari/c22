@@ -29,11 +29,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('inbound_id');
             $table->foreignId('lote_id')->nullable();
-            $table->enum('tipo', [
-                'planilla_ventas', 'pago_chicas', 'control_shampagne', 'reporte_pos',
-                'ticket_chicas', 'reporte_tarjeta', 'sobre', 'comprobante_transferencia',
-                'recibo_gasto', 'cierre_barra', 'otro',
-            ]);
+            $table->string('tipo', 40);
             $table->json('datos');
             $table->decimal('confianza', 3, 2);
             $table->foreignId('sucursal_id')->nullable();

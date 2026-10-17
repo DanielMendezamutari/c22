@@ -31,6 +31,23 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
 
     public function handle(GeminiVisionAuditorService $visionAuditor, AuditoriaCruceCanalesUseCase $cruceCanalesUseCase): void
     {
+        try {
+            $this->procesar($visionAuditor, $cruceCanalesUseCase);
+        } finally {
+            // El flujo de lotes (spec 005) recibe todo mensaje, también textos y duplicados que el flujo viejo descarta antes;
+            // un fallo del flujo nuevo nunca rompe el viejo.
+            if (config('services.conciliacion.modo') !== 'off') {
+                try {
+                    ProcesarDocumentosCierreJob::dispatch($this->inboundId);
+                } catch (\Throwable $e) {
+                    Log::warning('No se pudo despachar el cierre sombra.', ['inbound_id' => $this->inboundId, 'error' => get_class($e)]);
+                }
+            }
+        }
+    }
+
+    private function procesar(GeminiVisionAuditorService $visionAuditor, AuditoriaCruceCanalesUseCase $cruceCanalesUseCase): void
+    {
         $inbound = WhatsAppMensajeInbound::find($this->inboundId);
         if (!$inbound) {
             Log::warning("ProcesarMensajeWhatsAppJob: Inbound ID {$this->inboundId} no encontrado.");
@@ -347,6 +364,7 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         } finally {
             $lockCierre?->release();
         }
+
     }
 
     /**
