@@ -45,6 +45,19 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
 
         $lockCierre = null;
 
+        // La misma foto reenviada a otro grupo (o dos veces) no crea otro cierre ni gasta otra lectura de IA
+        $original = self::registrarHuella($inbound);
+        if ($original) {
+            $distintaCasa = $original->sucursal_id && $inbound->sucursal_id && $original->sucursal_id !== $inbound->sucursal_id;
+            Log::warning("ProcesarMensajeWhatsAppJob: Inbound {$inbound->id} es la misma imagen que el {$original->id}"
+                . ($distintaCasa ? " pero llegó por el grupo de otra casa ({$inbound->sucursal_id} vs {$original->sucursal_id})" : '') . '; no se procesa.');
+            $inbound->estado = 'duplicado';
+            $inbound->metadata_ia = ['duplicado_de' => $original->id, 'grupo_de_otra_casa' => $distintaCasa];
+            $inbound->save();
+
+            return;
+        }
+
         try {
             $contextoPartes = [];
             if (!empty($inbound->sender_name)) $contextoPartes[] = "Remitente: {$inbound->sender_name}";
@@ -108,12 +121,18 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                 $tipoTurno = $turnoIa !== ''
                     ? (str_contains($turnoIa, 'noche') ? 'noche' : 'dia')
                     : (now()->hour >= 6 && now()->hour < 18 ? 'dia' : 'noche');
-                $fechaOperativa = $datos['fecha'] ?? now()->toDateString();
+                [$fechaOperativa, $fechaCorregida] = self::fechaOperativa($datos['fecha'] ?? null, $tipoTurno, $inbound->created_at ?? now());
+                if ($fechaCorregida) {
+                    Log::warning("ProcesarMensajeWhatsAppJob: Inbound {$inbound->id}: la IA leyó la fecha '" . ($datos['fecha'] ?? 'vacía') . "', se usa {$fechaOperativa} según la hora de envío.");
+                    $datos['fecha_leida_ia'] = $datos['fecha'] ?? null;
+                    $datos['fecha'] = $fechaOperativa;
+                    $inbound->metadata_ia = $datos;
+                }
 
                 // 1. Buscar turno abierto en la sucursal para cerrarlo formalmente
                 // 0. Mismo cierre ya registrado (misma fecha y tipo de turno): reutilizar su turno.
                 // Evita que una foto tardía cree otro turno o cierre el turno siguiente (spec 004 FR-004).
-                $turnoMismoCierre = !empty($datos['fecha'])
+                $turnoMismoCierre = $fechaOperativa
                     ? PlanillaCaja::where('sucursal_id', $inbound->sucursal_id)
                         ->whereDate('fecha_operativa', $fechaOperativa)
                         ->whereIn('turno_id', Turno::where('sucursal_id', $inbound->sucursal_id)->where('tipo_turno', $tipoTurno)->select('id'))
@@ -125,6 +144,9 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
                     ? null
                     : Turno::where('sucursal_id', $inbound->sucursal_id)
                         ->where('estado', 'abierto')
+                        ->where('tipo_turno', $tipoTurno)
+                        // Solo un turno abierto de este mismo cierre: el #2 de Corona seguía "abierto" desde septiembre
+                        ->where('fecha_apertura', '>=', now()->subHours(20))
                         ->latest('id')
                         ->first();
 
@@ -415,6 +437,53 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
         }
 
         return $corte;
+    }
+
+    /**
+     * Fecha operativa del cierre (día en que empezó el turno). La de la IA se acepta si está a 2 días o menos
+     * del envío; si no (17-10 leyó "2023-10-26" en una planilla del 16-10-26), se toma la hora de envío:
+     * un cierre de noche enviado antes del mediodía es de la noche anterior.
+     *
+     * @return array{0: string, 1: bool} [fecha, fue corregida]
+     */
+    public static function fechaOperativa(?string $fechaIa, string $tipoTurno, \DateTimeInterface $enviado): array
+    {
+        $local = \Carbon\Carbon::instance($enviado)->setTimezone('America/La_Paz');
+        $esperada = ($tipoTurno === 'noche' && $local->hour < 14) ? $local->copy()->subDay() : $local->copy();
+
+        try {
+            $leida = $fechaIa ? \Carbon\Carbon::parse($fechaIa) : null;
+        } catch (\Throwable) {
+            $leida = null;
+        }
+        if ($leida && abs($leida->startOfDay()->diffInDays($esperada->copy()->startOfDay())) <= 2) {
+            return [$leida->toDateString(), false];
+        }
+
+        return [$esperada->toDateString(), true];
+    }
+
+    /** Guarda la huella del archivo y devuelve el mensaje anterior (48 h) con la misma imagen, si existe. */
+    private static function registrarHuella(WhatsAppMensajeInbound $inbound): ?WhatsAppMensajeInbound
+    {
+        if (empty($inbound->media_path)) {
+            return null;
+        }
+        $ruta = collect([public_path($inbound->media_path), storage_path('app/public/' . str_replace('storage/', '', $inbound->media_path))])
+            ->first(fn ($r) => is_file($r));
+        if (!$ruta) {
+            return null;
+        }
+
+        $inbound->hash_media = hash_file('sha256', $ruta);
+        $inbound->save();
+
+        return WhatsAppMensajeInbound::where('hash_media', $inbound->hash_media)
+            ->where('id', '<', $inbound->id)
+            ->where('created_at', '>=', now()->subHours(48))
+            ->where('estado', '!=', 'duplicado')
+            ->oldest('id')
+            ->first();
     }
 
     /** Datos del reporte POS con las claves que devuelve la IA (antes se leían claves inexistentes y quedaban en 0). */

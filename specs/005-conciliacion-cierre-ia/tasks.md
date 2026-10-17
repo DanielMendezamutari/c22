@@ -12,9 +12,9 @@
 - [X] T007 [US1] Prioridad de "VIP" sobre "CASA22" en `ProcesarMensajeWhatsAppJob::inferirSucursalId` + test
 
 ## Phase 2: Extracción estructurada con IA (US1, US5)
-- [ ] T008 [US1] Esquemas JSON por documento (planilla VENTAS, PAGO DE CHICAS, CONTROL DE SHAMPAGNE, Reporte POS, ticket por chica, sobre, comprobante, multi-documento por foto) con `responseSchema` en `backend/app/Infrastructure/AI/Cierre/`
+- [X] T008 [US1] Esquemas JSON por documento (planilla VENTAS, PAGO DE CHICAS, CONTROL DE SHAMPAGNE, Reporte POS, ticket por chica, sobre, comprobante, multi-documento por foto) con `responseSchema` en `backend/app/Infrastructure/AI/Cierre/`
 - [ ] T009 [US1] Prompt con el formulario impreso exacto, notación "M"/"H", "caja chica no suma", personal de la BD, ejemplos verificados
-- [ ] T010 [US5] Comando `cierres:evaluar-ia` que corre las fotos de `specs/005-.../fixtures/` y reporta % de campos correctos contra los casos dorados
+- [X] T010 [US5] Comando `cierres:evaluar-ia` que corre las fotos de `specs/005-.../fixtures/` y reporta % de campos correctos contra los casos dorados
 
 ## Phase 3: Lote de cierre (US1)
 - [ ] T011 [US1] Migración y modelo `lotes_cierre` (casa, fecha operativa, turno, encargada, estado, resultado JSON)
@@ -39,3 +39,13 @@
 - [ ] T025 [US6] Caso dorado: noche 16-10 de Hamacas (planilla + hoja + POS + "NATI 40" + "26")
 
 - [ ] T018 Configuración `config/conciliacion.php` desde `.env` (cuenta QR oficial, bases, bonos)
+
+## Notas fase 2 (2026-10-17)
+- Extractor con formato por tipo (Codex) + comparador y comando `cierres:evaluar-ia` (Claude). Medición con 19 fotos reales de 4 casas:
+  **documentos detectados 21/21 (100%) · campos 217/222 (97,7%)**. Antes: 59% de tipos y 89% de campos.
+- Errores restantes: 2 nombres (Cristian/Cristhian, Sisela/Sisiela) y 3 montos (privados 1015→0, Linkser 2638→0, garzón 300→500).
+  Los 3 montos los detecta el conciliador (ING/SAL no cuadran) → REVISAR; pendiente fase 4: distinguir "la planilla leída no
+  cuadra consigo misma" (posible error de lectura → REVISAR) de "lo entregado no coincide" (FALTANTE).
+- Gemini a veces devuelve solo {"tipo"} sin datos: se reintenta con otro modelo; nunca cuenta como leído.
+- Fallas del informe de Belén del 17-10 (Sede corona, 2023-10-26, Día): foto duplicada en grupo de otra casa, turno #2 abierto
+  desde septiembre, fecha de la IA sin validar, fórmula vieja del informe. Corregidas las tres primeras; la cuarta es la fase 4.

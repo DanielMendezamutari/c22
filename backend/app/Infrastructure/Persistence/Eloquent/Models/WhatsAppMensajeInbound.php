@@ -16,6 +16,7 @@ class WhatsAppMensajeInbound extends Model
         'sender_name',
         'tipo_mensaje',
         'media_path',
+        'hash_media',
         'raw_text',
         'clasificacion_ia',
         'score_confianza',

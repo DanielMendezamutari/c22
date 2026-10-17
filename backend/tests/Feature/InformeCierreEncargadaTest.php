@@ -323,6 +323,59 @@ class InformeCierreEncargadaTest extends TestCase
         $this->assertSame('voucher_deposito', $inbound->fresh()->clasificacion_ia);
     }
 
+    public function test_fecha_absurda_de_la_ia_se_corrige_con_la_hora_de_envio(): void
+    {
+        // 17-10: la IA leyó "2023-10-26" en la planilla de Belén del 16-10-26, enviada a las 09:13 (hora Bolivia)
+        $enviado = \Carbon\Carbon::parse('2026-10-17 13:13:00', 'UTC');
+
+        $this->assertSame(['2026-10-16', true], ProcesarMensajeWhatsAppJob::fechaOperativa('2023-10-26', 'noche', $enviado));
+        $this->assertSame(['2026-10-16', false], ProcesarMensajeWhatsAppJob::fechaOperativa('2026-10-16', 'noche', $enviado));
+        // Cierre de día enviado a las 21:00 del mismo día
+        $this->assertSame(['2026-10-14', false], ProcesarMensajeWhatsAppJob::fechaOperativa('2026-10-14', 'dia', \Carbon\Carbon::parse('2026-10-15 01:00:00', 'UTC')));
+        $this->assertSame(['2026-10-14', true], ProcesarMensajeWhatsAppJob::fechaOperativa(null, 'dia', \Carbon\Carbon::parse('2026-10-15 01:00:00', 'UTC')));
+    }
+
+    public function test_turno_abierto_viejo_no_se_usa_para_un_cierre_nuevo(): void
+    {
+        // 17-10: el turno #2 de Corona seguía abierto desde septiembre y el cierre de anoche se pegó a él
+        $viejo = Turno::create([
+            'sucursal_id' => $this->casa->id, 'barman_id' => $this->barman->id, 'tipo_turno' => 'noche',
+            'estado' => 'abierto', 'fecha_apertura' => now()->subDays(30),
+        ]);
+        $this->simularIa($this->planillaIa('Rosa Encargada', 8500, 'Noche'));
+
+        $inbound = $this->crearInbound('Rosa');
+        ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+
+        $this->assertNotSame($viejo->id, $inbound->fresh()->turno_id);
+        $this->assertSame('abierto', $viejo->fresh()->estado);
+    }
+
+    public function test_misma_foto_en_dos_grupos_no_crea_dos_cierres(): void
+    {
+        // 17-10: la planilla de Belén entró también por el grupo de Corona y salió un informe "Sede: corona"
+        $corona = Sucursal::create(['nombre' => 'corona', 'codigo' => 'CR', 'activo' => true]);
+        $ruta = 'storage/comprobantes/test_duplicado_' . uniqid() . '.jpg';
+        @mkdir(dirname(public_path($ruta)), 0775, true);
+        file_put_contents(public_path($ruta), 'misma-imagen');
+        $this->simularIa($this->planillaIa('Alvaro', 30635));
+
+        $enBelen = $this->crearInbound('Sisiela');
+        $enBelen->update(['media_path' => $ruta]);
+        $enCorona = $this->crearInbound('Sisiela');
+        $enCorona->update(['media_path' => $ruta, 'sucursal_id' => $corona->id]);
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($enBelen->id);
+        ProcesarMensajeWhatsAppJob::dispatchSync($enCorona->id);
+        @unlink(public_path($ruta));
+
+        $this->assertSame('duplicado', $enCorona->fresh()->estado);
+        $this->assertSame($enBelen->id, $enCorona->fresh()->metadata_ia['duplicado_de']);
+        $this->assertTrue($enCorona->fresh()->metadata_ia['grupo_de_otra_casa']);
+        $this->assertSame(0, PlanillaCaja::where('sucursal_id', $corona->id)->count());
+        Http::assertSentCount(1); // un solo informe (el de Belén); la IA leyó la foto una sola vez
+    }
+
     public function test_joker_es_otro_negocio_y_no_se_asigna_a_ninguna_casa(): void
     {
         Sucursal::create(['nombre' => 'Cuarta Casa', 'codigo' => 'CASA4', 'activo' => true]);
