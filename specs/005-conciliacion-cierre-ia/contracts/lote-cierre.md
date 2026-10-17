@@ -8,12 +8,22 @@ La fase 3 corre en **modo sombra** (`CONCILIACION_V2=sombra`): arma y concilia l
 
 **`documentos_cierre`**: `id`, `inbound_id` (FK whatsapp_mensajes_inbound), `lote_id` (nullable FK), `tipo`
 (los 11 del contrato de extracción), `datos` (json: el objeto del tipo), `confianza`, `sucursal_id` (nullable),
-`fecha_operativa` (date, nullable), `tipo_turno` (`dia`|`noche`|null), `evidencia_casa` (`encabezado`|`grupo`|`encargada`|`remitente`|`texto`|null),
+`fecha_operativa` (date, nullable), `tipo_turno` (`dia`|`noche`|null), `evidencia_casa` (`encabezado`|`encabezado_remitente`|`grupo`|`encargada`|`remitente`|`texto`|null),
 timestamps. Índices: (`lote_id`), (`sucursal_id`, `fecha_operativa`, `tipo_turno`).
 
 **`lotes_cierre`**: `id`, `sucursal_id`, `fecha_operativa`, `tipo_turno`, `encargada` (de la planilla), `remitentes` (json: teléfonos),
 `estado` (`abierto` → `listo` → `conciliado`), `ultimo_documento_at`, `resultado` (json de `ResultadoConciliacion::toArray()`),
 `conciliado_at`, timestamps. **Único** (`sucursal_id`, `fecha_operativa`, `tipo_turno`).
+
+## Deduplicación en sombra
+
+Antes de extraer documentos, si `hash_media` es null se calcula SHA-256 del archivo en `public_path(media_path)`
+o, como alternativa, en `storage/app/public/` quitando el prefijo `storage/`.
+Si existe un inbound anterior (ID menor), creado dentro de las 48 horas anteriores al envío, con el mismo hash
+**y documentos ya registrados**, no se crean documentos para el reenvío y se registra un warning con ambos IDs.
+Se completan también las huellas nulas de los inbounds anteriores con documentos para detectar imágenes históricas.
+La comparación es independiente del grupo y del remitente. Sin archivo ni hash no se presume duplicación.
+No se cambia el estado ni los efectos contables del flujo viejo.
 
 ## Reglas de asignación (en este orden; la primera que aplica gana)
 
@@ -21,7 +31,7 @@ timestamps. Índices: (`lote_id`), (`sucursal_id`, `fecha_operativa`, `tipo_turn
 1. `reporte_pos.servidor` con alias de casa (`sucursales.alias_documentos`) → `encabezado`. Gana siempre, aunque contradiga al grupo.
 2. Casa del grupo (`sucursal_whatsapp_grupos.sucursal_id`) → `grupo`.
 3. Encargada de la planilla registrada como cajera de una sola casa → `encargada`.
-4. **Remitente**: si el mismo `sender_phone` envió en las últimas 16 h un documento con casa por `encabezado` o `grupo`, esa casa → `remitente` (las encargadas mandan todo lo de su cierre, también a grupos generales).
+4. **Remitente**: si el mismo `sender_phone` envió en las últimas 16 h un documento con casa por `grupo`, esa casa → `remitente`. Los encabezados se propagan con la regla del cierre del remitente descrita abajo, que prevalece sobre esta asignación inicial.
 5. Alias en el texto adjunto → `texto`.
 6. Ninguna → sin casa (queda pendiente; se reintenta cada vez que entra otro documento del mismo remitente).
 
@@ -34,8 +44,25 @@ timestamps. Índices: (`lote_id`), (`sucursal_id`, `fecha_operativa`, `tipo_turn
 **Lote**: (casa, fecha, turno). Un documento con casa pero sin turno propio toma el del lote más reciente del mismo remitente en 16 h.
 `comprobante_transferencia` y `recibo_gasto` también se asignan (son evidencia de entrega y de egresos).
 
+**Encabezado del cierre del remitente (prevalece sobre el grupo)**
+
+El cierre del remitente reúne documentos del mismo `sender_phone` no vacío cuyos inbounds se crearon dentro de
+**±8 horas del inbound evaluado** (extremos incluidos), con **igual `fecha_operativa` y `tipo_turno`**.
+Se evalúa al asignar cada documento y al reprocesar uno existente, tanto si llega primero la planilla como si llega primero el POS.
+
+- Si los documentos con evidencia `encabezado` identifican **una sola casa**, todos los de ese cierre con evidencia
+  `grupo`, `remitente`, `texto` o sin casa se asignan a esa casa con evidencia `encabezado_remitente` y al lote
+  correspondiente. Los ya vinculados por `encabezado_remitente` mantienen esa vinculación. Un comprobante de
+  un grupo global sin casa también hereda este encabezado. La evidencia `encargada` y los propios encabezados se conservan.
+- Si existen encabezados de **dos casas distintas**, no se reasigna ningún documento. Se guarda la alerta exacta
+  **"El remitente envió documentos de dos casas distintas"** en `resultado.alertas_asignacion` y `resultado.alertas`
+  de los lotes involucrados, sin duplicarla. La conciliación posterior conserva esta alerta.
+- Los movimientos son transaccionales. Los lotes vacíos se eliminan. Los que ganan o pierden documentos quedan
+  `abierto`, con `conciliado_at` null y sin resultado anterior de conciliación (se preservan las alertas de asignación).
+  Se reconstruyen sus remitentes y encargada desde los documentos restantes y se reinicia la espera de conciliación.
+
 **Listo para conciliar**: tiene `planilla_ventas` **y** pasaron 10 minutos desde `ultimo_documento_at`.
-Un documento que llega a un lote ya `conciliado` lo devuelve a `listo` (se re-concilia).
+Un documento que llega a un lote lo devuelve a `abierto` y reinicia la espera (se re-concilia).
 
 ## Armado del lote para `ConciliadorCierre` (`App\Domain\Cierre\ArmadorLote`, PHP puro)
 

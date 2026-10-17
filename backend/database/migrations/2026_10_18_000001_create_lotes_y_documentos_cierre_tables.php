@@ -35,7 +35,7 @@ return new class extends Migration
             $table->foreignId('sucursal_id')->nullable();
             $table->date('fecha_operativa')->nullable();
             $table->enum('tipo_turno', ['dia', 'noche'])->nullable();
-            $table->enum('evidencia_casa', ['encabezado', 'grupo', 'encargada', 'remitente', 'texto'])->nullable();
+            $table->enum('evidencia_casa', ['encabezado', 'encabezado_remitente', 'grupo', 'encargada', 'remitente', 'texto'])->nullable();
             $table->timestamps();
 
             $table->foreign('inbound_id', 'documentos_cierre_inbound_fk')->references('id')->on('whatsapp_mensajes_inbound');

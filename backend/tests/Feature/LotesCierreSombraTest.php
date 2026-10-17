@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class LotesCierreSombraTest extends TestCase
@@ -58,7 +59,7 @@ class LotesCierreSombraTest extends TestCase
         $this->registrar($pos);
         $this->assertSame(1, LoteCierre::count());
         $this->assertSame(3, LoteCierre::first()->documentos()->count());
-        $this->assertSame('remitente', DocumentoCierre::where('inbound_id', $comprobante->id)->first()->evidencia_casa);
+        $this->assertSame('encabezado_remitente', DocumentoCierre::where('inbound_id', $comprobante->id)->first()->evidencia_casa);
         $this->assertSame([$planilla->sender_phone], LoteCierre::first()->remitentes);
     }
 
@@ -252,6 +253,197 @@ class LotesCierreSombraTest extends TestCase
         $inbound = $this->inbound(['sucursal_id' => $this->casa->id]);
         app()->call([new ProcesarMensajeWhatsAppJob($inbound->id), 'handle']);
         $this->assertSame('procesado', $inbound->fresh()->estado);
+    }
+
+    public function test_nancy_planilla_en_cuarta_y_pos_en_casa22_se_reunen_en_corona(): void
+    {
+        $corona = $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $cuarta = $this->crearCasa('Cuarta Casa', 'CU', 'cuarta', 'cuarta@g.us');
+        SucursalWhatsAppGrupo::create(['remote_jid' => 'casa22@g.us', 'nombre_grupo' => 'Casa22', 'activo' => true, 'es_global' => true]);
+        $this->extraer(
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Nancy']],
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+        );
+        $this->registrar($this->inbound(['remote_jid' => 'cuarta@g.us', 'sender_name' => 'Nancy']));
+        $this->travel(10)->minutes();
+        app(ConciliarLotesListosUseCase::class)->ejecutar();
+        $this->assertSame('conciliado', LoteCierre::first()->estado);
+        $this->registrar($this->inbound(['remote_jid' => 'casa22@g.us', 'sender_name' => 'Nancy']));
+        $this->assertDatabaseMissing('lotes_cierre', ['sucursal_id' => $cuarta->id]);
+        $this->assertSame(1, LoteCierre::count());
+        $lote = LoteCierre::first();
+        $this->assertSame($corona->id, $lote->sucursal_id);
+        $this->assertSame(2, $lote->documentos()->count());
+        $this->assertSame('Nancy', $lote->encargada);
+        $this->assertSame('abierto', $lote->estado);
+        $this->assertNull($lote->resultado);
+        $this->assertSame('encabezado_remitente', DocumentoCierre::where('tipo', 'planilla_ventas')->first()->evidencia_casa);
+    }
+
+    public function test_nancy_pos_primero_corrige_planilla_posterior_en_otro_grupo(): void
+    {
+        $corona = $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $cuarta = $this->crearCasa('Cuarta Casa', 'CU', 'cuarta', 'cuarta@g.us');
+        SucursalWhatsAppGrupo::create(['remote_jid' => 'casa22@g.us', 'nombre_grupo' => 'Casa22', 'activo' => true, 'es_global' => true]);
+        $this->extraer(
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Nancy']],
+            ['comprobante_transferencia', ['monto' => 100]],
+        );
+        $this->registrar($this->inbound(['remote_jid' => 'casa22@g.us', 'sender_name' => 'Nancy']));
+        $this->travel(5)->minutes();
+        $this->registrar($this->inbound(['remote_jid' => 'cuarta@g.us']));
+        $this->registrar($this->inbound(['remote_jid' => 'global@g.us']));
+        $this->assertDatabaseMissing('lotes_cierre', ['sucursal_id' => $cuarta->id]);
+        $this->assertSame(1, LoteCierre::count());
+        $this->assertSame($corona->id, LoteCierre::first()->sucursal_id);
+        $this->assertSame(3, LoteCierre::first()->documentos()->count());
+        $this->assertSame('encabezado_remitente', DocumentoCierre::where('tipo', 'comprobante_transferencia')->first()->evidencia_casa);
+    }
+
+    public function test_imagen_duplicada_en_belen_y_corona_solo_registra_la_primera(): void
+    {
+        $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $this->extraer(['planilla_ventas', [...$this->planilla(), 'encargada' => 'Sisiela']]);
+        $primero = $this->inbound(['hash_media' => hash('sha256', 'misma imagen')]);
+        $this->registrar($primero);
+        $segundo = $this->inbound(['remote_jid' => 'corona@g.us', 'hash_media' => $primero->hash_media]);
+        Log::shouldReceive('warning')->once()->with('Documento duplicado omitido en cierre sombra.', \Mockery::on(fn ($c) => $c['original_inbound_id'] === $primero->id && $c['inbound_id'] === $segundo->id));
+        $this->registrar($segundo);
+        $this->assertDatabaseCount('documentos_cierre', 1);
+        $this->assertDatabaseMissing('documentos_cierre', ['inbound_id' => $segundo->id]);
+        $this->assertSame($this->casa->id, LoteCierre::first()->sucursal_id);
+    }
+
+    public function test_calcula_huellas_de_archivos_y_completa_inbound_historico_sin_hash(): void
+    {
+        $nombre = 'cierre-test-'.uniqid().'.jpg';
+        $publico = public_path($nombre);
+        $almacenado = storage_path('app/public/'.$nombre);
+        if (! is_dir(dirname($almacenado))) {
+            mkdir(dirname($almacenado), 0777, true);
+        }
+        file_put_contents($publico, 'misma imagen historica');
+        file_put_contents($almacenado, 'misma imagen historica');
+        try {
+            $this->extraer(['planilla_ventas', $this->planilla()]);
+            $primero = $this->inbound(['media_path' => $nombre]);
+            $this->registrar($primero);
+            $this->assertSame(hash_file('sha256', $publico), $primero->fresh()->hash_media);
+            $primero->update(['hash_media' => null]); // Inbound anterior a registrarHuella.
+            $segundo = $this->inbound(['remote_jid' => 'global@g.us', 'media_path' => 'storage/'.$nombre]);
+            $this->registrar($segundo);
+            $this->assertSame($primero->fresh()->hash_media, $segundo->fresh()->hash_media);
+            $this->assertNotNull($segundo->fresh()->hash_media);
+            $this->assertDatabaseCount('documentos_cierre', 1);
+        } finally {
+            unlink($publico);
+            unlink($almacenado);
+        }
+    }
+
+    public function test_dos_encabezados_del_remitente_no_mueven_documentos_y_alerta_persiste(): void
+    {
+        $corona = $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $this->extraer(
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+            ['reporte_pos', ['servidor' => 'BELEN CASA22', 'desde' => '16/10/2026 20:00']],
+            ['planilla_ventas', $this->planilla()],
+        );
+        $this->registrar($this->inbound());
+        $this->registrar($this->inbound(['remote_jid' => 'corona@g.us']));
+        $this->registrar($this->inbound());
+        $this->assertSame(2, LoteCierre::count());
+        $this->assertSame($corona->id, DocumentoCierre::orderBy('id')->first()->sucursal_id);
+        $this->assertSame($this->casa->id, DocumentoCierre::where('tipo', 'planilla_ventas')->first()->sucursal_id);
+        $this->assertSame('grupo', DocumentoCierre::where('tipo', 'planilla_ventas')->first()->evidencia_casa);
+        $alerta = 'El remitente envió documentos de dos casas distintas';
+        foreach (LoteCierre::all() as $lote) {
+            $this->assertContains($alerta, $lote->resultado['alertas']);
+        }
+        $this->travel(10)->minutes();
+        $this->assertSame(1, app(ConciliarLotesListosUseCase::class)->ejecutar());
+        $this->assertContains($alerta, LoteCierre::where('sucursal_id', $this->casa->id)->first()->resultado['alertas']);
+    }
+
+    public function test_encabezado_no_cruza_fecha_turno_remitente_ni_ventana_de_ocho_horas(): void
+    {
+        $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $this->extraer(
+            ['planilla_ventas', $this->planilla()],
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'dia']],
+            ['planilla_ventas', [...$this->planilla(), 'fecha' => '2026-10-15']],
+            ['planilla_ventas', $this->planilla()],
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+        );
+        $this->registrar($this->inbound(['created_at' => now()->subHours(8)->subSecond()]));
+        $this->registrar($this->inbound());
+        $this->registrar($this->inbound());
+        $this->registrar($this->inbound(['sender_phone' => 'otro']));
+        $this->registrar($this->inbound());
+        $this->assertSame(4, DocumentoCierre::where('tipo', 'planilla_ventas')->where('sucursal_id', $this->casa->id)->count());
+        $this->assertSame(0, DocumentoCierre::where('evidencia_casa', 'encabezado_remitente')->count());
+    }
+
+    public function test_mover_reabre_origen_con_otros_documentos_y_destino_conciliado(): void
+    {
+        $corona = $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $this->extraer(
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Otra encargada']],
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Nancy']],
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Encargada Corona']],
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+        );
+        $this->registrar($this->inbound(['sender_phone' => 'otro']));
+        $this->registrar($this->inbound());
+        $this->registrar($this->inbound(['remote_jid' => 'corona@g.us', 'sender_phone' => 'tercero']));
+        $this->travel(10)->minutes();
+        $this->assertSame(2, app(ConciliarLotesListosUseCase::class)->ejecutar());
+        $this->registrar($this->inbound(['remote_jid' => 'global@g.us']));
+        $origen = LoteCierre::where('sucursal_id', $this->casa->id)->first();
+        $destino = LoteCierre::where('sucursal_id', $corona->id)->first();
+        $this->assertSame(1, $origen->documentos()->count());
+        $this->assertSame('Otra encargada', $origen->encargada);
+        $this->assertSame(['otro'], $origen->remitentes);
+        $this->assertSame(3, $destino->documentos()->count());
+        foreach ([$origen, $destino] as $lote) {
+            $this->assertSame('abierto', $lote->estado);
+            $this->assertNull($lote->conciliado_at);
+            $this->assertNull($lote->resultado);
+        }
+    }
+
+    public function test_ventana_incluye_ocho_horas_y_reprocesamiento_en_orden_inverso(): void
+    {
+        $corona = $this->crearCasa('Corona', 'CO', 'corona', 'corona@g.us');
+        $this->extraer(
+            ['reporte_pos', ['servidor' => 'CORONA CASA22', 'desde' => '16/10/2026 20:00']],
+            ['planilla_ventas', $this->planilla()],
+        );
+        $this->registrar($this->inbound());
+        $this->registrar($this->inbound(['created_at' => now()->subHours(8)]));
+        $this->assertSame(1, LoteCierre::count());
+        $this->assertSame($corona->id, DocumentoCierre::where('tipo', 'planilla_ventas')->first()->sucursal_id);
+    }
+
+    public function test_hash_sin_documentos_o_fuera_de_48_horas_no_impide_registro(): void
+    {
+        $hash = hash('sha256', 'imagen repetida');
+        $this->extraer(['planilla_ventas', $this->planilla()], ['planilla_ventas', $this->planilla()]);
+        $this->registrar($this->inbound(['hash_media' => $hash, 'created_at' => now()->subHours(48)->subSecond()]));
+        $this->inbound(['hash_media' => $hash]); // Sin documentos: todavía no es evidencia de duplicación.
+        $actual = $this->inbound(['hash_media' => $hash]);
+        $this->registrar($actual);
+        $this->assertDatabaseCount('documentos_cierre', 2);
+        $this->assertDatabaseHas('documentos_cierre', ['inbound_id' => $actual->id]);
+    }
+
+    private function crearCasa(string $nombre, string $codigo, string $alias, string $grupo): Sucursal
+    {
+        $casa = Sucursal::create(['nombre' => $nombre, 'codigo' => $codigo, 'alias_documentos' => $alias, 'activo' => true]);
+        SucursalWhatsAppGrupo::create(['sucursal_id' => $casa->id, 'remote_jid' => $grupo, 'nombre_grupo' => $nombre, 'activo' => true, 'es_global' => false]);
+
+        return $casa;
     }
 
     private function inbound(array $datos = []): WhatsAppMensajeInbound

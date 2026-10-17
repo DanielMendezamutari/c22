@@ -35,6 +35,8 @@ class ConciliarLotesListosUseCase
                         'tipo' => $d->tipo, 'datos' => $d->datos, 'confianza' => $d->confianza, 'creado' => $d->created_at->toIso8601String(),
                     ])->all(), $docs->where('tipo', 'texto')->map(fn ($d) => $d->datos['texto'] ?? '')->implode("\n"));
                     $resultado = (new ConciliadorCierre($reglas))->conciliar($armado)->toArray();
+                    $resultado['alertas_asignacion'] = $lote->resultado['alertas_asignacion'] ?? [];
+                    $resultado['alertas'] = array_values(array_unique([...$resultado['alertas'], ...$resultado['alertas_asignacion']]));
                     $resultado['alertas_armado'] = $armado['alertas_armado'] ?? [];
                     foreach ($resultado['alertas_armado'] as $alerta) {
                         if (str_starts_with($alerta, 'Dos planillas distintas')) {

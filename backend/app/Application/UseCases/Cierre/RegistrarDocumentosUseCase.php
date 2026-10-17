@@ -22,13 +22,33 @@ class RegistrarDocumentosUseCase
             if (! $inbound || $inbound->estado === 'duplicado') {
                 return;
             }
+            $this->calcularHuella($inbound);
             $existentes = DocumentoCierre::where('inbound_id', $inboundId)->get();
             if ($existentes->isNotEmpty()) {
-                foreach ($existentes->whereNull('lote_id') as $doc) {
+                foreach ($existentes as $doc) {
                     $this->asignador->asignar($doc);
                 }
 
                 return;
+            }
+            if ($inbound->hash_media) {
+                // También completar huellas históricas: esos mensajes llegaron antes del deduplicador.
+                $anteriores = WhatsAppMensajeInbound::where('id', '<', $inboundId)
+                    ->whereBetween('created_at', [$inbound->created_at->copy()->subHours(48), $inbound->created_at])
+                    ->whereIn('id', DocumentoCierre::select('inbound_id'))
+                    ->where(fn ($q) => $q->where('hash_media', $inbound->hash_media)->orWhereNull('hash_media'))
+                    ->orderBy('id')->get();
+                foreach ($anteriores as $anterior) {
+                    $this->calcularHuella($anterior);
+                    if ($anterior->hash_media === $inbound->hash_media) {
+                        Log::warning('Documento duplicado omitido en cierre sombra.', [
+                            'inbound_id' => $inboundId, 'original_inbound_id' => $anterior->id,
+                            'hash_media' => $inbound->hash_media,
+                        ]);
+
+                        return;
+                    }
+                }
             }
             $documentos = [];
             if ($inbound->media_path) {
@@ -59,5 +79,19 @@ class RegistrarDocumentosUseCase
                 $this->asignador->asignar($doc);
             }
         });
+    }
+    private function calcularHuella(WhatsAppMensajeInbound $inbound): void
+    {
+        if ($inbound->hash_media !== null || ! $inbound->media_path) {
+            return;
+        }
+        $ruta = collect([
+            public_path($inbound->media_path),
+            storage_path('app/public/'.str_replace('storage/', '', $inbound->media_path)),
+        ])->first(fn ($ruta) => is_file($ruta));
+        if ($ruta) {
+            $inbound->hash_media = hash_file('sha256', $ruta);
+            $inbound->save();
+        }
     }
 }
