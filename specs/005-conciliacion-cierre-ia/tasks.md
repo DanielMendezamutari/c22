@@ -30,4 +30,11 @@
 - [X] T017 [P] Revisión cruzada con Codex (fase 1: 8 bugs de falso "conforme" corregidos con regresiones)
 - [ ] T019 [US3] Calendario de casas por turno y día de semana (Madan solo jue–sáb noche) en `ReglasPago`/`LiquidacionGlobalTurno` en lugar de `casasPorTurno = 4`
 - [ ] T020 Desactivar sucursales duplicadas (Madan 7 = Madam 3, Casa Corona 6 = corona 2, prueba 4) con confirmación del dueño
+## Phase 6: Evidencia de otros grupos (US6)
+- [ ] T021 [US6] Extraer de cada comprobante: beneficiario, monto, hora, concepto, cuenta destino; guardar como evidencia sin efectos contables hasta vincularse
+- [ ] T022 [US6] `CruceEvidencia` en `backend/app/Domain/Cierre/`: vincular comprobantes a renglones de planilla (persona + monto exacto + noche; coincidencia única) y reportar pagos sin comprobante / comprobantes sin planilla
+- [ ] T023 [US6] Hielo y gastos de "ADM casas 22" ↔ egresos de la planilla de la casa
+- [ ] T024 [US6] Pedidos de móviles del grupo de taxis ↔ egreso de taxis por casa
+- [ ] T025 [US6] Caso dorado: noche 16-10 de Hamacas (planilla + hoja + POS + "NATI 40" + "26")
+
 - [ ] T018 Configuración `config/conciliacion.php` desde `.env` (cuenta QR oficial, bases, bonos)

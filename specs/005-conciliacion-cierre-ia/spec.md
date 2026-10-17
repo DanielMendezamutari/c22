@@ -67,7 +67,22 @@ Como administrador, quiero un banco de cierres reales verificados para medir qu�
 1. **Given** el banco de cierres dorados, **When** se ejecuta la evaluación, **Then** se reporta el % de campos leídos exactamente por tipo de documento y modelo.
 2. **Given** un administrador corrige un dato leído, **When** guarda la corrección, **Then** queda registrada (valor IA vs valor correcto) y el cierre puede volverse caso dorado.
 
-### Edge Cases
+### User Story 6 - Validar cada egreso con la evidencia de los otros grupos (Priority: P1)
+
+Como dueño, quiero que cada gasto y pago de la planilla se cruce con lo que se mandó a los grupos de Casa22 (comprobantes de transferencia, compras de hielo, pedidos de taxi), para saber qué egresos tienen respaldo y cuáles no.
+
+**Why this priority**: Los egresos son por donde puede salir dinero sin control. La evidencia ya llega por WhatsApp pero hoy queda "Por Confirmar" y no se usa (17-10: 13 de 21 comprobantes sin casa).
+
+**Independent Test**: Con la hoja de chicas de Ariane (Natalia 40, firma QR) y el comprobante "NATI · 40" del grupo Comprobantes, el sistema vincula el comprobante a Hamacas y marca ese pago como respaldado; un pago QR de la planilla sin comprobante queda como alerta.
+
+**Acceptance Scenarios**:
+1. **Given** un comprobante (monto + beneficiario + hora) en "Comprobantes" sin casa, **When** coincide con un renglón de una planilla de la misma noche (persona y monto, firma "QR"), **Then** se vincula a esa casa y a ese renglón.
+2. **Given** un renglón de planilla pagado por QR/transferencia, **When** no hay comprobante que coincida, **Then** el informe lo lista como "pago sin comprobante".
+3. **Given** un comprobante que no coincide con ninguna planilla, **When** cierran las casas del turno, **Then** se lista como "pago sin registrar en planilla" (posible salida de dinero no declarada).
+4. **Given** compras de hielo u otros gastos enviados a "ADM casas 22", **When** se concilia, **Then** se comparan con "Compra de hielo"/gastos de la planilla de esa casa y noche.
+5. **Given** los pedidos de móviles en el grupo de taxis, **When** se concilia, **Then** el egreso de taxis de cada casa se compara con la cantidad de viajes pedidos para esa casa.
+
+
 - La encargada manda el mismo documento a dos grupos → se deduplica (hash de imagen) y no se cuenta dos veces.
 - Una foto contiene varios documentos (caso Sisiela: POS + hoja de chicas + shampagne + sobre en una imagen) → se extraen todos.
 - Una chica aparece en dos filas (Luz 8M + 3M) → se suman por nombre antes de comparar con el POS.
@@ -90,6 +105,10 @@ Como administrador, quiero un banco de cierres reales verificados para medir qu�
 - **FR-011**: Informe por cierre y resumen diario de las 4 casas con la estructura de US4.
 - **FR-012**: Banco de cierres dorados y comando de evaluación de precisión; registro de correcciones del administrador.
 - **FR-013**: Sin nombres de casas ni personas en código o prompts (se leen de la BD); los datos personales de los casos dorados no se versionan.
+
+- **FR-014**: Cruzar egresos de la planilla con la evidencia de los grupos de Casa22 (ver research §10): comprobantes ↔ renglones pagados por QR/transferencia; hielo y gastos ↔ ADM casas 22; taxis ↔ pedidos de móviles.
+- **FR-015**: Un comprobante sin casa se asigna por coincidencia con un renglón de planilla (persona + monto + misma noche) o por la encargada que lo envía; si no hay coincidencia única, queda para confirmación.
+- **FR-016**: El informe incluye "pagos sin comprobante" y "comprobantes sin registrar en planilla".
 
 ### Key Entities
 - **Lote de cierre**: casa, fecha operativa, turno, encargada, mensajes y documentos, estado.

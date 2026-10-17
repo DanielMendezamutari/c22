@@ -115,3 +115,17 @@ Otros errores de clasificación: hoja de pago de chicas → "planilla" (311); so
 Lectura de cifras: buena cuando la foto es la planilla VENTAS (Fanny 16-10: 12/13 campos exactos).
 
 **Conclusiones**: el problema principal no es la lectura sino (1) la fórmula del informe, (2) categorías faltantes (sobre, hoja de chicas, control de shampagne, hoja de billar), (3) un turno por foto en vez de un lote por cierre, (4) fechas sin validar contra la fecha del mensaje, (5) Cuarta Casa con formato propio.
+
+## 10. Grupos de WhatsApp de Casa22 y qué evidencia aporta cada uno (dueño, 2026-10-17)
+
+| Grupo | Casa | Qué mandan | Valida en la planilla |
+|---|---|---|---|
+| C22 Belén / Corona / madam / MADAMES / vip cierres, Adm vip privado, CIERRES DE INVENTARIO CASA NUEVA | Su casa | Cierres (planilla, hojas, POS, sobre) | — (fuente del cierre) |
+| **ADM casas 22**, Adm casas | Varias | Mensajes administrativos, **compras de hielo** y otros gastos | "Compra de hielo", gastos operativos |
+| **Comprobantes** | Varias | **Todos los gastos y pagos** (transferencias a chicas, garzones, personal, taxis) | Renglones con firma "QR" en hoja de chicas, garzones y personal |
+| Rendición de caja chica | Varias | Rendiciones de caja chica | Gastos de caja chica |
+| **TAXI OFICIAL CASA 22, VIP, CORONA 22** | Varias | Pedidos de móviles para rotaciones de chicas | "Pago de taxis chicas", "Taxis PT Frío" |
+| Turno noche | Varias | Coordinación del turno | — |
+| Control de recaudado | — | Destino de los informes | — |
+
+Muestra 17-10 (Comprobantes): "NATI 40" coincide con la hoja de chicas de Ariane (Natalia 40, QR); "Finalizando turno noche… 26" coincide con el saldo de 26 de Ariane. Los comprobantes casi nunca dicen la casa: se vinculan por **persona + monto + noche**.
