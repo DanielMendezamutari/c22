@@ -307,6 +307,22 @@ class InformeCierreEncargadaTest extends TestCase
         $this->assertSame($corona->id, $id);
     }
 
+    public function test_un_pdf_se_envia_a_la_ia_como_pdf(): void
+    {
+        // Producción 17-10: 5 PDFs rechazados por Gemini (400) porque se enviaban como image/jpeg
+        $this->mock(GeminiVisionAuditorService::class, function ($mock) {
+            $mock->shouldReceive('auditarYClasificar')->once()
+                ->with(\Mockery::any(), 'application/pdf', \Mockery::any())
+                ->andReturn(['clasificacion' => 'voucher_deposito', 'score_confianza' => 0.95, 'sucursal_sugerida' => null, 'datos' => []]);
+        });
+        $inbound = $this->crearInbound('Rosa');
+        $inbound->update(['media_path' => 'storage/comprobantes/whatsapp/comprobante.pdf', 'tipo_mensaje' => 'documento']);
+
+        ProcesarMensajeWhatsAppJob::dispatchSync($inbound->id);
+
+        $this->assertSame('voucher_deposito', $inbound->fresh()->clasificacion_ia);
+    }
+
     public function test_joker_es_otro_negocio_y_no_se_asigna_a_ninguna_casa(): void
     {
         Sucursal::create(['nombre' => 'Cuarta Casa', 'codigo' => 'CASA4', 'activo' => true]);

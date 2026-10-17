@@ -225,7 +225,15 @@ async function startWhatsAppBot(generation) {
   whitelistTimer = setInterval(refrescarWhitelistGrupos, SYNC_INTERVAL_MS);
 
   const msgRetryCounterCache = new Map();
-  const groupMetadataCache = new Map();
+  // Metadatos de grupo con vencimiento: con una lista de integrantes vieja, los dispositivos nuevos no reciben
+  // la llave del grupo y ven "Esperando mensaje" en los informes del bot.
+  const METADATA_TTL_MS = 10 * 60 * 1000;
+  const metadataGuardada = new Map();
+  const groupMetadataCache = {
+    has: (jid) => metadataGuardada.has(jid) && Date.now() - metadataGuardada.get(jid).at < METADATA_TTL_MS,
+    get: (jid) => metadataGuardada.get(jid)?.data,
+    set: (jid, data) => metadataGuardada.set(jid, { data, at: Date.now() }),
+  };
 
   const sock = makeWASocket({
     version,

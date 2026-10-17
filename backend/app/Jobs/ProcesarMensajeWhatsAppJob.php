@@ -52,7 +52,14 @@ class ProcesarMensajeWhatsAppJob implements ShouldQueue
             if (!empty($inbound->raw_text)) $contextoPartes[] = "Texto adjunto: {$inbound->raw_text}";
             $contextoTexto = implode(' | ', $contextoPartes);
 
-            $resultado = $visionAuditor->auditarYClasificar($inbound->media_path, 'image/jpeg', $contextoTexto);
+            // El tipo real del archivo: un PDF enviado como image/jpeg lo rechaza Gemini con 400 "Unable to process input image"
+            $mimetype = match (strtolower(pathinfo((string) $inbound->media_path, PATHINFO_EXTENSION))) {
+                'pdf' => 'application/pdf',
+                'png' => 'image/png',
+                'webp' => 'image/webp',
+                default => 'image/jpeg',
+            };
+            $resultado = $visionAuditor->auditarYClasificar($inbound->media_path, $mimetype, $contextoTexto);
 
             // Sin IA no hay datos: el mensaje espera revisión humana sin efectos contables (spec 004 FR-006)
             if (($resultado['ia_disponible'] ?? true) === false) {
