@@ -71,6 +71,16 @@ class RegistrarDocumentosUseCase
             } elseif (Str::contains(Str::lower(Str::ascii((string) $inbound->raw_text)), ['venta', 'qr', 'efectivo'])) {
                 $documentos[] = ['tipo' => 'texto', 'texto' => ['texto' => $inbound->raw_text], 'confianza' => 1];
             }
+            // La confianza no cambia la identidad; conservar la mejor lectura idéntica del inbound.
+            $unicos = [];
+            foreach ($documentos as $documento) {
+                $datos = $this->ordenarClaves($documento[$documento['tipo']] ?? []);
+                $clave = $documento['tipo'].':'.json_encode($datos, JSON_THROW_ON_ERROR);
+                if (! isset($unicos[$clave]) || ($documento['confianza'] ?? 0) > ($unicos[$clave]['confianza'] ?? 0)) {
+                    $unicos[$clave] = $documento;
+                }
+            }
+            $documentos = array_values($unicos);
             $creados = DB::transaction(fn () => array_map(fn ($d) => DocumentoCierre::create([
                 'inbound_id' => $inboundId, 'tipo' => $d['tipo'],
                 'datos' => $d[$d['tipo']] ?? [], 'confianza' => $d['confianza'] ?? 0,
@@ -80,6 +90,20 @@ class RegistrarDocumentosUseCase
             }
         });
     }
+    private function ordenarClaves(array $datos): array
+    {
+        if (! array_is_list($datos)) {
+            ksort($datos);
+        }
+        foreach ($datos as &$valor) {
+            if (is_array($valor)) {
+                $valor = $this->ordenarClaves($valor);
+            }
+        }
+
+        return $datos;
+    }
+
     private function calcularHuella(WhatsAppMensajeInbound $inbound): void
     {
         if ($inbound->hash_media !== null || ! $inbound->media_path) {

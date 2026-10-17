@@ -21,13 +21,14 @@ class AsignarLoteUseCase
     private function asignarConReferencia(DocumentoCierre $doc, Carbon $referencia): void
     {
         if ($doc->lote_id) {
+            $this->aplicarTurnoRemitente($doc);
             $this->aplicarEncabezadoRemitente($doc);
 
             return;
         }
         $inbound = $doc->inbound;
         $datos = $doc->datos;
-        [$fecha, $turno, $propio, $fechaPropia] = $this->fechaTurno($doc);
+        [$fecha, $turno] = $this->fechaTurno($doc);
         $evidencia = null;
         $casa = $doc->tipo === 'reporte_pos'
             ? ProcesarMensajeWhatsAppJob::inferirSucursalId(['datos' => ['servidor_cajero' => $datos['servidor'] ?? null]], $inbound, true) : null;
@@ -68,15 +69,6 @@ class AsignarLoteUseCase
                 $evidencia = 'texto';
             }
         }
-        if ($casa && ! $propio && trim((string) $inbound->sender_phone) !== '') {
-            $anterior = $delRemitente()->where('sucursal_id', $casa)->latest('id')->first();
-            if ($anterior) {
-                if (! $fechaPropia) {
-                    $fecha = $anterior->fecha_operativa->toDateString();
-                }
-                $turno = $anterior->tipo_turno;
-            }
-        }
         DB::transaction(function () use ($doc, $casa, $evidencia, $fecha, $turno, $inbound) {
             if (DocumentoCierre::whereKey($doc->id)->lockForUpdate()->value('lote_id')) {
                 return;
@@ -96,6 +88,7 @@ class AsignarLoteUseCase
             }
             $doc->save();
         });
+        $this->aplicarTurnoRemitente($doc);
         $this->aplicarEncabezadoRemitente($doc);
         if ($evidencia === 'grupo' && trim((string) $inbound->sender_phone) !== '') {
             DocumentoCierre::whereNull('sucursal_id')->where('id', '!=', $doc->id)
@@ -148,21 +141,73 @@ class AsignarLoteUseCase
                 }
                 $documento->update(['sucursal_id' => $casa, 'lote_id' => $destino->id, 'evidencia_casa' => 'encabezado_remitente']);
             }
-            foreach (LoteCierre::whereIn('id', array_filter(array_unique($afectados)))->orderBy('id')->lockForUpdate()->get() as $lote) {
-                $restantes = $lote->documentos()->with('inbound')->orderBy('id')->get();
-                if ($restantes->isEmpty()) {
-                    $lote->delete();
-
-                    continue;
-                }
-                // Reconstruir metadatos: una encargada o teléfono puede haber salido del lote.
-                $lote->remitentes = $restantes->pluck('inbound.sender_phone')->filter()->unique()->values()->all();
-                $lote->encargada = $restantes->where('tipo', 'planilla_ventas')->last()?->datos['encargada'] ?? null;
-                $lote->ultimo_documento_at = now();
-                $this->reabrir($lote);
-                $lote->save();
-            }
+            $this->actualizarLotesAfectados($afectados);
         });
+    }
+
+    /** Heredar solo de documentos con turno propio, en ambas direcciones de llegada. */
+    private function aplicarTurnoRemitente(DocumentoCierre $doc): void
+    {
+        $telefono = $doc->inbound->sender_phone;
+        if (! $doc->sucursal_id || trim((string) $telefono) === '') {
+            return;
+        }
+        $documentos = DocumentoCierre::with('inbound')->where('sucursal_id', $doc->sucursal_id)
+            ->whereHas('inbound', fn ($q) => $q->where('sender_phone', $telefono)
+                ->whereBetween('created_at', [$doc->inbound->created_at->copy()->subHours(8), $doc->inbound->created_at->copy()->addHours(8)]))
+            ->orderBy('id')->lockForUpdate()->get();
+        $afectados = [];
+        foreach ($documentos as $documento) {
+            if ($this->fechaTurno($documento)[2]) {
+                continue;
+            }
+            // Cada evidencia usa su propia ventana: no propagar por cadenas de documentos.
+            $anclas = DocumentoCierre::with('inbound')->where('sucursal_id', $documento->sucursal_id)
+                ->whereHas('inbound', fn ($q) => $q->where('sender_phone', $telefono)
+                    ->whereBetween('created_at', [$documento->inbound->created_at->copy()->subHours(8), $documento->inbound->created_at->copy()->addHours(8)]))
+                ->whereIn('tipo', ['planilla_ventas', 'reporte_pos', 'control_shampagne'])
+                ->get()->filter(fn ($ancla) => $this->fechaTurno($ancla)[2]);
+            $distancia = fn ($ancla) => abs($ancla->inbound->created_at->getTimestamp() - $documento->inbound->created_at->getTimestamp());
+            $prioridad = ['planilla_ventas' => 0, 'reporte_pos' => 1, 'control_shampagne' => 2];
+            // Si rindió ambos turnos, primero elegir el turno más cercano al envío.
+            if ($anclas->pluck('tipo_turno')->unique()->count() > 1) {
+                $cercana = $anclas->sortBy(fn ($ancla) => [$distancia($ancla), $prioridad[$ancla->tipo], $ancla->id])->first();
+                $anclas = $anclas->where('tipo_turno', $cercana->tipo_turno);
+            }
+            $ancla = $anclas->sortBy(fn ($ancla) => [$prioridad[$ancla->tipo], $distancia($ancla), $ancla->id])->first();
+            if (! $ancla) {
+                continue;
+            }
+            [$fecha, $turno] = $this->fechaTurno($ancla);
+            $destino = LoteCierre::firstOrCreate([
+                'sucursal_id' => $documento->sucursal_id, 'fecha_operativa' => $fecha, 'tipo_turno' => $turno,
+            ], ['estado' => 'abierto']);
+            if ($documento->lote_id !== $destino->id) {
+                $afectados[] = $documento->lote_id;
+                $afectados[] = $destino->id;
+                $documento->update(['fecha_operativa' => $fecha, 'tipo_turno' => $turno, 'lote_id' => $destino->id]);
+            }
+        }
+        $this->actualizarLotesAfectados($afectados);
+        $doc->refresh();
+    }
+
+    private function actualizarLotesAfectados(array $afectados): void
+    {
+        foreach (LoteCierre::whereIn('id', array_filter(array_unique($afectados)))->orderBy('id')->lockForUpdate()->get() as $lote) {
+            $restantes = $lote->documentos()->with('inbound')->orderBy('id')->get();
+            if ($restantes->isEmpty()) {
+                $lote->delete();
+
+                continue;
+            }
+            // Reconstruir metadatos: una encargada o teléfono puede haber salido del lote.
+            $lote->remitentes = $restantes->pluck('inbound.sender_phone')->filter()->unique()->values()->all();
+            $lote->encargada = $restantes->where('tipo', 'planilla_ventas')->last()?->datos['encargada'] ?? null;
+            $lote->ultimo_documento_at = now();
+            $this->reabrir($lote);
+            $lote->save();
+        }
     }
 
     private function reabrir(LoteCierre $lote): void
@@ -185,7 +230,7 @@ class AsignarLoteUseCase
                 $inicio = null;
             }
             if ($inicio) {
-                return [$inicio->toDateString(), $inicio->hour >= 17 || $inicio->hour < 5 ? 'noche' : 'dia', true, true];
+                return [$inicio->toDateString(), $inicio->hour >= 17 || $inicio->hour < 5 ? 'noche' : 'dia', true];
             }
             // Fecha ilegible: usar hora del mensaje.
         }
@@ -194,14 +239,14 @@ class AsignarLoteUseCase
         if (in_array($doc->tipo, ['planilla_ventas', 'control_shampagne', 'sobre'], true)) {
             $fecha = $datos['fecha'] ?? null;
             $leido = Str::lower(Str::ascii($datos['turno'] ?? ''));
-            $propio = in_array($leido, ['dia', 'tarde', 'noche'], true);
+            $propio = $doc->tipo !== 'sobre' && in_array($leido, ['dia', 'tarde', 'noche'], true);
             if ($propio) {
                 $turno = $leido === 'noche' ? 'noche' : 'dia';
             }
         }
         [$fecha] = ProcesarMensajeWhatsAppJob::fechaOperativa($fecha, $turno, $doc->inbound->created_at);
 
-        return [$fecha, $turno, $propio, ! empty($datos['fecha']) && in_array($doc->tipo, ['planilla_ventas', 'control_shampagne', 'sobre'], true)];
+        return [$fecha, $turno, $propio || $doc->tipo === 'planilla_ventas'];
     }
 
     /**

@@ -23,6 +23,9 @@ Si existe un inbound anterior (ID menor), creado dentro de las 48 horas anterior
 **y documentos ya registrados**, no se crean documentos para el reenvío y se registra un warning con ambos IDs.
 Se completan también las huellas nulas de los inbounds anteriores con documentos para detectar imágenes históricas.
 La comparación es independiente del grupo y del remitente. Sin archivo ni hash no se presume duplicación.
+Dentro de un mismo inbound se conserva un solo documento por tipo y datos idénticos, independientemente del orden
+de las claves JSON o de la confianza; se conserva la lectura de mayor confianza. Las listas mantienen su orden.
+Documentos con datos o tipos distintos se conservan.
 No se cambia el estado ni los efectos contables del flujo viejo.
 
 ## Reglas de asignación (en este orden; la primera que aplica gana)
@@ -41,7 +44,18 @@ No se cambia el estado ni los efectos contables del flujo viejo.
 3. `control_shampagne.fecha/turno`, `sobre.fecha`.
 4. Si no hay: hora de envío (noche si se envió entre 17:00 y 13:59 del día siguiente → noche anterior; si no, día).
 
-**Lote**: (casa, fecha, turno). Un documento con casa pero sin turno propio toma el del lote más reciente del mismo remitente en 16 h.
+**Lote**: (casa, fecha, turno). Los documentos sin turno propio heredan **fecha y turno** de los documentos con
+turno propio de la misma casa y `sender_phone` no vacío, cuyos inbounds estén dentro de **±8 h**, extremos incluidos.
+Tienen turno propio `planilla_ventas`, `reporte_pos` con `desde` válido (incluida la validación de ±2 días), y
+`control_shampagne` con turno reconocido. La prioridad es planilla > POS > control; a igual prioridad se elige el
+más cercano en tiempo (y el menor ID en caso de empate). Si hay documentos propios de día y noche, primero se
+elige el turno del documento propio más cercano; en empate se usa la prioridad anterior. Luego se aplica la
+prioridad dentro de ese turno. La fecha de un sobre también se sustituye al heredar el cierre.
+Se evalúa en ambos órdenes de llegada y al reprocesar documentos ya asignados. Al llegar una referencia se
+corrigen los documentos sin turno propio de su ventana, usando para cada uno su propia ventana de ±8 h.
+Los movimientos son transaccionales: se eliminan lotes vacíos y se reabren origen y destino, reconstruyendo
+remitentes y encargada, borrando resultados anteriores y conservando alertas de asignación, igual que en la
+regla de encabezado del remitente.
 `comprobante_transferencia` y `recibo_gasto` también se asignan (son evidencia de entrega y de egresos).
 
 **Encabezado del cierre del remitente (prevalece sobre el grupo)**

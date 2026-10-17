@@ -438,6 +438,183 @@ class LotesCierreSombraTest extends TestCase
         $this->assertDatabaseHas('documentos_cierre', ['inbound_id' => $actual->id]);
     }
 
+    public function test_cierre_dia_de_fanny_tardio_no_contamina_la_noche_de_mabel(): void
+    {
+        $vip = $this->crearCasa('VIP', 'VIP', 'vip', 'vip@g.us');
+        $this->extraer(
+            ['sobre', ['monto' => 2603, 'fecha' => '2026-10-17']],
+            ['pago_chicas', ['filas' => [['nombre' => 'Chica', 'total' => 100]]]],
+            ['comprobante_transferencia', ['monto' => 194]],
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Fanny', 'turno' => 'Día']],
+            ['reporte_pos', ['servidor' => 'VIP', 'desde' => '16/10/2026 09:04']],
+            ['planilla_ventas', [...$this->planilla(), 'encargada' => 'Mabel', 'turno' => 'Noche']],
+            ['comprobante_transferencia', ['monto' => 300]],
+        );
+        $envio = Carbon::parse('2026-10-16 21:54:00', 'America/La_Paz')->utc();
+        foreach (range(1, 3) as $i) {
+            $this->registrar($this->inbound(['remote_jid' => 'vip@g.us', 'sender_name' => 'Fanny', 'created_at' => $envio]));
+        }
+        $provisional = LoteCierre::first();
+        $this->assertSame('noche', $provisional->tipo_turno);
+        $provisional->update(['estado' => 'conciliado', 'conciliado_at' => now(), 'resultado' => ['estado' => 'FALTANTE']]);
+        foreach (range(1, 2) as $i) {
+            $this->registrar($this->inbound(['remote_jid' => 'vip@g.us', 'sender_name' => 'Fanny', 'created_at' => $envio->copy()->addSecond()]));
+        }
+        $this->assertDatabaseMissing('lotes_cierre', ['id' => $provisional->id]);
+        $dia = LoteCierre::where('sucursal_id', $vip->id)->where('tipo_turno', 'dia')->firstOrFail();
+        $this->assertSame('2026-10-16', $dia->fecha_operativa->toDateString());
+        $this->assertSame(5, $dia->documentos()->count());
+        $this->assertSame('Fanny', $dia->encargada);
+        $this->assertSame('abierto', $dia->estado);
+        $this->assertNull($dia->resultado);
+        foreach (range(1, 2) as $i) {
+            $this->registrar($this->inbound([
+                'remote_jid' => 'vip@g.us', 'sender_phone' => '59170000002', 'sender_name' => 'Mabel',
+                'created_at' => Carbon::parse('2026-10-17 09:28:00', 'America/La_Paz')->utc(),
+            ]));
+        }
+        $noche = LoteCierre::where('sucursal_id', $vip->id)->where('tipo_turno', 'noche')->firstOrFail();
+        $this->assertSame('2026-10-16', $noche->fecha_operativa->toDateString());
+        $this->assertSame('Mabel', $noche->encargada);
+        $this->assertSame(2, $noche->documentos()->count());
+        $this->assertSame(['59170000002'], $noche->remitentes);
+        $this->assertSame(0, $noche->documentos()->whereHas('inbound', fn ($q) => $q->where('sender_phone', '59170000001'))->count());
+    }
+
+    public function test_turno_propio_primero_y_reprocesamiento_inverso_heredan_fecha_y_turno(): void
+    {
+        $this->extraer(
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'Día']],
+            ['sobre', ['monto' => 2603, 'fecha' => '2026-10-17']],
+            ['comprobante_transferencia', ['monto' => 194]],
+        );
+        $envio = Carbon::parse('2026-10-16 21:54:01', 'America/La_Paz')->utc();
+        $this->registrar($this->inbound(['created_at' => $envio]));
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->subSecond()]));
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addSecond()]));
+        $this->assertSame(1, LoteCierre::count());
+        $lote = LoteCierre::first();
+        $this->assertSame('dia', $lote->tipo_turno);
+        $this->assertSame('2026-10-16', $lote->fecha_operativa->toDateString());
+        $this->assertSame(3, $lote->documentos()->count());
+    }
+
+    public function test_dos_turnos_del_mismo_remitente_eligen_el_mas_cercano_y_reabren_lotes(): void
+    {
+        $this->extraer(
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'Noche']],
+            ['sobre', ['monto' => 100]],
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'Día']],
+            ['comprobante_transferencia', ['monto' => 194]],
+        );
+        $envio = Carbon::parse('2026-10-16 21:54:00', 'America/La_Paz')->utc();
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addHours(2)]));
+        $this->registrar($this->inbound(['created_at' => $envio]));
+        $noche = LoteCierre::first();
+        $noche->update(['estado' => 'conciliado', 'conciliado_at' => now(), 'resultado' => [
+            'estado' => 'FALTANTE', 'alertas_asignacion' => ['Alerta previa'],
+        ]]);
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addSecond()]));
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addHours(2)->addSecond()]));
+        $this->assertSame('dia', DocumentoCierre::where('tipo', 'sobre')->first()->tipo_turno);
+        $this->assertSame('noche', DocumentoCierre::where('tipo', 'comprobante_transferencia')->first()->tipo_turno);
+        $this->assertSame('abierto', $noche->fresh()->estado);
+        $this->assertNull($noche->fresh()->conciliado_at);
+        $this->assertSame(['alertas_asignacion' => ['Alerta previa'], 'alertas' => ['Alerta previa']], $noche->fresh()->resultado);
+        $this->assertSame(2, $noche->documentos()->count());
+    }
+
+    public function test_turno_remitente_respeta_casa_telefono_y_limite_inclusivo_de_ocho_horas(): void
+    {
+        $this->crearCasa('Otra', 'OT', 'otra', 'otra@g.us');
+        $this->extraer(
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'Día']],
+            ['sobre', ['monto' => 1]], ['sobre', ['monto' => 2]],
+            ['sobre', ['monto' => 3]], ['sobre', ['monto' => 4]],
+        );
+        $envio = Carbon::parse('2026-10-16 21:54:00', 'America/La_Paz')->utc();
+        $this->registrar($this->inbound(['created_at' => $envio]));
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addHours(8)]));
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addHours(8)->addSecond()]));
+        $this->registrar($this->inbound(['created_at' => $envio, 'sender_phone' => 'otro']));
+        $this->registrar($this->inbound(['created_at' => $envio, 'remote_jid' => 'otra@g.us']));
+        $sobres = DocumentoCierre::where('tipo', 'sobre')->orderBy('id')->get();
+        $this->assertSame(['dia', 'noche', 'noche', 'noche'], $sobres->pluck('tipo_turno')->all());
+    }
+
+    public function test_prioridad_planilla_pos_control_y_pos_ilegible_hereda(): void
+    {
+        $this->extraer(
+            ['sobre', ['monto' => 100]],
+            ['control_shampagne', ['fecha' => '2026-10-16', 'turno' => 'Día']],
+            ['reporte_pos', ['desde' => '17/10/2026 09:04']],
+            ['planilla_ventas', [...$this->planilla(), 'turno' => 'Día']],
+            ['reporte_pos', ['desde' => '31/02/2026 20:00']],
+            ['control_shampagne', ['fecha' => '2026-10-17']],
+        );
+        $envio = Carbon::parse('2026-10-16 21:54:00', 'America/La_Paz')->utc();
+        $this->registrar($this->inbound(['created_at' => $envio]));
+        $sobre = DocumentoCierre::first();
+        $this->registrar($this->inbound(['created_at' => $envio]));
+        $this->assertSame('dia', $sobre->fresh()->tipo_turno);
+        $this->assertSame('2026-10-16', $sobre->fresh()->fecha_operativa->toDateString());
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addMinute()]));
+        $this->assertSame('2026-10-17', $sobre->fresh()->fecha_operativa->toDateString());
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addMinutes(2)]));
+        $this->assertSame('2026-10-16', $sobre->fresh()->fecha_operativa->toDateString());
+        foreach (range(1, 2) as $i) {
+            $this->registrar($this->inbound(['created_at' => $envio]));
+            $ultimo = DocumentoCierre::latest('id')->first();
+            $this->assertSame('dia', $ultimo->tipo_turno);
+            $this->assertSame('2026-10-16', $ultimo->fecha_operativa->toDateString());
+        }
+    }
+
+    public function test_reprocesar_documento_asignado_corrige_turno_historico_sin_extraer_otra_vez(): void
+    {
+        $this->extraer(['sobre', ['monto' => 2603]], ['planilla_ventas', [...$this->planilla(), 'turno' => 'Día']]);
+        $envio = Carbon::parse('2026-10-16 21:54:00', 'America/La_Paz')->utc();
+        $inbound = $this->inbound(['created_at' => $envio]);
+        $this->registrar($inbound);
+        $this->registrar($this->inbound(['created_at' => $envio->copy()->addSecond()]));
+        $historico = LoteCierre::create(['sucursal_id' => $this->casa->id, 'fecha_operativa' => '2026-10-16', 'tipo_turno' => 'noche', 'estado' => 'conciliado']);
+        DocumentoCierre::where('tipo', 'sobre')->update(['lote_id' => $historico->id, 'tipo_turno' => 'noche']);
+        $this->registrar($inbound);
+        $this->assertDatabaseMissing('lotes_cierre', ['id' => $historico->id]);
+        $this->assertSame('dia', DocumentoCierre::where('tipo', 'sobre')->first()->tipo_turno);
+        $this->assertDatabaseCount('documentos_cierre', 2);
+    }
+
+    public function test_pdf_con_cincuenta_cierres_barra_identicos_guarda_uno(): void
+    {
+        $datos = ['filas' => [['producto' => 'Cerveza', 'cantidad' => 12]], 'total' => 100];
+        $documentos = array_fill(0, 50, ['tipo' => 'cierre_barra', 'cierre_barra' => $datos, 'confianza' => 0.8]);
+        // Igualdad de datos independiente del orden de las claves y de la confianza.
+        $documentos[49] = ['tipo' => 'cierre_barra', 'cierre_barra' => array_reverse($datos, true), 'confianza' => 0.99];
+        $this->mock(ExtractorDocumentosCierre::class, fn ($m) => $m->shouldReceive('extraer')->once()->andReturn([
+            'ia_disponible' => true, 'documentos' => $documentos,
+        ]));
+        $inbound = $this->inbound(['media_path' => 'storage/cierre.pdf']);
+        $this->registrar($inbound);
+        $this->registrar($inbound);
+        $this->assertDatabaseCount('documentos_cierre', 1);
+        $this->assertEquals($datos, DocumentoCierre::first()->datos);
+        $this->assertEquals(0.99, DocumentoCierre::first()->confianza);
+    }
+
+    public function test_deduplicacion_conserva_datos_distintos_y_tipos_distintos_del_pdf(): void
+    {
+        $this->mock(ExtractorDocumentosCierre::class, fn ($m) => $m->shouldReceive('extraer')->once()->andReturn([
+            'ia_disponible' => true, 'documentos' => [
+                ['tipo' => 'sobre', 'sobre' => ['monto' => 100]],
+                ['tipo' => 'sobre', 'sobre' => ['monto' => 200]],
+                ['tipo' => 'comprobante_transferencia', 'comprobante_transferencia' => ['monto' => 100]],
+            ],
+        ]));
+        $this->registrar($this->inbound(['media_path' => 'storage/cierre.pdf']));
+        $this->assertDatabaseCount('documentos_cierre', 3);
+    }
+
     private function crearCasa(string $nombre, string $codigo, string $alias, string $grupo): Sucursal
     {
         $casa = Sucursal::create(['nombre' => $nombre, 'codigo' => $codigo, 'alias_documentos' => $alias, 'activo' => true]);
