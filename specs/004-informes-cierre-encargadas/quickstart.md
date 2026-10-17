@@ -23,12 +23,13 @@ El bot NO se arranca en local: su `.env` apunta a producción.
    /opt/cpanel/ea-php82/root/usr/bin/php artisan tinker --execute="echo config('services.gemini.api_key') ? 'GEMINI OK' : 'FALTA GEMINI_API_KEY';"
    ```
    Si dice FALTA: agregar `GEMINI_API_KEY=...` en `backend/.env` y `php artisan config:cache`. Sin clave, las fotos quedan "requiere_revision" (ya no se inventan cifras).
-5. **Bot**:
+5. **Bot** (se ejecuta compilado: `dist/bot.mjs`, sin `node_modules`; la cuota del hosting no alcanza para `npm`):
    ```bash
    cd ~/c22.ribersoft.com/scripts/whatsapp_bot
-   npm install --no-audit --no-fund
-   pkill -f "bot.js"; sleep 2; bash verificar_y_levantar.sh
-   tail -f bot_salida.log      # esperar [CONECTADO CON ÉXITO]
+   rm -rf node_modules ~/.npm/_cacache          # ya no se usan; liberan espacio
+   for p in $(pgrep -f "node.*bot\.(m?js)"); do kill $p; done; sleep 3
+   bash verificar_y_levantar.sh
+   sleep 20; tail -n 30 bot_salida.log      # esperar "Iniciando Baileys" y conexión
    ```
    Si pide QR: escanearlo desde la Plataforma Web → Gestión WhatsApp.
 6. **Prueba real**:

@@ -7,8 +7,9 @@ echo " [C22 WHATSAPP] Purgando Sender Keys Corruptas de Grupos"
 echo " (Mantiene creds.json intacto - NO requiere escanear QR)"
 echo "=========================================================="
 
-echo "1. Deteniendo proceso bot.js..."
-pkill -f "bot.js" 2>/dev/null
+echo "1. Deteniendo proceso del bot..."
+source "$BOT_DIR/entrypoint.sh"
+for pid in $(bot_pids); do kill "$pid" 2>/dev/null; done
 sleep 1
 
 echo "2. Purgando sender keys corruptas en auth_info_baileys..."

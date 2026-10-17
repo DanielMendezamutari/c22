@@ -50,7 +50,10 @@ EOF
 fi
 
 # 3. Verificar dependencias instaladas
-if [ ! -d "node_modules/@whiskeysockets/baileys" ]; then
+source "$BOT_DIR/entrypoint.sh"
+
+# El paquete compilado (dist/bot.mjs) no necesita node_modules
+if [ "$BOT_ENTRY" = "bot.js" ] && [ ! -d "node_modules/@whiskeysockets/baileys" ]; then
     echo "📦 Instalando dependencias requeridas..."
     if [ -n "$NPM_BIN" ]; then
         "$NPM_BIN" install --no-audit --no-fund
@@ -65,4 +68,4 @@ echo "👉 El código QR se proyectará en la consola Y en https://c22.ribersoft
 echo "-----------------------------------------------------------------"
 
 export UV_THREADPOOL_SIZE=2
-"$NODE_BIN" bot.js
+"$NODE_BIN" "$BOT_ENTRY"

@@ -10,6 +10,7 @@ Plataforma de auditoría de inventario, rellenos, comisiones y recaudación (ví
 - Móvil: Flutter + Riverpod + SQLite offline-first en `frontend/puntofrio_app/`, en uso por los barmans **solo para conteo de productos** (inventario). El recaudo lo rinden las encargadas (rol `cajera`) por WhatsApp.
 - IA: Gemini Vision (`GEMINI_MODEL`, fallback `gemini-3.5-flash-lite`) para planillas, vouchers y tickets POS.
 - WhatsApp: bot Node + Baileys silencioso con whitelist de grupos (`scripts/whatsapp_bot/`) → webhook `X-Webhook-Secret`; salida por HTTP local :3001.
+  Se despliega **compilado**: tras cambiar `bot.js` o dependencias, `cd scripts/whatsapp_bot && ./build.sh` y commitear `dist/bot.mjs` (el hosting no tiene cuota para `node_modules`; requiere Node 20).
 - POS: agente Windows `scripts/sync_agent/` empuja RestoTech con `X-Branch-Token`. Modo actual: "Solo WhatsApp".
 
 ## Arrancar y probar en local

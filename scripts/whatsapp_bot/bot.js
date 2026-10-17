@@ -22,6 +22,8 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// Carpeta del bot aunque se ejecute el paquete compilado dist/bot.mjs
+const BOT_DIR = path.basename(__dirname) === 'dist' ? path.dirname(__dirname) : __dirname;
 
 dotenv.config();
 
@@ -31,7 +33,7 @@ const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '300000', 10);
 const AUTH_DIR = process.env.AUTH_DIR || './auth_info_baileys';
 const IS_LIST_GROUPS_MODE = process.argv.includes('--list-groups');
 const BOT_HTTP_PORT = parseInt(process.env.BOT_HTTP_PORT || '3001', 10);
-const OUTBOUND_STORE_PATH = process.env.OUTBOUND_STORE_PATH || path.join(__dirname, 'outbound_store.json');
+const OUTBOUND_STORE_PATH = process.env.OUTBOUND_STORE_PATH || path.join(BOT_DIR, 'outbound_store.json');
 
 let currentSock = null;
 let activeSock = null;
@@ -604,9 +606,9 @@ const httpServer = http.createServer((req, res) => {
           if (media_path) {
             const cleanPath = media_path.replace(/^\/?storage\//, '').replace(/^public\//, '');
             const candidatos = [
-              path.resolve(__dirname, '../../backend/public', media_path),
-              path.resolve(__dirname, '../../backend/storage/app/public', cleanPath),
-              path.resolve(__dirname, '../../backend/public/storage', cleanPath),
+              path.resolve(BOT_DIR, '../../backend/public', media_path),
+              path.resolve(BOT_DIR, '../../backend/storage/app/public', cleanPath),
+              path.resolve(BOT_DIR, '../../backend/public/storage', cleanPath),
               path.resolve(process.cwd(), '../../backend/public/storage', cleanPath),
             ];
             for (const c of candidatos) {

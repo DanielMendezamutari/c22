@@ -7,6 +7,7 @@
 
 BOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BOT_DIR" || exit 1
+source "$BOT_DIR/entrypoint.sh"
 
 PID_FILE="$BOT_DIR/bot.pid"
 
@@ -20,7 +21,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 if [ -z "$PID" ]; then
-    PID=$(ps aux | grep -v grep | grep -E "node.*scripts/whatsapp_bot/bot\.js|node.*whatsapp_bot.*bot\.js" | awk '{print $2}' | head -n 1)
+    PID=$(bot_pids | head -n 1)
 fi
 
 # Si se pasó argumento --status
@@ -59,9 +60,9 @@ else
     export PATH="$(dirname "$NODE_BIN"):$PATH"
 
     # El bot está caído: Levantarlo en segundo plano
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🤖 El bot C22 estaba apagado. Reiniciando con $NODE_BIN..." >> bot_watchdog.log
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🤖 El bot C22 estaba apagado. Reiniciando $BOT_ENTRY con $NODE_BIN..." >> bot_watchdog.log
     export UV_THREADPOOL_SIZE=2
-    nohup "$NODE_BIN" bot.js >> bot_salida.log 2>&1 &
+    nohup "$NODE_BIN" "$BOT_ENTRY" >> bot_salida.log 2>&1 &
     NUEVO_PID=$!
     echo "$NUEVO_PID" > "$PID_FILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Bot reiniciado con éxito 24/7 (PID: $NUEVO_PID)" >> bot_watchdog.log
