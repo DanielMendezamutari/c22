@@ -3,6 +3,7 @@
 namespace Tests\Unit\Cierre;
 
 use App\Domain\Cierre\ConciliadorCierre;
+use App\Domain\Cierre\CuentaBancaria;
 use App\Domain\Cierre\LiquidacionGlobalTurno;
 use App\Domain\Cierre\NombrePersona;
 use App\Domain\Cierre\ReglasPago;
@@ -253,6 +254,8 @@ class ConciliadorCierreTest extends TestCase
         $lote = CasosDorados::fanny();
         $lote['planilla']['ingresos']['ventas_bebidas'] = 400;
         $lote['planilla']['total_ingresos'] = 1420;
+        // El defecto #3 exige una planilla internamente consistente para concluir faltante.
+        $lote['planilla']['qr'] = 13;
 
         $r = $this->conciliador->conciliar($lote);
 
@@ -318,6 +321,94 @@ class ConciliadorCierreTest extends TestCase
         $this->assertSame(20275, $encargadas[0]->esperadoCentavos);
         $this->assertSame(ResultadoRegla::NO_CUMPLE, $encargadas[0]->estado); // Fanny se pagó 169
         $this->assertSame(ResultadoRegla::CUMPLE, $encargadas[1]->estado);   // 203 = 202,75 redondeado
+    }
+
+    public function test_cuentas_exactas_y_enmascaradas_no_confunden_destinos(): void
+    {
+        foreach (['131****961', '131xxx961', '131XXX961', '131 1250 961'] as $cuenta) {
+            $this->assertTrue(CuentaBancaria::coincide($cuenta, ['1311250961']), $cuenta);
+        }
+        foreach ([null, '', '   ', '131961', '131****960', '13****961', '131****61', '9991250961'] as $cuenta) {
+            $this->assertFalse(CuentaBancaria::coincide($cuenta, ['1311250961']));
+        }
+    }
+
+    public function test_pos_suma_todos_los_conceptos_sin_otros_ingresos(): void
+    {
+        $lote = ['planilla' => [
+            'ingresos' => ['ventas_bebidas' => 22030, 'covers' => 1080, 'shampagne' => 5850, 'chupete' => 1015, 'privados' => 0, 'chuflay' => 0],
+            'otros_ingresos' => [['concepto' => 'Fuera del POS', 'monto' => 100]],
+        ], 'pos' => ['total_cobros' => 30145, 'limpieza' => 180]];
+        $r = $this->conciliador->conciliar($lote)->regla('POS');
+        $this->assertSame(2997500, $r->declaradoCentavos);
+        $this->assertSame(2996500, $r->esperadoCentavos);
+        $this->assertSame(10.0, $r->diferencia());
+        foreach (array_keys($lote['planilla']['ingresos']) as $campo) {
+            $modificado = $lote;
+            $modificado['planilla']['ingresos'][$campo] = null;
+            $this->assertSame(ResultadoRegla::SIN_VERIFICAR, $this->conciliador->conciliar($modificado)->regla('POS')->estado, $campo);
+        }
+        $lote['planilla']['ingresos']['privados'] = 200;
+        $lote['planilla']['ingresos']['chuflay'] = 300;
+        $this->assertSame(3047500, $this->conciliador->conciliar($lote)->regla('POS')->declaradoCentavos);
+    }
+
+    public function test_faltante_exige_las_tres_reglas_internas_salvo_cuenta_ajena(): void
+    {
+        $faltante = ResultadoRegla::comparar('SOB', 'Sobre', 100, 50, ResultadoRegla::DINERO);
+        foreach (['ING', 'EGR', 'SAL'] as $codigo) {
+            foreach ([null, ResultadoRegla::NO_CUMPLE, ResultadoRegla::SIN_VERIFICAR] as $estado) {
+                $reglas = [$faltante];
+                foreach (['ING', 'EGR', 'SAL'] as $interna) {
+                    if ($interna !== $codigo || $estado !== null) {
+                        $reglas[] = new ResultadoRegla($interna, $interna, $interna === $codigo ? $estado : ResultadoRegla::CUMPLE);
+                    }
+                }
+                $r = new ResultadoConciliacion($reglas, [], []);
+                $this->assertSame(ResultadoConciliacion::REVISAR, $r->estado());
+                $this->assertSame('La planilla leída no cuadra consigo misma: verificar la lectura antes de concluir un faltante', $r->toArray()['motivo']);
+                $reglas[] = new ResultadoRegla('QRD', 'Cuenta ajena', ResultadoRegla::NO_CUMPLE, ResultadoRegla::DINERO);
+                $r = new ResultadoConciliacion($reglas, [], []);
+                $this->assertSame(ResultadoConciliacion::FALTANTE, $r->estado());
+                $this->assertArrayNotHasKey('motivo', $r->toArray());
+            }
+        }
+    }
+
+    public function test_shampagne_sin_pagado_calcula_porcentaje_y_agrupa_personas(): void
+    {
+        $conciliador = new ConciliadorCierre(new ReglasPago(pctShampagne: 65));
+        $lote = ['control_shampagne' => [
+            ['nombre' => 'Ana', 'total' => 100],
+            ['nombre' => 'Ana', 'total' => 200, 'pagado' => null],
+            ['nombre' => 'Rosa', 'total' => 100, 'pagado' => 65],
+        ], 'pago_chicas' => [
+            ['nombre' => 'Ana', 'shampagne' => 130],
+            ['nombre' => 'Ana', 'shampagne' => 65],
+            ['nombre' => 'Rosa', 'shampagne' => 65],
+        ]];
+        $r = $conciliador->conciliar($lote);
+        $this->assertCount(1, $r->reglasCon('SHC'));
+        $this->assertSame(ResultadoRegla::CUMPLE, $r->regla('SHX')->estado);
+        $lote['pago_chicas'][0]['shampagne'] = 120;
+        $this->assertSame(ResultadoRegla::NO_CUMPLE, $conciliador->conciliar($lote)->regla('SHX')->estado);
+        unset($lote['control_shampagne'][0]['total']);
+        $this->assertSame(ResultadoRegla::SIN_VERIFICAR, $conciliador->conciliar($lote)->regla('SHX')->estado);
+    }
+
+    public function test_sin_efectivo_no_exige_sobre_pero_null_no_se_inventa(): void
+    {
+        foreach ([['efectivo' => 0], ['efectivo' => null, 'efectivo_en_sobre' => 0]] as $planilla) {
+            $r = $this->conciliador->conciliar(['planilla' => $planilla]);
+            $this->assertNotContains('Sobre de efectivo', $r->documentosFaltantes);
+            $this->assertSame(ResultadoRegla::CUMPLE, $r->regla('SOB')->estado);
+            $this->assertSame('Sin efectivo a entregar', $r->regla('SOB')->detalle);
+        }
+        foreach ([[], ['efectivo' => null], ['efectivo' => 10, 'efectivo_en_sobre' => 0]] as $planilla) {
+            $r = $this->conciliador->conciliar(['planilla' => $planilla]);
+            $this->assertContains('Sobre de efectivo', $r->documentosFaltantes);
+            $this->assertSame(ResultadoRegla::SIN_VERIFICAR, $r->regla('SOB')->estado);
+        }
     }
 
     private function cuatroCasasDia(array $planillaFanny): array

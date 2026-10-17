@@ -6,6 +6,7 @@ use App\Domain\Cierre\ArmadorLote;
 use App\Domain\Cierre\ConciliadorCierre;
 use App\Domain\Cierre\ParserTextoCierre;
 use App\Domain\Cierre\ReglasPago;
+use App\Domain\Cierre\ResultadoRegla;
 use PHPUnit\Framework\TestCase;
 
 class ArmadorLoteTest extends TestCase
@@ -29,11 +30,11 @@ class ArmadorLoteTest extends TestCase
             ]),
             $this->documento('ticket_chicas', ['chicas' => [
                 ['nombre' => 'FANNY', 'bebidas' => [
-                    ['producto' => 'Bebida', 'precio' => 80, 'cantidad' => 1],
-                    ['producto' => 'Otra bebida', 'precio' => 80, 'cantidad' => 2],
-                    ['producto' => 'Especial', 'precio' => 100.5, 'cantidad' => 1],
+                    ['producto' => 'Bebida CHICA', 'precio' => 80, 'cantidad' => 1],
+                    ['producto' => 'Otra bebida CHICA', 'precio' => 80, 'cantidad' => 2],
+                    ['producto' => 'Especial CHICA', 'precio' => 100.5, 'cantidad' => 1],
                 ]],
-                ['nombre' => 'FANNY', 'bebidas' => [['precio' => 80, 'cantidad' => 1]]],
+                ['nombre' => 'FANNY', 'bebidas' => [['producto' => 'CORONA CHICA', 'precio' => 80, 'cantidad' => 1]]],
             ]]),
             $this->documento('sobre', ['monto' => 90]),
             $this->documento('comprobante_transferencia', [
@@ -71,8 +72,8 @@ class ArmadorLoteTest extends TestCase
             $this->documento('planilla_ventas', $fanny['planilla']),
             $this->documento('pago_chicas', ['filas' => $fanny['pago_chicas']]),
             $this->documento('ticket_chicas', ['chicas' => [
-                ['nombre' => 'FANNY', 'bebidas' => [['precio' => 80, 'cantidad' => 1]]],
-                ['nombre' => 'FIORELLA', 'bebidas' => [['precio' => 80, 'cantidad' => 5]]],
+                ['nombre' => 'FANNY', 'bebidas' => [['producto' => 'CORONA CHICA', 'precio' => 80, 'cantidad' => 1]]],
+                ['nombre' => 'FIORELLA', 'bebidas' => [['producto' => 'CORONA CHICA', 'precio' => 80, 'cantidad' => 5]]],
             ]]),
             $this->documento('reporte_pos', [
                 'total_cobros' => 1500, 'ventas_efectivo' => 1000, 'qr' => 500,
@@ -132,9 +133,9 @@ class ArmadorLoteTest extends TestCase
     {
         $lote = (new ArmadorLote())->armar([$this->documento('ticket_chicas', ['chicas' => [
             ['nombre' => 'Ana', 'bebidas' => [
-                ['precio' => null, 'cantidad' => 2, 'producto' => 'Ilegible'],
-                ['precio' => 80, 'cantidad' => 1],
-                ['precio' => 80, 'cantidad' => null],
+                ['precio' => null, 'cantidad' => 2, 'producto' => 'CHICA Ilegible'],
+                ['producto' => 'CORONA CHICA', 'precio' => 80, 'cantidad' => 1],
+                ['producto' => 'CORONA CHICA', 'precio' => 80, 'cantidad' => null],
             ]],
         ]])]);
         $this->assertSame(['Ana' => [80 => null]], $lote['pos']['chicas']);
@@ -197,6 +198,51 @@ class ArmadorLoteTest extends TestCase
         $sinConfigurar = (new ArmadorLote())->armar($documentos);
         $this->assertArrayNotHasKey('comprobantes_qr', $sinConfigurar);
         $this->assertCount(5, $sinConfigurar['evidencia_egresos']);
+    }
+
+    public function test_ticket_filtra_productos_y_recupera_el_ultimo_numero_solo_sin_precio(): void
+    {
+        $productos = [
+            ['CORONA CHICA 80', null, 80],
+            ['123 - CORONA CHICA 80.50', null, '80.50'],
+            ['HUARI CHICA NOCHE 100', null, 100],
+            ['CAMEL GRANDE C/ CH 80', null, 80],
+            ['PACEÑA CH NOCHE 100', null, 100],
+            ['RON EN VASO CH 80', null, 80],
+            ['CORONA CHICA 80', 90, 90],
+            ['CORONA CHICA 80', 0, 0],
+        ];
+        $chicas = [];
+        $esperado = [];
+        foreach ($productos as $i => [$producto, $precio, $obtenido]) {
+            $chicas[] = ['nombre' => "Persona $i", 'bebidas' => [compact('producto', 'precio') + ['cantidad' => 2]]];
+            $esperado["Persona $i"] = [$obtenido => 2];
+        }
+        foreach (['CAMELCHICO 20', 'WISKY V. CL 40', 'COMBO ESPECIAL PACEÑA', 'COMISION LIMPIEZA'] as $producto) {
+            $chicas[] = ['nombre' => $producto, 'bebidas' => [
+                ['producto' => $producto, 'precio' => null, 'cantidad' => 1],
+                ['producto' => $producto, 'precio' => 80, 'cantidad' => 1],
+            ]];
+        }
+        $chicas[] = ['nombre' => 'Sin lectura', 'bebidas' => [['producto' => 'BEBIDA CHICA', 'precio' => null]]];
+        $lote = (new ArmadorLote())->armar([$this->documento('ticket_chicas', compact('chicas'))]);
+
+        $this->assertSame($esperado, $lote['pos']['chicas']);
+        $this->assertCount(1, $lote['alertas_armado']);
+        $this->assertStringContainsString('Bebida sin precio', $lote['alertas_armado'][0]);
+        $this->assertStringContainsString('Sin lectura', $lote['alertas_armado'][0]);
+    }
+
+    public function test_cuenta_enmascarada_con_x_se_conserva_como_qr_y_concilia(): void
+    {
+        foreach (['131****961', '131xxxx961', '131XXXX961', '131-1250-961'] as $cuenta) {
+            $reglas = new ReglasPago(cuentasQrOficiales: ['1311250961']);
+            $lote = (new ArmadorLote($reglas))->armar([$this->documento('comprobante_transferencia', [
+                'monto' => 10, 'destino_cuenta' => $cuenta,
+            ])]);
+            $this->assertCount(1, $lote['comprobantes_qr']);
+            $this->assertSame(ResultadoRegla::CUMPLE, (new ConciliadorCierre($reglas))->conciliar($lote)->regla('QRD')->estado);
+        }
     }
 
     private function documento(string $tipo, array $datos, float $confianza = 0.9): array

@@ -23,7 +23,7 @@ final class ArmadorLote
 
             // Las transferencias y los gastos son evidencias independientes: se conservan todos.
             if ($tipo === 'comprobante_transferencia') {
-                if ($this->esCuentaOficial($datos['destino_cuenta'] ?? null)) {
+                if (CuentaBancaria::coincide($datos['destino_cuenta'] ?? null, $this->reglas->cuentasQrOficiales)) {
                     $lote['comprobantes_qr'][] = [
                         'monto' => $datos['monto'] ?? null,
                         'cuenta_destino' => $datos['destino_cuenta'],
@@ -77,12 +77,20 @@ final class ArmadorLote
                     $chicas = [];
                     foreach ($datos['chicas'] ?? [] as $chica) {
                         foreach ($chica['bebidas'] ?? [] as $bebida) {
-                            if (($bebida['precio'] ?? null) === null) {
+                            $producto = $bebida['producto'] ?? '';
+                            if (!preg_match('/\b(?:chica|ch)\b/u', $this->normalizar($producto))) {
+                                continue;
+                            }
+                            $precio = $bebida['precio'] ?? null;
+                            if ($precio === null && preg_match('/(\d+(?:[.,]\d+)?)(?!.*\d)/u', $producto, $numero)) {
+                                $precio = str_replace(',', '.', $numero[1]);
+                            }
+                            if ($precio === null) {
                                 $lote['alertas_armado'][] = "Bebida sin precio en ticket de {$chica['nombre']}: ".($bebida['producto'] ?? 'producto ilegible').'.';
                                 continue;
                             }
                             // PHP convierte claves float a enteros: usar string conserva precios con centavos.
-                            $precio = (string) $bebida['precio'];
+                            $precio = (string) $precio;
                             $nombre = $chica['nombre'];
                             $cantidad = $bebida['cantidad'] ?? null;
                             if (!array_key_exists($precio, $chicas[$nombre] ?? [])) {
@@ -137,27 +145,6 @@ final class ArmadorLote
         }
 
         return $pos;
-    }
-
-    private function esCuentaOficial(?string $cuenta): bool
-    {
-        $digitos = preg_replace('/\D/', '', $cuenta ?? '');
-        if ($digitos === '') {
-            return false;
-        }
-        foreach ($this->reglas->cuentasQrOficiales as $oficial) {
-            $oficial = preg_replace('/\D/', '', (string) $oficial);
-            if ($digitos === $oficial) {
-                return true;
-            }
-            if (preg_match('/^\s*(\d{3})\*+(\d{3})\s*$/', $cuenta, $partes)
-                && strlen($oficial) >= 6
-                && str_starts_with($oficial, $partes[1]) && str_ends_with($oficial, $partes[2])) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function instante(array $documento): float

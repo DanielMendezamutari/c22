@@ -36,9 +36,11 @@ final class ConciliadorCierre
         $otrosIngresos = $p['otros_ingresos'] ?? [];
         $alertas = [];
 
+        $sinEfectivo = ($p['efectivo'] ?? $p['efectivo_en_sobre'] ?? null) !== null
+            && (float) ($p['efectivo'] ?? $p['efectivo_en_sobre']) === 0.0;
         $faltantes = [];
         foreach (['pos' => 'Reporte de ventas del POS', 'pago_chicas' => 'Hoja de pago de chicas', 'sobre' => 'Sobre de efectivo'] as $clave => $nombre) {
-            if (empty($lote[$clave])) {
+            if (empty($lote[$clave]) && !($clave === 'sobre' && $sinEfectivo)) {
                 $faltantes[] = $nombre;
             }
         }
@@ -62,7 +64,9 @@ final class ConciliadorCierre
         $reglas[] = ResultadoRegla::comparar('SAL', 'Ingresos − egresos = QR + Linkser + efectivo', $saldo, $entregado);
 
         // El sobre solo se acredita con el documento del sobre, nunca con lo que dice la propia planilla
-        $reglas[] = ResultadoRegla::comparar('SOB', 'Efectivo declarado = efectivo en el sobre', $p['efectivo'] ?? null, $lote['sobre']['monto'] ?? null, ResultadoRegla::DINERO);
+        $reglas[] = $sinEfectivo
+            ? ResultadoRegla::comparar('SOB', 'Efectivo declarado = efectivo en el sobre', 0, 0, ResultadoRegla::DINERO, 'Sin efectivo a entregar')
+            : ResultadoRegla::comparar('SOB', 'Efectivo declarado = efectivo en el sobre', $p['efectivo'] ?? null, $lote['sobre']['monto'] ?? null, ResultadoRegla::DINERO);
 
         $reglas = array_merge(
             $reglas,
@@ -115,7 +119,11 @@ final class ConciliadorCierre
         }
 
         // El POS a veces incluye la comisión de limpieza (Sisiela) y a veces no (Fanny): se compara sin ella
-        $ventasPlanilla = Dinero::suma([$ingresos['ventas_bebidas'] ?? null, $ingresos['covers'] ?? 0, $ingresos['shampagne'] ?? 0]);
+        // Los conceptos ausentes son opcionales; un null explícito indica una lectura pendiente.
+        $ventasPlanilla = Dinero::suma(array_values(array_intersect_key(
+            array_replace(['ventas_bebidas' => null, 'covers' => 0, 'shampagne' => 0, 'chupete' => 0, 'privados' => 0, 'chuflay' => 0], $ingresos),
+            array_flip(['ventas_bebidas', 'covers', 'shampagne', 'chupete', 'privados', 'chuflay']),
+        )));
         $ventasPos = isset($pos['total_cobros']) ? $pos['total_cobros'] - ($pos['limpieza'] ?? 0) : null;
 
         $bebidaChicas = $pos['bebida_chicas'] ?? null;
@@ -124,7 +132,7 @@ final class ConciliadorCierre
             : Dinero::porcentaje((float) $bebidaChicas, $this->reglasPago->pctBebidaChica) + Dinero::porcentaje((float) $shampagne, $this->reglasPago->pctShampagne);
 
         return [
-            ResultadoRegla::comparar('POS', 'Ventas de la planilla (bebidas + covers + shampagne) = POS', $ventasPos, $ventasPlanilla, ResultadoRegla::DINERO),
+            ResultadoRegla::comparar('POS', 'Ventas de la planilla (bebidas + covers + shampagne + chupete + privados + chuflay) = POS', $ventasPos, $ventasPlanilla, ResultadoRegla::DINERO),
             ResultadoRegla::comparar('COM', "Pago de chicas = {$this->reglasPago->pctBebidaChica}% bebidas de chica + {$this->reglasPago->pctShampagne}% shampagne (POS)", $comision, $egresos['pago_chicas'] ?? null),
         ];
     }
@@ -238,6 +246,9 @@ final class ConciliadorCierre
 
         $reglas = [ResultadoRegla::comparar('SHP', 'Control de shampagne = ingreso de shampagne', Dinero::suma(array_map(fn ($f) => $f['total'] ?? null, $control)), $ingresos['shampagne'] ?? null)];
         foreach ($control as $fila) {
+            if (!isset($fila['pagado'])) {
+                continue;
+            }
             $reglas[] = ResultadoRegla::comparar(
                 'SHC',
                 "Shampagne {$fila['nombre']}: {$this->reglasPago->pctShampagne}%",
@@ -246,8 +257,22 @@ final class ConciliadorCierre
             );
         }
 
+        if ($hoja === []) {
+            // Sin la hoja de chicas no hay contra qué cruzar: no se verifica (no es "hoja en 0")
+            $reglas[] = new ResultadoRegla('SHX', 'Shampagne pagado a cada chica = control de shampagne', ResultadoRegla::SIN_VERIFICAR, ResultadoRegla::CUADRE, null, null, 'Falta la hoja de pago de chicas');
+
+            return $reglas;
+        }
+
         // Cruce persona por persona: lo pagado en la hoja de chicas = lo que le corresponde según el control
-        $controlPorChica = NombrePersona::agrupar(array_map(fn ($f) => [$f['nombre'], (float) ($f['pagado'] ?? 0)], $control));
+        $montosControl = array_map(fn ($f) => $f['pagado'] ?? (isset($f['total'])
+            ? Dinero::porcentaje((float) $f['total'], $this->reglasPago->pctShampagne) : null), $control);
+        if (in_array(null, $montosControl, true)) {
+            $reglas[] = ResultadoRegla::comparar('SHX', 'Shampagne pagado a cada chica = control de shampagne', null, null);
+
+            return $reglas;
+        }
+        $controlPorChica = NombrePersona::agrupar(array_map(fn ($f, $monto) => [$f['nombre'], (float) $monto], $control, $montosControl));
         $hojaPorChica = NombrePersona::agrupar(array_map(fn ($f) => [$f['nombre'], (float) ($f['shampagne'] ?? 0)], $hoja));
         $diferencias = [];
         foreach ($controlPorChica as $nombre => $pagado) {
@@ -281,7 +306,7 @@ final class ConciliadorCierre
             return $reglas;
         }
 
-        $ajenas = array_filter($comprobantes, fn ($c) => !in_array(preg_replace('/\D/', '', (string) ($c['cuenta_destino'] ?? '')), $this->reglasPago->cuentasQrOficiales, true));
+        $ajenas = array_filter($comprobantes, fn ($c) => !CuentaBancaria::coincide($c['cuenta_destino'] ?? null, $this->reglasPago->cuentasQrOficiales));
         $reglas[] = new ResultadoRegla(
             'QRD',
             'El QR se transfirió a la cuenta oficial',

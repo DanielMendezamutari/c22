@@ -25,7 +25,7 @@ final class ResultadoConciliacion
     public function estado(): string
     {
         foreach ($this->reglas as $r) {
-            if ($r->esFaltante()) {
+            if ($r->esFaltante() && ($r->codigo === 'QRD' || $this->planillaConsistente())) {
                 return self::FALTANTE;
             }
         }
@@ -82,9 +82,20 @@ final class ResultadoConciliacion
         return array_values(array_filter($this->reglas, fn (ResultadoRegla $r) => $r->bloquea()));
     }
 
+    private function planillaConsistente(): bool
+    {
+        foreach (['ING', 'EGR', 'SAL'] as $codigo) {
+            if ($this->regla($codigo)?->estado !== ResultadoRegla::CUMPLE) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function toArray(): array
     {
-        return [
+        $resultado = [
             'estado' => $this->estado(),
             'reglas_cumplidas' => count(array_filter($this->reglas, fn ($r) => $r->estado === ResultadoRegla::CUMPLE)),
             'reglas_evaluadas' => count($this->reglas),
@@ -92,5 +103,10 @@ final class ResultadoConciliacion
             'alertas' => $this->alertas,
             'documentos_faltantes' => $this->documentosFaltantes,
         ];
+        if ($this->estado() === self::REVISAR && !$this->planillaConsistente()) {
+            $resultado['motivo'] = 'La planilla leída no cuadra consigo misma: verificar la lectura antes de concluir un faltante';
+        }
+
+        return $resultado;
     }
 }
