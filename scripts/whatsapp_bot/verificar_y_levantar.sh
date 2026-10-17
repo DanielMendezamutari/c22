@@ -9,6 +9,14 @@ BOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BOT_DIR" || exit 1
 source "$BOT_DIR/entrypoint.sh"
 
+# El log del bot crece sin límite (Baileys vuelca sesiones de cifrado completas) y llenó la cuota de disco:
+# si pasa de 20 MB se conservan solo las últimas 3000 líneas. El cron corre este script cada 5 minutos.
+for LOG in "$BOT_DIR/bot_salida.log" "$BOT_DIR/bot_watchdog.log"; do
+    if [ -f "$LOG" ] && [ "$(stat -c %s "$LOG" 2>/dev/null || stat -f %z "$LOG")" -gt 20971520 ]; then
+        tail -n 3000 "$LOG" > "$LOG.tmp" && cat "$LOG.tmp" > "$LOG" && rm -f "$LOG.tmp"
+    fi
+done
+
 PID_FILE="$BOT_DIR/bot.pid"
 
 # Verificar si node bot.js de C22 está corriendo por ps y por bot.pid
